@@ -1,0 +1,72 @@
+# ==========================================
+# Environment files
+# ==========================================
+
+.env
+.env.*
+!.env.example
+
+
+# ==========================================
+# Laravel Backend
+# ==========================================
+
+backend/vendor/
+backend/node_modules/
+backend/.phpunit.result.cache
+backend/storage/*.key
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+
+backend/public/build/
+backend/public/hot
+
+
+# ==========================================
+# Frontend
+# ==========================================
+
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+
+# ==========================================
+# IDE / Editor
+# ==========================================
+
+.vscode/
+.idea/
+
+# VS Code settings that are usually local
+*.code-workspace
+
+
+# ==========================================
+# OS generated files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ==========================================
+# Logs
+# ==========================================
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.tmp
+*.temp
