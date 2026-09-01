@@ -3,47 +3,46 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens; // Pastikan ini ada untuk fitur token API
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    // Tambahkan HasApiTokens di sini
+    use HasApiTokens, HasFactory, Notifiable; 
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
     protected $fillable = [
         'name',
         'email',
         'password',
+        'role',       // Wajib ditambahkan
+        'nip_nis',    // Wajib ditambahkan
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    // RELASI UNTUK SISWA: Satu siswa bisa tergabung di banyak kelas
+    public function classrooms()
+    {
+        return $this->belongsToMany(Classroom::class);
+    }
+
+    // RELASI UNTUK GURU: Satu guru bisa memiliki banyak jadwal mengajar
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class, 'teacher_id');
     }
 }
