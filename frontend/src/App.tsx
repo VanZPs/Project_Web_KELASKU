@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import DashboardGuru from './pages/Guru/Dashboard';
+import { Dashboard as DashboardGuru } from './pages/Guru/Dashboard';
 
 interface GuardProps {
   children: React.ReactNode;
