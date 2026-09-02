@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import api from '../api/axios';
-import logoKesatrian from '../assets/Logo-Kesatrian.jpeg';
+import api from '../../api/axios';
+import logoKesatrian from '../../assets/Logo-Kesatrian.jpeg';
 
 interface SidebarProps {
   namaGuru: string;

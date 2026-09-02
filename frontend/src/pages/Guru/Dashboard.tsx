@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
-import { DashboardLayout } from '../../layouts/DashboardLayout';
+import { DashboardLayout } from '../../layouts/Guru/DashboardLayout';
 
 interface GuruData {
   nama: string;
@@ -82,7 +82,13 @@ export function Dashboard() {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  const todayStr = "Selasa, 1 September 2026";
+  // Diubah menjadi dinamis menggunakan lokal Indonesia (id-ID)
+  const todayStr = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-[#F5F1E7]">Memuat...</div>;
@@ -208,29 +214,29 @@ export function Dashboard() {
            
            {/* Menunggu dinilai */}
            <div className="bg-[#FFFDF8] border border-[#E3DACB] rounded-[14px] shadow-[0_1px_2px_rgba(30,25,15,0.04),0_8px_24px_-12px_rgba(30,25,15,0.10)] overflow-hidden">
-             <div className="flex justify-between items-center p-[18px_20px_14px] border-b border-[#E3DACB]">
-               <h3 className="font-['Fraunces',serif] font-semibold text-[16px] text-[#141C30]">Menunggu dinilai</h3>
-             </div>
-             <div className="p-[6px_8px_10px]">
+              <div className="flex justify-between items-center p-[18px_20px_14px] border-b border-[#E3DACB]">
+                <h3 className="font-['Fraunces',serif] font-semibold text-[16px] text-[#141C30]">Menunggu dinilai</h3>
+              </div>
+              <div className="p-[6px_8px_10px]">
                {tugasMenunggu.length > 0 ? (
                   tugasMenunggu.map(item => (
                      <div key={item.id} className="flex items-center gap-3 p-3 rounded-[10px] hover:bg-[#FAF6EC] transition-colors">
-                       <div className="w-[36px] h-[36px] rounded-[9px] bg-[#E7ECF4] text-[#1E2A47] flex items-center justify-center shrink-0">
-                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                       </div>
-                       <div>
-                          <div className="text-[13px] font-bold text-[#141C30]">{item.judul}</div>
-                          <div className="text-[11.5px] text-[#6B7080] mt-0.5">{item.kelas}</div>
-                       </div>
-                       <div className="ml-auto text-right font-['Fraunces',serif] font-semibold text-[16px] text-[#AE5A3E] shrink-0">
-                          {item.terkumpul}<span className="block font-['Plus_Jakarta_Sans',sans-serif] font-medium text-[10px] text-[#6B7080]">terkumpul</span>
-                       </div>
+                        <div className="w-[36px] h-[36px] rounded-[9px] bg-[#E7ECF4] text-[#1E2A47] flex items-center justify-center shrink-0">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                        </div>
+                        <div>
+                           <div className="text-[13px] font-bold text-[#141C30]">{item.judul}</div>
+                           <div className="text-[11.5px] text-[#6B7080] mt-0.5">{item.kelas}</div>
+                        </div>
+                        <div className="ml-auto text-right font-['Fraunces',serif] font-semibold text-[16px] text-[#AE5A3E] shrink-0">
+                           {item.terkumpul}<span className="block font-['Plus_Jakarta_Sans',sans-serif] font-medium text-[10px] text-[#6B7080]">terkumpul</span>
+                        </div>
                      </div>
                   ))
                ) : (
                   <div className="text-[13px] text-[#6B7080] italic p-4 text-center">Tidak ada tugas menunggu dinilai.</div>
                )}
-             </div>
+              </div>
            </div>
 
            {/* Rata-rata nilai kelas */}

@@ -32,7 +32,9 @@ export default function Register() {
   ];
 
   const studentClasses = [
-    'X IPA 1', 'X IPA 2', 'X IPS 1', 'XI IPA 1', 'XI IPA 2', 'XII IPA 1', 'XII IPS 1'
+    'X - 1', 'X - 2', 'X - 3', 'X - 4', 'X - 5', 'X - 6',
+    'XI - 1', 'XI - 2', 'XI - 3', 'XI - 4', 'XI - 5', 'XI - 6',
+    'XII - 1', 'XII - 2', 'XII - 3', 'XII - 4', 'XII - 5', 'XII - 6'
   ];
 
   const currentOptions = role === 'guru' ? teacherSubjects : studentClasses;
@@ -50,7 +52,7 @@ export default function Register() {
   const handleRoleChange = (newRole: 'guru' | 'siswa') => {
     if (role !== newRole) {
       setRole(newRole);
-      setSubjectOrClass(newRole === 'guru' ? 'Matematika' : 'X IPA 1');
+      setSubjectOrClass(newRole === 'guru' ? 'Matematika' : 'X - 1');
       setIsOpen(false);
     }
   };
@@ -299,7 +301,7 @@ export default function Register() {
                       type="button" 
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)} 
                       className="shrink-0 flex items-center border-none bg-transparent text-[#6B7080] cursor-pointer"
-                      aria-label="Tampilkan konfirmasi kata sandi"
+                      aria-label="Tampilkan konfirmasi konfirmasi kata sandi"
                     >
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         {showConfirmPassword 
