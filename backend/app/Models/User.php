@@ -2,30 +2,38 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens; // Pastikan ini ada untuk fitur token API
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    // Tambahkan HasApiTokens di sini
-    use HasApiTokens, HasFactory, Notifiable; 
+    use HasApiTokens, HasFactory, Notifiable;
 
+    /**
+     * Field yang boleh diisi menggunakan mass assignment.
+     */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role',       // Wajib ditambahkan
-        'nip_nis',    // Wajib ditambahkan
+        'role',
     ];
 
+    /**
+     * Field yang disembunyikan dari response JSON.
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
+    /**
+     * Casting attribute.
+     */
     protected function casts(): array
     {
         return [
@@ -34,15 +42,33 @@ class User extends Authenticatable
         ];
     }
 
-    // RELASI UNTUK SISWA: Satu siswa bisa tergabung di banyak kelas
-    public function classrooms()
+    /**
+     * Relasi User -> Teacher.
+     *
+     * Satu User dengan role guru memiliki satu Teacher.
+     */
+    public function teacher(): HasOne
     {
-        return $this->belongsToMany(Classroom::class);
+        return $this->hasOne(Teacher::class);
     }
 
-    // RELASI UNTUK GURU: Satu guru bisa memiliki banyak jadwal mengajar
-    public function schedules()
+    /**
+     * Relasi User -> Student.
+     *
+     * Satu User dengan role siswa memiliki satu Student.
+     */
+    public function student(): HasOne
     {
-        return $this->hasMany(Schedule::class, 'teacher_id');
+        return $this->hasOne(Student::class);
+    }
+
+    /**
+     * Relasi User -> Classroom.
+     *
+     * Satu siswa dapat tergabung dalam satu atau lebih kelas.
+     */
+    public function classrooms(): BelongsToMany
+    {
+        return $this->belongsToMany(Classroom::class);
     }
 }

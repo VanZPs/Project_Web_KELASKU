@@ -1,48 +1,110 @@
 // frontend/src/App.tsx
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { type ReactNode } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
+
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Dashboard as DashboardGuru } from './pages/Guru/Dashboard';
-import KelasSaya from './pages/Guru/KelasSaya'; // <-- Impor halaman Kelas Saya
+import KelasSaya from './pages/Guru/KelasSaya';
 
 interface GuardProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 interface ProtectedProps extends GuardProps {
-  allowedRole: string;
+  allowedRole: 'guru' | 'siswa';
 }
 
-// --------------------------------------------------
-// 1. GUEST GUARD (Mencegah user yang sudah login mengakses halaman login/register)
-// --------------------------------------------------
-const GuestRoute: React.FC<GuardProps> = ({ children }) => {
-  const token = localStorage.getItem('token');
-  const user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null;
+/**
+ * Mengambil data user dari localStorage dengan aman.
+ *
+ * Jika data user tidak ada atau JSON-nya rusak,
+ * fungsi akan mengembalikan null daripada membuat aplikasi crash.
+ */
+const getStoredUser = () => {
+  const userData = localStorage.getItem('user');
 
-  if (token && user) {
-    // Arahkan ke dashboard masing-masing sesuai role jika sudah login
-    return <Navigate to={user.role === 'guru' ? '/guru' : '/siswa'} replace />;
+  if (!userData) {
+    return null;
   }
+
+  try {
+    return JSON.parse(userData);
+  } catch {
+    // Hapus data user yang rusak
+    localStorage.removeItem('user');
+    return null;
+  }
+};
+
+/**
+ * Menghapus seluruh data autentikasi dari browser.
+ */
+const clearAuth = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+};
+
+// --------------------------------------------------
+// 1. GUEST GUARD
+// Mencegah user yang sudah login mengakses Login/Register
+// --------------------------------------------------
+const GuestRoute = ({ children }: GuardProps) => {
+  const token = localStorage.getItem('token');
+  const user = getStoredUser();
+
+  // Jika token dan user masih tersedia,
+  // berarti user sudah login.
+  if (token && user) {
+    return (
+      <Navigate
+        to={user.role === 'guru' ? '/guru' : '/siswa'}
+        replace
+      />
+    );
+  }
+
   return <>{children}</>;
 };
 
 // --------------------------------------------------
-// 2. PROTECTED GUARD (Melindungi dashboard berdasarkan hak akses role)
+// 2. PROTECTED GUARD
+// Melindungi halaman berdasarkan role user
 // --------------------------------------------------
-const ProtectedRoute: React.FC<ProtectedProps> = ({ children, allowedRole }) => {
+const ProtectedRoute = ({
+  children,
+  allowedRole,
+}: ProtectedProps) => {
   const token = localStorage.getItem('token');
-  const user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null;
+  const user = getStoredUser();
 
-  // Jika tidak ada token atau data user, tendang ke login
+  // Tidak memiliki token atau data user
+  // berarti belum login.
   if (!token || !user) {
+    clearAuth();
     return <Navigate to="/login" replace />;
   }
 
-  // Jika role tidak sesuai (misal siswa mencoba akses rute guru), tendang ke dashboard aslinya
-  if (allowedRole && user.role !== allowedRole) {
-    return <Navigate to={user.role === 'guru' ? '/guru' : '/siswa'} replace />;
+  // Pastikan role user valid.
+  if (user.role !== 'guru' && user.role !== 'siswa') {
+    clearAuth();
+    return <Navigate to="/login" replace />;
+  }
+
+  // Jika role tidak sesuai dengan halaman yang ingin diakses,
+  // arahkan ke dashboard sesuai role sebenarnya.
+  if (user.role !== allowedRole) {
+    return (
+      <Navigate
+        to={user.role === 'guru' ? '/guru' : '/siswa'}
+        replace
+      />
+    );
   }
 
   return <>{children}</>;
@@ -55,79 +117,110 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        {/* Redirect root ke halaman login */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* Halaman Login */}
-        <Route 
-          path="/login" 
+        {/* ==================================================
+            ROOT
+            ================================================== */}
+        <Route
+          path="/"
+          element={<Navigate to="/login" replace />}
+        />
+
+        {/* ==================================================
+            AUTHENTICATION
+            ================================================== */}
+
+        {/* Login */}
+        <Route
+          path="/login"
           element={
             <GuestRoute>
               <Login />
             </GuestRoute>
-          } 
+          }
         />
 
-        {/* Halaman Register */}
-        <Route 
-          path="/register" 
+        {/* Register */}
+        <Route
+          path="/register"
           element={
             <GuestRoute>
               <Register />
             </GuestRoute>
-          } 
+          }
         />
 
-        {/* Dashboard Utama Guru */}
-        <Route 
-          path="/guru" 
+        {/* ==================================================
+            GURU
+            ================================================== */}
+
+        {/* Dashboard Guru */}
+        <Route
+          path="/guru"
           element={
             <ProtectedRoute allowedRole="guru">
               <DashboardGuru />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/guru/dashboard" 
+
+        {/* Dashboard Guru - URL alternatif */}
+        <Route
+          path="/guru/dashboard"
           element={
             <ProtectedRoute allowedRole="guru">
               <DashboardGuru />
             </ProtectedRoute>
-          } 
+          }
         />
 
-        {/* Halaman Kelas Saya Guru */}
-        <Route 
-          path="/guru/kelas-saya" 
+        {/* Kelas Saya */}
+        <Route
+          path="/guru/kelas-saya"
           element={
             <ProtectedRoute allowedRole="guru">
               <KelasSaya />
             </ProtectedRoute>
-          } 
+          }
         />
 
-        {/* Dashboard Siswa */}
-        <Route 
-          path="/siswa/*" 
+        {/* ==================================================
+            SISWA
+            ================================================== */}
+
+        {/* Dashboard Siswa
+            Sementara masih menggunakan placeholder.
+            Nanti akan kita ganti dengan Dashboard Siswa.
+        */}
+        <Route
+          path="/siswa/*"
           element={
             <ProtectedRoute allowedRole="siswa">
               <div className="p-8">
-                <h1 className="text-2xl font-bold text-indigo-600">Dashboard Siswa - KELASKU</h1>
-                <p className="mt-2 text-gray-600">SMA Kesatrian 1 Semarang</p>
+                <h1 className="text-2xl font-bold text-indigo-600">
+                  Dashboard Siswa - KELASKU
+                </h1>
+
+                <p className="mt-2 text-gray-600">
+                  SMA Kesatrian 1 Semarang
+                </p>
               </div>
             </ProtectedRoute>
-          } 
+          }
         />
 
-        {/* Halaman 404 */}
-        <Route 
-          path="*" 
+        {/* ==================================================
+            404
+            ================================================== */}
+        <Route
+          path="*"
           element={
             <div className="flex h-screen items-center justify-center text-[#AE5A3E] font-bold text-3xl font-['Fraunces',serif]">
               404 - Halaman Tidak Ditemukan
             </div>
-          } 
+          }
         />
+
       </Routes>
     </Router>
   );

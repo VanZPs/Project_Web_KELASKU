@@ -4,17 +4,23 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Classroom extends Model
 {
     use HasFactory;
 
-    // Mengizinkan mass assignment untuk kolom name
-    protected $fillable = ['name'];
+    protected $fillable = [
+        'name',
+    ];
 
-    // Satu kelas memiliki banyak siswa (merujuk ke tabel users)
-    public function students()
+    /**
+     * Relasi Classroom -> User.
+     *
+     * Satu kelas dapat memiliki banyak siswa.
+     */
+    public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'classroom_user', 'classroom_id', 'user_id');
+        return $this->belongsToMany(User::class);
     }
 }
