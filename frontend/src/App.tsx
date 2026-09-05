@@ -1,8 +1,10 @@
+// frontend/src/App.tsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Dashboard as DashboardGuru } from './pages/Guru/Dashboard';
+import KelasSaya from './pages/Guru/KelasSaya'; // <-- Impor halaman Kelas Saya
 
 interface GuardProps {
   children: React.ReactNode;
@@ -76,9 +78,17 @@ export default function App() {
           } 
         />
 
-        {/* Dashboard Guru */}
+        {/* Dashboard Utama Guru */}
         <Route 
-          path="/guru/*" 
+          path="/guru" 
+          element={
+            <ProtectedRoute allowedRole="guru">
+              <DashboardGuru />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/guru/dashboard" 
           element={
             <ProtectedRoute allowedRole="guru">
               <DashboardGuru />
@@ -86,7 +96,17 @@ export default function App() {
           } 
         />
 
-        {/* Dashboard Siswa (Sementara masih placeholder, bisa diganti nanti) */}
+        {/* Halaman Kelas Saya Guru */}
+        <Route 
+          path="/guru/kelas-saya" 
+          element={
+            <ProtectedRoute allowedRole="guru">
+              <KelasSaya />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Dashboard Siswa */}
         <Route 
           path="/siswa/*" 
           element={

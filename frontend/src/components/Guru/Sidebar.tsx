@@ -66,10 +66,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ namaGuru, mapelGuru, getInitia
           <svg className="w-[18px] h-[18px] shrink-0 opacity-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           Dashboard
         </Link>
+        
+        {/* Tautan ke Kelas Saya disesuaikan menjadi /guru/kelas-saya */}
         <Link 
-          to="/guru/kelas" 
+          to="/guru/kelas-saya" 
           className={`flex items-center gap-[11px] p-[9px_11px] rounded-[9px] text-[14px] transition-colors shrink-0 ${
-            location.pathname === '/guru/kelas' 
+            location.pathname === '/guru/kelas-saya' 
               ? 'text-white bg-white/10 shadow-[inset_3px_0_0_#B98A3E]' 
               : 'text-[#C6CCDE] hover:bg-white/5 hover:text-white'
           }`}
@@ -77,6 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ namaGuru, mapelGuru, getInitia
           <svg className="w-[18px] h-[18px] shrink-0 opacity-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
           Kelas saya
         </Link>
+
         <Link 
           to="/guru/siswa" 
           className={`flex items-center gap-[11px] p-[9px_11px] rounded-[9px] text-[14px] transition-colors shrink-0 ${

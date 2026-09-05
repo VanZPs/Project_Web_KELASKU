@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\Api\MyClassController;
 use App\Http\Controllers\API\ScheduleController;
 
 // Route Publik (Tidak perlu login)
@@ -25,6 +26,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Endpoint Dashboard Guru
     Route::get('/guru/dashboard', [App\Http\Controllers\API\DashboardController::class, 'guru']);
+
+    // Endpoint Kelas Saya (Guru)
+    Route::get('/guru/kelas-saya', [MyClassController::class, 'index']);
     
     // Nanti Anda bisa menambahkan route lain di sini, contoh:
     // Route::apiResource('/journals', JournalController::class);
