@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Classroom extends Model
 {
@@ -15,12 +16,21 @@ class Classroom extends Model
     ];
 
     /**
-     * Relasi Classroom -> User.
+     * Relasi ke user yang tergabung dalam kelas.
      *
-     * Satu kelas dapat memiliki banyak siswa.
+     * Digunakan untuk mengambil daftar siswa
+     * melalui tabel classroom_user.
      */
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class);
+    }
+
+    /**
+     * Relasi ke jadwal yang dimiliki kelas.
+     */
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class);
     }
 }
