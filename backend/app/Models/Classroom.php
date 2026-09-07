@@ -13,6 +13,11 @@ class Classroom extends Model
 
     protected $fillable = [
         'name',
+        'archived',
+    ];
+
+    protected $casts = [
+    'archived' => 'boolean',
     ];
 
     /**

@@ -1,44 +1,176 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\API\AuthController;
-use App\Http\Controllers\Api\MyClassController;
+use App\Http\Controllers\API\MyClassController;
 use App\Http\Controllers\API\ScheduleController;
 use App\Http\Controllers\API\ClassroomController;
 use App\Http\Controllers\API\SubjectController;
+use App\Http\Controllers\API\DashboardController;
+use App\Http\Controllers\API\TeacherSubjectController;
 
-// Route Publik (Tidak perlu login)
-Route::post('/login', [AuthController::class, 'login']);
+/*
+|--------------------------------------------------------------------------
+| PUBLIC ROUTES
+|--------------------------------------------------------------------------
+*/
 
-// Route untuk registrasi (jika diperlukan, misalnya untuk siswa baru atau guru baru)
-Route::post('/register', [AuthController::class, 'register']);
+/*
+ * Login
+ */
+Route::post(
+    '/login',
+    [AuthController::class, 'login']
+);
 
-// Route untuk mendapatkan daftar mata pelajaran dan kelas
-Route::get('/subjects', [SubjectController::class, 'index']);
+/*
+ * Register
+ */
+Route::post(
+    '/register',
+    [AuthController::class, 'register']
+);
 
-// Route untuk mendapatkan daftar kelas
-Route::get('/classrooms', [ClassroomController::class, 'index']);
+/*
+ * Daftar mata pelajaran
+ */
+Route::get(
+    '/subjects',
+    [SubjectController::class, 'index']
+);
 
-// Route untuk mendapatkan statistik (misalnya jumlah pengguna, jumlah jadwal, dll.)
-Route::get('/stats', [AuthController::class, 'stats']);
+/*
+ * Daftar kelas
+ */
+Route::get(
+    '/classrooms',
+    [ClassroomController::class, 'index']
+);
 
-// Route Private (Wajib menyertakan Bearer Token)
-Route::middleware('auth:sanctum')->group(function () {
-    
-    // Endpoint Auth & Profil
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/me', [AuthController::class, 'me']);
-    
-    // Endpoint Fitur KELASKU
-    Route::get('/schedules', [ScheduleController::class, 'index']);
+/*
+ * Statistik
+ */
+Route::get(
+    '/stats',
+    [AuthController::class, 'stats']
+);
 
-    // Endpoint Dashboard Guru
-    Route::get('/guru/dashboard', [App\Http\Controllers\API\DashboardController::class, 'guru']);
 
-    // Endpoint Kelas Saya (Guru)
-    Route::get('/guru/kelas-saya', [MyClassController::class, 'index']);
-    
-    // Nanti Anda bisa menambahkan route lain di sini, contoh:
-    // Route::apiResource('/journals', JournalController::class);
-    // Route::apiResource('/assignments', AssignmentController::class);
-});
+/*
+|--------------------------------------------------------------------------
+| PRIVATE ROUTES
+|--------------------------------------------------------------------------
+|
+| Semua route di bawah ini membutuhkan
+| Bearer Token Sanctum.
+|
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware('auth:sanctum')->group(
+    function () {
+
+        /*
+         * ======================================================
+         * AUTH & PROFILE
+         * ======================================================
+         */
+
+        /*
+         * Logout
+         */
+        Route::post(
+            '/logout',
+            [AuthController::class, 'logout']
+        );
+
+        /*
+         * User yang sedang login
+         */
+        Route::get(
+            '/me',
+            [AuthController::class, 'me']
+        );
+
+        /*
+         * ======================================================
+         * GURU - MATA PELAJARAN
+         * ======================================================
+         */
+        Route::get(
+            '/guru/mata-pelajaran',
+            [TeacherSubjectController::class, 'index']
+        );
+
+        /*
+         * ======================================================
+         * SCHEDULE
+         * ======================================================
+         */
+
+        /*
+         * Ambil jadwal.
+         */
+        Route::get(
+            '/schedules',
+            [ScheduleController::class, 'index']
+        );
+
+        /*
+         * Guru menambahkan kelas + jadwal.
+         */
+        Route::post(
+            '/guru/kelas',
+            [ScheduleController::class, 'store']
+        );
+
+        Route::get(
+            '/guru/jadwal-terpakai',
+            [ScheduleController::class, 'occupied']
+        );
+
+        /*
+         * ======================================================
+         * ARCHIVE CLASSROOM
+         * ======================================================
+         */
+        Route::patch(
+            '/guru/kelas/{classroom}/arsip',
+            [ClassroomController::class, 'archive']
+        );
+
+
+        /*
+         * Memulihkan kelas dari arsip.
+         */
+        Route::patch(
+            '/guru/kelas/{classroom}/pulihkan',
+            [ClassroomController::class, 'restore']
+        );
+
+
+        /*
+         * ======================================================
+         * GURU DASHBOARD
+         * ======================================================
+         */
+
+        Route::get(
+            '/guru/dashboard',
+            [DashboardController::class, 'guru']
+        );
+
+
+        /*
+         * ======================================================
+         * GURU - KELAS SAYA
+         * ======================================================
+         */
+
+        Route::get(
+            '/guru/kelas-saya',
+            [MyClassController::class, 'index']
+        );
+    }
+);

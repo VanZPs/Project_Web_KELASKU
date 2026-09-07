@@ -8,14 +8,35 @@ use Illuminate\Http\Request;
 
 class MyClassController extends Controller
 {
+    /**
+     * ==========================================================
+     * GET /api/guru/kelas-saya
+     * ==========================================================
+     *
+     * Menampilkan seluruh kelas yang dimiliki/diajarkan oleh guru.
+     *
+     * Kelas aktif maupun kelas yang sudah diarsipkan
+     * tetap dikirim ke frontend.
+     *
+     * Status:
+     * - archived = false → kelas aktif
+     * - archived = true  → kelas arsip
+     *
+     * Filtering tampilan:
+     * - Semua kelas
+     * - Berlangsung
+     * - Arsip
+     *
+     * dilakukan di frontend.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
 
         /*
-         * ==========================================
+         * ======================================================
          * VALIDASI ROLE
-         * ==========================================
+         * ======================================================
          */
         if ($user->role !== 'guru') {
             return response()->json([
@@ -25,9 +46,9 @@ class MyClassController extends Controller
         }
 
         /*
-         * ==========================================
+         * ======================================================
          * AMBIL PROFIL GURU
-         * ==========================================
+         * ======================================================
          */
         $user->load([
             'teacher.subjects',
@@ -43,23 +64,26 @@ class MyClassController extends Controller
         }
 
         /*
-         * ==========================================
-         * AMBIL KELAS YANG DIAJAR GURU
-         * ==========================================
+         * ======================================================
+         * AMBIL ID KELAS YANG DIAJAR
+         * ======================================================
          *
-         * Relasi:
+         * Mengambil seluruh classroom_id yang memiliki
+         * jadwal milik guru yang sedang login.
          *
-         * Teacher
-         *    ↓
-         * Schedule
-         *    ↓
-         * Classroom
+         * Kelas yang sudah diarsipkan tetap termasuk di sini.
          */
-        $classroomIds = $teacher->schedules()
+        $classroomIds = $teacher
+            ->schedules()
             ->pluck('classroom_id')
             ->unique()
             ->values();
 
+        /*
+         * ======================================================
+         * JIKA GURU BELUM MEMILIKI KELAS
+         * ======================================================
+         */
         if ($classroomIds->isEmpty()) {
             return response()->json([
                 'success' => true,
@@ -68,110 +92,273 @@ class MyClassController extends Controller
         }
 
         /*
-         * ==========================================
+         * ======================================================
          * AMBIL DATA KELAS
-         * ==========================================
+         * ======================================================
+         *
+         * PENTING:
+         *
+         * Jangan menggunakan:
+         *
+         * ->where('archived', false)
+         *
+         * karena kelas yang sudah diarsipkan harus tetap
+         * dikirim ke frontend agar dapat ditampilkan pada
+         * tab "Arsip" meskipun halaman direfresh.
          */
         $classrooms = Classroom::with([
+
+            /*
+             * --------------------------------------------------
+             * DAFTAR SISWA
+             * --------------------------------------------------
+             */
             'users' => function ($query) {
                 $query
-                    ->where('role', 'siswa')
-                    ->orderBy('name');
+                    ->where(
+                        'role',
+                        'siswa'
+                    )
+                    ->orderBy(
+                        'name'
+                    );
             },
 
+            /*
+             * --------------------------------------------------
+             * PROFIL STUDENT
+             * --------------------------------------------------
+             */
             'users.student',
 
-            'schedules' => function ($query) use ($teacher) {
+            /*
+             * --------------------------------------------------
+             * JADWAL GURU PADA KELAS TERSEBUT
+             * --------------------------------------------------
+             *
+             * Hanya mengambil jadwal milik guru yang sedang
+             * login.
+             */
+            'schedules' => function ($query) use ($user) {
                 $query
-                    ->where('teacher_id', $teacher->id)
+                    ->where(
+                        'teacher_id',
+                        $user->id
+                    )
                     ->with([
                         'subject',
                     ])
-                    ->orderBy('day')
-                    ->orderBy('start_time');
+                    ->orderBy(
+                        'day'
+                    )
+                    ->orderBy(
+                        'start_time'
+                    );
             },
+
         ])
-            ->whereIn('id', $classroomIds)
-            ->orderBy('name')
+
+            /*
+             * --------------------------------------------------
+             * HANYA KELAS YANG DIAJAR GURU
+             * --------------------------------------------------
+             */
+            ->whereIn(
+                'id',
+                $classroomIds
+            )
+
+            /*
+             * --------------------------------------------------
+             * JANGAN FILTER archived DI SINI
+             * --------------------------------------------------
+             *
+             * Kelas aktif dan kelas arsip harus sama-sama
+             * dikirim ke frontend.
+             */
+            ->orderBy(
+                'name'
+            )
             ->get();
 
         /*
-         * ==========================================
-         * FORMAT DATA KELAS
-         * ==========================================
+         * ======================================================
+         * FORMAT DATA
+         * ======================================================
          */
-        $data = $classrooms->map(function ($classroom) {
-            $schedules = $classroom->schedules;
+        $data = $classrooms->map(
+            function ($classroom) {
 
-            /*
-             * Ambil daftar mata pelajaran dari jadwal
-             */
-            $mataPelajaran = $schedules
-                ->map(function ($schedule) {
-                    return $schedule->subject?->name;
-                })
-                ->filter()
-                ->unique()
-                ->values();
+                /*
+                 * ----------------------------------------------
+                 * JADWAL
+                 * ----------------------------------------------
+                 */
+                $schedules = $classroom->schedules;
 
-            /*
-             * Daftar siswa
-             */
-            $siswa = $classroom->users
-                ->map(function ($student) {
-                    return [
-                        'id' => $student->id,
-                        'nama' => $student->name,
-                        'email' => $student->email,
-                    ];
-                })
-                ->values();
+                /*
+                 * ----------------------------------------------
+                 * MATA PELAJARAN
+                 * ----------------------------------------------
+                 *
+                 * Diambil dari jadwal guru pada kelas tersebut.
+                 */
+                $mataPelajaran = $schedules
+                    ->map(
+                        function ($schedule) {
 
-            /*
-             * Daftar jadwal
-             */
-            $jadwal = $schedules
-                ->map(function ($schedule) {
-                    return [
-                        'id' => $schedule->id,
-                        'hari' => $schedule->day,
-                        'waktu' => $schedule->start_time
-                            && $schedule->end_time
-                            ? substr($schedule->start_time, 0, 5)
-                                . ' - '
-                                . substr($schedule->end_time, 0, 5)
-                            : '-',
-                        'mata_pelajaran' => $schedule->subject?->name
-                            ?? '-',
-                    ];
-                })
-                ->values();
+                            return $schedule
+                                ->subject
+                                ?->name;
+                        }
+                    )
+                    ->filter()
+                    ->unique()
+                    ->values();
 
-            return [
-                'id' => $classroom->id,
+                /*
+                 * ----------------------------------------------
+                 * SISWA
+                 * ----------------------------------------------
+                 */
+                $siswa = $classroom
+                    ->users
+                    ->map(
+                        function ($student) {
 
-                'nama' => $classroom->name,
+                            return [
+                                'id' =>
+                                    $student->id,
 
-                'jumlah_siswa' => $siswa->count(),
+                                'nama' =>
+                                    $student->name,
 
-                'mata_pelajaran' => $mataPelajaran,
+                                'email' =>
+                                    $student->email,
+                            ];
+                        }
+                    )
+                    ->values();
 
-                'jumlah_jadwal' => $jadwal->count(),
+                /*
+                 * ----------------------------------------------
+                 * FORMAT JADWAL
+                 * ----------------------------------------------
+                 */
+                $jadwal = $schedules
+                    ->map(
+                        function ($schedule) {
 
-                'siswa' => $siswa,
+                            $startTime =
+                                $schedule->start_time;
 
-                'jadwal' => $jadwal,
-            ];
-        })->values();
+                            $endTime =
+                                $schedule->end_time;
+
+                            return [
+                                'id' =>
+                                    $schedule->id,
+
+                                'hari' =>
+                                    $schedule->day,
+
+                                'waktu' =>
+                                    $startTime
+                                    && $endTime
+                                        ? substr(
+                                            $startTime,
+                                            0,
+                                            5
+                                        )
+                                        . ' - '
+                                        . substr(
+                                            $endTime,
+                                            0,
+                                            5
+                                        )
+                                        : '-',
+
+                                'mata_pelajaran' =>
+                                    $schedule
+                                        ->subject
+                                        ?->name
+                                    ?? '-',
+                            ];
+                        }
+                    )
+                    ->values();
+
+                /*
+                 * ----------------------------------------------
+                 * RESPONSE KELAS
+                 * ----------------------------------------------
+                 */
+                return [
+
+                    /*
+                     * ID KELAS
+                     */
+                    'id' =>
+                        $classroom->id,
+
+                    /*
+                     * NAMA KELAS
+                     */
+                    'nama' =>
+                        $classroom->name,
+
+                    /*
+                     * STATUS ARSIP
+                     *
+                     * Nilai ini diambil langsung dari database.
+                     *
+                     * false = aktif
+                     * true  = arsip
+                     */
+                    'archived' =>
+                        (bool) $classroom->archived,
+
+                    /*
+                     * JUMLAH SISWA
+                     */
+                    'jumlah_siswa' =>
+                        $siswa->count(),
+
+                    /*
+                     * MATA PELAJARAN
+                     */
+                    'mata_pelajaran' =>
+                        $mataPelajaran,
+
+                    /*
+                     * JUMLAH JADWAL
+                     */
+                    'jumlah_jadwal' =>
+                        $jadwal->count(),
+
+                    /*
+                     * DAFTAR SISWA
+                     */
+                    'siswa' =>
+                        $siswa,
+
+                    /*
+                     * DAFTAR JADWAL
+                     */
+                    'jadwal' =>
+                        $jadwal,
+                ];
+            }
+        )
+        ->values();
 
         /*
-         * ==========================================
+         * ======================================================
          * RESPONSE
-         * ==========================================
+         * ======================================================
          */
         return response()->json([
             'success' => true,
-
             'data' => $data,
         ]);
     }

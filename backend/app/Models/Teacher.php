@@ -18,7 +18,7 @@ class Teacher extends Model
     ];
 
     /**
-     * Teacher dimiliki oleh satu User.
+     * Teacher -> User
      */
     public function user(): BelongsTo
     {
@@ -26,7 +26,9 @@ class Teacher extends Model
     }
 
     /**
-     * Teacher dapat mengajar satu atau lebih Subject.
+     * Teacher -> Subject
+     *
+     * Satu guru dapat mengajar beberapa mata pelajaran.
      */
     public function subjects(): BelongsToMany
     {
@@ -37,13 +39,20 @@ class Teacher extends Model
     }
 
     /**
-     * Teacher memiliki banyak Schedule.
+     * Teacher -> Schedule
+     *
+     * Penting:
+     * schedules.teacher_id menyimpan users.id,
+     * bukan teachers.id.
+     *
+     * Karena itu local key yang digunakan adalah user_id.
      */
     public function schedules(): HasMany
     {
         return $this->hasMany(
             Schedule::class,
-            'teacher_id'
+            'teacher_id',
+            'user_id'
         );
     }
 }

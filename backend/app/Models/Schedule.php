@@ -20,33 +20,68 @@ class Schedule extends Model
         'end_time',
     ];
 
+    /**
+     * Schedule -> Classroom
+     */
     public function classroom(): BelongsTo
     {
-        return $this->belongsTo(Classroom::class);
+        return $this->belongsTo(
+            Classroom::class,
+            'classroom_id'
+        );
     }
 
+    /**
+     * Schedule -> Subject
+     */
     public function subject(): BelongsTo
     {
-        return $this->belongsTo(Subject::class);
+        return $this->belongsTo(
+            Subject::class,
+            'subject_id'
+        );
     }
 
+    /**
+     * Schedule -> User/Guru
+     *
+     * schedules.teacher_id menyimpan users.id.
+     */
     public function teacher(): BelongsTo
     {
-        return $this->belongsTo(Teacher::class);
+        return $this->belongsTo(
+            User::class,
+            'teacher_id'
+        );
     }
 
+    /**
+     * Schedule -> Journal
+     */
     public function journals(): HasMany
     {
-        return $this->hasMany(Journal::class);
+        return $this->hasMany(
+            Journal::class
+        );
     }
 
+    /**
+     * Schedule -> Assignment
+     */
     public function assignments(): HasMany
     {
-        return $this->hasMany(Assignment::class);
+        return $this->hasMany(
+            Assignment::class
+        );
     }
 
+    /**
+     * Schedule -> Attendance
+     */
     public function attendances(): HasMany
     {
-        return $this->hasMany(Attendance::class);
+        return $this->hasMany(
+            Attendance::class
+        );
     }
 }
