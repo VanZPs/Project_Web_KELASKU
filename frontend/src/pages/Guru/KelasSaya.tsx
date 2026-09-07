@@ -449,13 +449,11 @@ export default function KelasSaya() {
       >
         <div className="flex h-[60vh] items-center justify-center">
           <div className="text-center">
-
             <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#E3DACB] border-t-[#1E2A47]" />
 
             <div className="font-semibold text-[#1E2A47]">
               Memuat data kelas...
             </div>
-
           </div>
         </div>
       </KelasSayaLayout>
@@ -473,7 +471,6 @@ export default function KelasSaya() {
       mapelGuru={mapelGuru}
       getInitials={getInitials}
     >
-
       <div className="animate-[rise_0.5s_ease_both]">
 
         {/* =====================================================
@@ -784,6 +781,7 @@ export default function KelasSaya() {
                   cy="7"
                   r="4"
                 />
+
               </svg>
 
             </div>
@@ -1033,11 +1031,27 @@ export default function KelasSaya() {
                   'Belum ada mata pelajaran';
 
                 /*
-                 * Jumlah mata pelajaran tambahan.
+                 * ==================================================
+                 * MATA PELAJARAN PADA BAGIAN BAWAH CARD
+                 *
+                 * Maksimal 2 mata pelajaran ditampilkan.
+                 *
+                 * Contoh:
+                 * 1 mapel -> PPKn
+                 * 2 mapel -> PPKn, Matematika
+                 * 3 mapel -> PPKn, Matematika +1 lainnya
+                 * 4 mapel -> PPKn, Matematika +2 lainnya
+                 * ==================================================
                  */
+                const mataPelajaranTampil =
+                  kelas.mata_pelajaran?.slice(
+                    0,
+                    2
+                  ) || [];
+
                 const jumlahMapelLainnya =
                   Math.max(
-                    (kelas.mata_pelajaran?.length || 0) - 1,
+                    (kelas.mata_pelajaran?.length || 0) - 2,
                     0
                   );
 
@@ -1241,15 +1255,15 @@ export default function KelasSaya() {
 
                       <div className="mt-1.5 flex items-center gap-2">
 
-                        {kelas.mata_pelajaran.length > 0 ? (
+                        {mataPelajaranTampil.length > 0 ? (
 
                           <>
                             <span className="text-[14px] font-semibold text-[#1E2A47]">
-                              {mataPelajaranUtama}
+                              {mataPelajaranTampil.join(', ')}
                             </span>
 
                             {jumlahMapelLainnya > 0 && (
-                              <span className="text-[11px] text-[#6B7080]">
+                              <span className="whitespace-nowrap text-[11px] text-[#6B7080]">
                                 +{jumlahMapelLainnya} lainnya
                               </span>
                             )}
@@ -1368,6 +1382,7 @@ export default function KelasSaya() {
           </div>
 
         )}
+
 
       </div>
 
@@ -1538,35 +1553,97 @@ export default function KelasSaya() {
 
                   <div className="space-y-2">
 
-                    {selectedClass.jadwal.map(
-                      (jadwal) => (
+                    {/*
+                     * ==================================================
+                     * URUTKAN JADWAL
+                     *
+                     * 1. Senin -> Sabtu
+                     * 2. Jika hari sama -> jam mulai paling awal
+                     *
+                     * Contoh:
+                     * Senin 07:00
+                     * Selasa 09:30
+                     * Rabu 07:00
+                     * Rabu 13:50
+                     * Jumat 07:00
+                     * ==================================================
+                     */}
+                    {[...(selectedClass.jadwal || [])]
+                      .sort((a, b) => {
+                        const urutanHari: Record<
+                          string,
+                          number
+                        > = {
+                          Senin: 1,
+                          Selasa: 2,
+                          Rabu: 3,
+                          Kamis: 4,
+                          Jumat: 5,
+                          Sabtu: 6,
+                        };
 
-                        <div
-                          key={jadwal.id}
-                          className="flex items-center justify-between gap-3 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3.5 py-3"
-                        >
+                        /*
+                         * Urutkan berdasarkan hari terlebih dahulu.
+                         */
+                        const selisihHari =
+                          (urutanHari[a.hari] ?? 99) -
+                          (urutanHari[b.hari] ?? 99);
 
-                          <div>
+                        if (selisihHari !== 0) {
+                          return selisihHari;
+                        }
 
-                            <div className="font-semibold text-[12.5px] text-[#1E2A47]">
-                              {jadwal.hari}
+                        /*
+                         * Jika hari sama, ambil jam mulai
+                         * dari field waktu.
+                         *
+                         * Contoh:
+                         * "07:00 - 08:30" -> "07:00"
+                         * "13:50 - 15:15" -> "13:50"
+                         */
+                        const jamMulaiA =
+                          a.waktu
+                            .split('-')[0]
+                            .trim();
+
+                        const jamMulaiB =
+                          b.waktu
+                            .split('-')[0]
+                            .trim();
+
+                        return jamMulaiA.localeCompare(
+                          jamMulaiB
+                        );
+                      })
+                      .map(
+                        (jadwal) => (
+
+                          <div
+                            key={jadwal.id}
+                            className="flex items-center justify-between gap-3 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3.5 py-3"
+                          >
+
+                            <div>
+
+                              <div className="font-semibold text-[12.5px] text-[#1E2A47]">
+                                {jadwal.hari}
+                              </div>
+
+                              <div className="mt-0.5 text-[11.5px] text-[#6B7080]">
+                                {jadwal.waktu}
+                              </div>
+
                             </div>
 
-                            <div className="mt-0.5 text-[11.5px] text-[#6B7080]">
-                              {jadwal.waktu}
+
+                            <div className="rounded-full bg-[#E7ECF4] px-2.5 py-1 text-[10.5px] font-semibold text-[#1E2A47]">
+                              {jadwal.mata_pelajaran}
                             </div>
 
                           </div>
 
-
-                          <div className="rounded-full bg-[#E7ECF4] px-2.5 py-1 text-[10.5px] font-semibold text-[#1E2A47]">
-                            {jadwal.mata_pelajaran}
-                          </div>
-
-                        </div>
-
-                      )
-                    )}
+                        )
+                      )}
 
                   </div>
 
@@ -1794,6 +1871,7 @@ export default function KelasSaya() {
                 strokeWidth="1.8"
               >
                 <path d="M3 12a9 9 0 1 0 3-6.7" />
+
                 <path d="M3 4v6h6" />
               </svg>
 

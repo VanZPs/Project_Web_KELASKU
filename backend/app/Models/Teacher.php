@@ -35,7 +35,7 @@ class Teacher extends Model
         return $this->belongsToMany(
             Subject::class,
             'teacher_subject'
-        );
+        )->withPivot('is_primary');
     }
 
     /**

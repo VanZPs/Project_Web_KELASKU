@@ -1,5 +1,3 @@
-// frontend/src/App.tsx
-
 import {
   type ReactNode,
 } from 'react';
@@ -21,6 +19,8 @@ import {
 import KelasSaya from './pages/Guru/KelasSaya';
 
 import TambahKelas from './pages/Guru/TambahKelas';
+
+import EditProfile from './pages/Guru/EditProfile';
 
 
 /*
@@ -328,6 +328,20 @@ export default function App() {
               allowedRole="guru"
             >
               <TambahKelas />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* Edit Profile */}
+
+        <Route
+          path="/guru/profil"
+          element={
+            <ProtectedRoute
+              allowedRole="guru"
+            >
+              <EditProfile />
             </ProtectedRoute>
           }
         />

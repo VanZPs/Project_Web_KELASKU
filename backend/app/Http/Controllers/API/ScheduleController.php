@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\Classroom;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +15,6 @@ class ScheduleController extends Controller
      * ==========================================================
      * KONFIGURASI JAM PELAJARAN SEKOLAH
      * ==========================================================
-     *
-     * Setiap JP mempunyai waktu dan durasi yang sudah ditentukan.
      *
      * JP 1  : 07:00 - 07:45
      * JP 2  : 07:45 - 08:30
@@ -179,24 +178,6 @@ class ScheduleController extends Controller
      * ==========================================================
      * VALIDASI RENTANG WAKTU SESUAI SLOT SEKOLAH
      * ==========================================================
-     *
-     * Contoh valid:
-     *
-     * 07:00 - 07:45
-     * 07:00 - 08:30
-     * 07:00 - 09:15
-     * 09:30 - 10:15
-     * 09:30 - 11:45
-     * 12:30 - 14:30
-     * 13:50 - 15:15
-     *
-     * Contoh tidak valid:
-     *
-     * 07:15 - 08:00
-     * 09:15 - 09:30
-     * 11:00 - 12:30
-     * 11:00 - 13:10
-     * 12:30 - 14:00
      */
     private function isValidLessonRange(
         string $startTime,
@@ -253,16 +234,7 @@ class ScheduleController extends Controller
         }
 
         /*
-         * Pastikan tidak ada break yang berada
-         * di tengah-tengah rentang jadwal.
-         *
-         * Contoh:
-         *
-         * 07:00 - 09:15
-         * valid karena JP 1-3 tidak memiliki break.
-         *
-         * 07:00 - 10:15
-         * tidak valid karena melewati break 09:15-09:30.
+         * Pastikan tidak ada break di tengah rentang.
          */
         for (
             $index = $startIndex;
@@ -284,14 +256,6 @@ class ScheduleController extends Controller
      * ==========================================================
      * GET /api/schedules
      * ==========================================================
-     *
-     * Menampilkan jadwal.
-     *
-     * Guru:
-     * - Hanya melihat jadwal miliknya sendiri.
-     *
-     * Siswa:
-     * - Melihat jadwal berdasarkan kelasnya.
      */
     public function index(Request $request)
     {
@@ -336,6 +300,16 @@ class ScheduleController extends Controller
      * ==========================================================
      *
      * Menambahkan jadwal baru oleh guru.
+     *
+     * Kelas utama:
+     * - subject_id tidak dikirim.
+     * - Sistem menggunakan subject dengan is_primary = true.
+     *
+     * Kelas tambahan:
+     * - subject_id dikirim.
+     * - Subject boleh belum terdaftar pada teacher_subject.
+     * - Jika belum terdaftar, otomatis didaftarkan sebagai
+     *   subject tambahan dengan is_primary = false.
      */
     public function store(Request $request)
     {
@@ -412,51 +386,98 @@ class ScheduleController extends Controller
 
         /*
          * ------------------------------------------------------
-         * TENTUKAN MATA PELAJARAN
+         * TENTUKAN JENIS KELAS
+         * ------------------------------------------------------
+         *
+         * subject_id ada
+         * → Kelas tambahan.
+         *
+         * subject_id tidak ada
+         * → Kelas utama.
+         */
+        $isAdditionalClass =
+            !empty($validated['subject_id']);
+
+        /*
+         * subject_id yang nantinya digunakan
+         * pada tabel schedules.
+         */
+        $subjectId = null;
+
+        /*
+         * ------------------------------------------------------
+         * TENTUKAN SUBJECT
          * ------------------------------------------------------
          */
-        if (!empty($validated['subject_id'])) {
+        if ($isAdditionalClass) {
             /*
-             * Kelas tambahan.
-             *
-             * Pastikan mata pelajaran memang diajarkan
-             * oleh guru tersebut.
+             * --------------------------------------------------
+             * KELAS TAMBAHAN
+             * --------------------------------------------------
              */
-            $hasSubject = $teacher
-                ->subjects()
-                ->where(
-                    'subjects.id',
-                    $validated['subject_id']
-                )
-                ->exists();
+            $subjectId =
+                (int) $validated['subject_id'];
 
-            if (!$hasSubject) {
+            /*
+             * Cari apakah subject sudah terdaftar
+             * pada guru.
+             */
+            $teacherSubject =
+                $teacher
+                    ->subjects()
+                    ->where(
+                        'subjects.id',
+                        $subjectId
+                    )
+                    ->first();
+
+            /*
+             * Jika sudah terdaftar dan merupakan
+             * subject utama, tidak boleh digunakan
+             * sebagai kelas tambahan.
+             */
+            if (
+                $teacherSubject &&
+                (bool) $teacherSubject->pivot->is_primary
+            ) {
                 return response()->json([
                     'success' => false,
                     'message' =>
-                        'Mata pelajaran tersebut bukan mata pelajaran yang Anda ajarkan.',
+                        'Mata pelajaran utama tidak dapat digunakan sebagai kelas tambahan.',
                 ], 422);
             }
 
-            $subjectId =
-                (int) $validated['subject_id'];
+            /*
+             * Jika belum terdaftar, subject akan
+             * otomatis ditambahkan ke teacher_subject
+             * sebagai subject tambahan.
+             *
+             * Proses attach dilakukan nanti di dalam
+             * transaction agar dapat di-rollback jika
+             * pembuatan jadwal gagal.
+             */
         } else {
             /*
-             * Kelas utama.
+             * --------------------------------------------------
+             * KELAS UTAMA
+             * --------------------------------------------------
              *
-             * Untuk sementara mata pelajaran utama
-             * menggunakan subject dengan ID paling kecil.
+             * Cari subject yang benar-benar memiliki
+             * is_primary = true.
              */
             $mainSubject = $teacher
                 ->subjects()
-                ->orderBy('subjects.id')
+                ->wherePivot(
+                    'is_primary',
+                    true
+                )
                 ->first();
 
             if (!$mainSubject) {
                 return response()->json([
                     'success' => false,
                     'message' =>
-                        'Guru belum memiliki mata pelajaran.',
+                        'Guru belum memiliki mata pelajaran utama.',
                 ], 422);
             }
 
@@ -480,11 +501,14 @@ class ScheduleController extends Controller
 
         /*
          * ------------------------------------------------------
-         * KONFIGURASI BATAS WAKTU SEKOLAH
+         * BATAS WAKTU SEKOLAH
          * ------------------------------------------------------
          */
-        $schoolStart = $this->timeToMinutes('07:00');
-        $schoolEnd = $this->timeToMinutes('15:15');
+        $schoolStart =
+            $this->timeToMinutes('07:00');
+
+        $schoolEnd =
+            $this->timeToMinutes('15:15');
 
         /*
          * Menampung jadwal baru.
@@ -500,9 +524,14 @@ class ScheduleController extends Controller
          * ------------------------------------------------------
          */
         foreach ($validated['schedules'] as $schedule) {
-            $day = $schedule['day'];
-            $startTime = $schedule['start_time'];
-            $endTime = $schedule['end_time'];
+            $day =
+                $schedule['day'];
+
+            $startTime =
+                $schedule['start_time'];
+
+            $endTime =
+                $schedule['end_time'];
 
             /*
              * --------------------------------------------------
@@ -527,10 +556,14 @@ class ScheduleController extends Controller
              * --------------------------------------------------
              */
             $startMinutes =
-                $this->timeToMinutes($startTime);
+                $this->timeToMinutes(
+                    $startTime
+                );
 
             $endMinutes =
-                $this->timeToMinutes($endTime);
+                $this->timeToMinutes(
+                    $endTime
+                );
 
             /*
              * --------------------------------------------------
@@ -567,14 +600,6 @@ class ScheduleController extends Controller
              * --------------------------------------------------
              * VALIDASI SLOT RESMI SEKOLAH
              * --------------------------------------------------
-             *
-             * Ini merupakan perubahan utama.
-             *
-             * Backend tidak lagi menggunakan:
-             *
-             * duration % 45 === 0
-             *
-             * karena JP 7-9 hanya 40 menit.
              */
             if (!$this->isValidLessonRange(
                 $startTime,
@@ -593,7 +618,9 @@ class ScheduleController extends Controller
              * --------------------------------------------------
              */
             $startSlot =
-                $this->findLessonSlot($startTime);
+                $this->findLessonSlot(
+                    $startTime
+                );
 
             if (!$startSlot) {
                 return response()->json([
@@ -609,7 +636,9 @@ class ScheduleController extends Controller
              * --------------------------------------------------
              */
             $endSlot =
-                $this->findLessonSlotByEnd($endTime);
+                $this->findLessonSlotByEnd(
+                    $endTime
+                );
 
             if (!$endSlot) {
                 return response()->json([
@@ -688,6 +717,9 @@ class ScheduleController extends Controller
          * ------------------------------------------------------
          * SIMPAN KE DATABASE
          * ------------------------------------------------------
+         *
+         * Auto-register subject tambahan dan pembuatan
+         * jadwal berada dalam transaction yang sama.
          */
         try {
             $createdSchedules =
@@ -695,11 +727,114 @@ class ScheduleController extends Controller
                     function () use (
                         $validated,
                         $user,
+                        $teacher,
                         $subjectId,
+                        $isAdditionalClass,
                         $newSchedules
                     ) {
                         /*
-                         * Ambil semua jadwal yang berpotensi bentrok:
+                         * --------------------------------------------------
+                         * LOCK CLASSROOM
+                         * --------------------------------------------------
+                         *
+                         * Pastikan data kelas yang dipakai
+                         * masih valid ketika transaction berjalan.
+                         */
+                        $classroom =
+                            Classroom::query()
+                                ->lockForUpdate()
+                                ->find(
+                                    $validated[
+                                        'classroom_id'
+                                    ]
+                                );
+
+                        if (!$classroom) {
+                            throw ValidationException::withMessages([
+                                'classroom_id' =>
+                                    'Kelas yang dipilih tidak ditemukan.',
+                            ]);
+                        }
+
+                        /*
+                         * --------------------------------------------------
+                         * CEK KELAS DIARSIPKAN
+                         * --------------------------------------------------
+                         *
+                         * Kelas yang sudah diarsipkan tidak boleh
+                         * digunakan untuk membuat jadwal baru.
+                         *
+                         * Diasumsikan kolom yang digunakan adalah
+                         * "is_archived".
+                         */
+                        if (
+                            isset($classroom->is_archived) &&
+                            $classroom->is_archived
+                        ) {
+                            throw ValidationException::withMessages([
+                                'classroom_id' =>
+                                    'Kelas yang dipilih sudah diarsipkan dan tidak dapat digunakan untuk membuat jadwal baru.',
+                            ]);
+                        }
+
+                        /*
+                         * --------------------------------------------------
+                         * AUTO REGISTER SUBJECT TAMBAHAN
+                         * --------------------------------------------------
+                         *
+                         * Jika subject tambahan belum dimiliki guru,
+                         * otomatis daftarkan sebagai subject tambahan.
+                         */
+                        if ($isAdditionalClass) {
+                            $teacherSubject =
+                                $teacher
+                                    ->subjects()
+                                    ->where(
+                                        'subjects.id',
+                                        $subjectId
+                                    )
+                                    ->first();
+
+                            /*
+                             * Subject belum terdaftar.
+                             */
+                            if (!$teacherSubject) {
+                                $teacher
+                                    ->subjects()
+                                    ->attach(
+                                        $subjectId,
+                                        [
+                                            'is_primary' =>
+                                                false,
+                                        ]
+                                    );
+                            } else {
+                                /*
+                                 * Subject sudah terdaftar sebagai
+                                 * subject utama.
+                                 *
+                                 * Pengecekan ini dilakukan lagi
+                                 * di dalam transaction untuk
+                                 * menjaga konsistensi data.
+                                 */
+                                if (
+                                    (bool)
+                                        $teacherSubject
+                                            ->pivot
+                                            ->is_primary
+                                ) {
+                                    throw ValidationException::withMessages([
+                                        'subject_id' =>
+                                            'Mata pelajaran utama tidak dapat digunakan sebagai kelas tambahan.',
+                                    ]);
+                                }
+                            }
+                        }
+
+                        /*
+                         * --------------------------------------------------
+                         * AMBIL SEMUA JADWAL YANG BERPOTENSI BENTROK
+                         * --------------------------------------------------
                          *
                          * 1. Jadwal pada kelas yang sama.
                          * 2. Jadwal guru yang sama.
@@ -978,14 +1113,6 @@ class ScheduleController extends Controller
      * ==========================================================
      *
      * Mengambil seluruh jadwal untuk kalender guru.
-     *
-     * Digunakan frontend untuk membedakan:
-     *
-     * - Jadwal guru sendiri
-     *   → light blue
-     *
-     * - Jadwal guru lain
-     *   → merah
      */
     public function occupied(Request $request)
     {
@@ -1009,9 +1136,6 @@ class ScheduleController extends Controller
          * ------------------------------------------------------
          * AMBIL SEMUA JADWAL
          * ------------------------------------------------------
-         *
-         * Frontend membutuhkan semua jadwal agar dapat
-         * membedakan jadwal sendiri dan jadwal guru lain.
          */
         $schedules =
             Schedule::query()

@@ -102,6 +102,16 @@ Route::middleware('auth:sanctum')->group(
             '/guru/mata-pelajaran',
             [TeacherSubjectController::class, 'index']
         );
+        
+        Route::post(
+            '/guru/mata-pelajaran',
+            [TeacherSubjectController::class, 'store']
+        );
+
+        Route::delete(
+            '/guru/mata-pelajaran/{subject}',
+            [TeacherSubjectController::class, 'destroy']
+        );
 
         /*
          * ======================================================

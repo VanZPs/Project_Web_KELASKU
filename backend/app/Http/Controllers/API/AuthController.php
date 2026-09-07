@@ -104,7 +104,10 @@ class AuthController extends Controller
                 ]);
 
                 $teacher->subjects()->attach(
-                    $validated['subject_id']
+                    $validated['subject_id'],
+                    [
+                        'is_primary' => true,
+                    ]
                 );
             }
 

@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-
 import type {
   FormEvent,
   MouseEvent,
 } from 'react';
-
 import { useNavigate } from 'react-router-dom';
-
 import api from '../../api/axios';
-
 import {
   KelasSayaLayout,
 } from '../../layouts/Guru/KelasSayaLayout';
@@ -26,6 +22,19 @@ interface Classroom {
 }
 
 interface Subject {
+  id: number;
+  name: string;
+  is_primary: boolean;
+}
+
+/*
+ * Semua mata pelajaran yang tersedia
+ * di sekolah.
+ *
+ * Berbeda dengan Subject di atas yang
+ * hanya berisi mata pelajaran milik guru.
+ */
+interface SchoolSubject {
   id: number;
   name: string;
 }
@@ -181,12 +190,6 @@ const TIME_SLOTS: ScheduleSlot[] = [
   },
 ];
 
-/*
- * ============================================================
- * HELPER WAKTU
- * ============================================================
- */
-
 const timeToMinutes = (
   time: string
 ): number => {
@@ -205,6 +208,28 @@ const formatTime = (
   time: string
 ): string => {
   return time.slice(0, 5);
+};
+
+const normalizeBoolean = (
+  value: unknown
+): boolean => {
+  if (value === true) {
+    return true;
+  }
+
+  if (value === 1) {
+    return true;
+  }
+
+  if (value === '1') {
+    return true;
+  }
+
+  if (value === 'true') {
+    return true;
+  }
+
+  return false;
 };
 
 /*
@@ -355,10 +380,28 @@ export default function TambahKelas() {
     setClassrooms,
   ] = useState<Classroom[]>([]);
 
+  /*
+   * Mata pelajaran yang sudah
+   * terdaftar pada guru.
+   *
+   * Digunakan untuk mengetahui
+   * mata pelajaran utama.
+   */
   const [
     subjects,
     setSubjects,
   ] = useState<Subject[]>([]);
+
+  /*
+   * Semua mata pelajaran sekolah.
+   *
+   * Digunakan untuk dropdown
+   * kelas tambahan.
+   */
+  const [
+    allSubjects,
+    setAllSubjects,
+  ] = useState<SchoolSubject[]>([]);
 
   const [
     occupiedSchedules,
@@ -484,10 +527,12 @@ export default function TambahKelas() {
         const [
           classroomResponse,
           subjectResponse,
+          allSubjectResponse,
           occupiedResponse,
         ] = await Promise.all([
           api.get('/classrooms'),
           api.get('/guru/mata-pelajaran'),
+          api.get('/subjects'),
           api.get('/guru/jadwal-terpakai'),
         ]);
 
@@ -495,8 +540,62 @@ export default function TambahKelas() {
           classroomResponse.data.data || []
         );
 
+        /*
+         * ======================================================
+         * MATA PELAJARAN GURU
+         * ======================================================
+         *
+         * Digunakan untuk mengetahui
+         * mata pelajaran utama guru
+         * berdasarkan is_primary.
+         */
+
+        const loadedSubjects =
+          (subjectResponse.data.data || []).map(
+            (subject: {
+              id: number;
+              name: string;
+              is_primary?: unknown;
+            }) => ({
+              id: subject.id,
+              name: subject.name,
+              is_primary:
+                normalizeBoolean(
+                  subject.is_primary
+                ),
+            })
+          );
+
         setSubjects(
-          subjectResponse.data.data || []
+          loadedSubjects
+        );
+
+        /*
+         * ======================================================
+         * SEMUA MATA PELAJARAN SEKOLAH
+         * ======================================================
+         *
+         * Data ini digunakan untuk kelas
+         * tambahan.
+         *
+         * Dengan demikian guru tidak perlu
+         * menambahkan mata pelajaran melalui
+         * Edit Profile terlebih dahulu.
+         */
+
+        const loadedAllSubjects =
+          (allSubjectResponse.data.data || []).map(
+            (subject: {
+              id: number;
+              name: string;
+            }) => ({
+              id: subject.id,
+              name: subject.name,
+            })
+          );
+
+        setAllSubjects(
+          loadedAllSubjects
         );
 
         setOccupiedSchedules(
@@ -535,32 +634,53 @@ export default function TambahKelas() {
    * ============================================================
    * MATA PELAJARAN UTAMA
    * ============================================================
+   *
+   * Menggunakan is_primary.
+   *
+   * Tidak menggunakan subjects[0].
    */
 
   const mainSubject =
-    subjects.length > 0
-      ? subjects[0]
-      : null;
+    useMemo(() => {
+      return (
+        subjects.find(
+          (subject) =>
+            subject.is_primary === true
+        ) || null
+      );
+    }, [subjects]);
 
   /*
    * ============================================================
    * MATA PELAJARAN TAMBAHAN
    * ============================================================
+   *
+   * Sekarang mengambil dari seluruh
+   * mata pelajaran sekolah.
+   *
+   * Mata pelajaran utama dikeluarkan
+   * dari daftar.
+   *
+   * Contoh:
+   *
+   * PPKn       -> utama
+   * Matematika -> tampil
+   * IPA        -> tampil
+   * IPS        -> tampil
+   *
+   * Guru tidak perlu menambahkan
+   * Matematika/IPA/IPS melalui
+   * Edit Profile terlebih dahulu.
    */
 
   const additionalSubjects =
     useMemo(() => {
-      if (!mainSubject) {
-        return subjects;
-      }
-
-      return subjects.filter(
+      return allSubjects.filter(
         (subject) =>
-          subject.id !==
-          mainSubject.id
+          subject.id !== mainSubject?.id
       );
     }, [
-      subjects,
+      allSubjects,
       mainSubject,
     ]);
 
@@ -652,6 +772,7 @@ export default function TambahKelas() {
           /*
            * Jadwal milik guru sendiri.
            */
+
           if (
             Number(item.teacher_id) ===
             currentUserId
@@ -663,6 +784,7 @@ export default function TambahKelas() {
            * Jadwal guru lain hanya
            * memblokir kelas yang sama.
            */
+
           return (
             Number(item.classroom_id) ===
             selectedClassroomId
@@ -794,28 +916,6 @@ export default function TambahKelas() {
     );
   };
 
-  /*
-   * ============================================================
-   * GABUNGKAN SLOT MENJADI BLOK JADWAL
-   * ============================================================
-   *
-   * Contoh:
-   *
-   * JP 1 + 2 + 3
-   * => 07:00 - 09:15
-   *
-   * JP 3 + 4
-   * => 08:30 - 09:15
-   *    09:30 - 10:15
-   *
-   * JP 6 + 7
-   * => 11:00 - 11:45
-   *    12:30 - 13:10
-   *
-   * JP 7 + 8 + 9 + 10
-   * => 12:30 - 15:15
-   */
-
   const buildSchedules =
     (): ScheduleSelection[] => {
       const schedules: ScheduleSelection[] = [];
@@ -853,6 +953,7 @@ export default function TambahKelas() {
            * Hanya gabungkan slot yang
            * benar-benar bersebelahan.
            */
+
           if (
             areConsecutiveSlots(
               previousTime,
@@ -868,6 +969,7 @@ export default function TambahKelas() {
           /*
            * Akhiri blok sebelumnya.
            */
+
           const previousSlot =
             getTimeSlot(
               previousTime
@@ -886,6 +988,7 @@ export default function TambahKelas() {
           /*
            * Mulai blok baru.
            */
+
           blockStart =
             currentTime;
 
@@ -896,6 +999,7 @@ export default function TambahKelas() {
         /*
          * Simpan blok terakhir.
          */
+
         const lastSlot =
           getTimeSlot(
             previousTime
@@ -983,10 +1087,14 @@ export default function TambahKelas() {
    * ============================================================
    * SUBJECT AKTIF
    * ============================================================
+   *
+   * Cari dari semua mata pelajaran,
+   * bukan hanya mata pelajaran yang
+   * sudah terdaftar pada guru.
    */
 
   const selectedSubject =
-    subjects.find(
+    allSubjects.find(
       (subject) =>
         String(subject.id) ===
         selectedSubjectId
@@ -996,13 +1104,6 @@ export default function TambahKelas() {
    * ============================================================
    * VALIDASI RANGE JADWAL
    * ============================================================
-   *
-   * Validasi ini mengikuti aturan
-   * ScheduleController.php.
-   *
-   * Backend tetap menjadi validasi
-   * utama, tetapi frontend melakukan
-   * validasi lebih awal agar UX lebih baik.
    */
 
   const isValidScheduleRange = (
@@ -1055,6 +1156,7 @@ export default function TambahKelas() {
      * Pastikan tidak ada break
      * di dalam blok jadwal.
      */
+
     for (
       let index = startIndex;
       index <= endIndex;
@@ -1090,6 +1192,7 @@ export default function TambahKelas() {
     /*
      * Validasi kelas.
      */
+
     if (!classroomId) {
       setError(
         'Silakan pilih kelas terlebih dahulu.'
@@ -1101,6 +1204,7 @@ export default function TambahKelas() {
     /*
      * Pastikan kelas tersedia.
      */
+
     const classroom =
       classrooms.find(
         (item) =>
@@ -1119,6 +1223,7 @@ export default function TambahKelas() {
     /*
      * Kelas arsip tidak boleh digunakan.
      */
+
     if (classroom.archived) {
       setError(
         'Kelas tersebut sudah diarsipkan. Silakan pulihkan kelas terlebih dahulu.'
@@ -1130,6 +1235,7 @@ export default function TambahKelas() {
     /*
      * Pastikan kelas masih aktif.
      */
+
     const isActiveClassroom =
       activeClassrooms.some(
         (item) =>
@@ -1147,6 +1253,7 @@ export default function TambahKelas() {
     /*
      * Validasi mata pelajaran.
      */
+
     if (!selectedSubjectId) {
       setError(
         'Silakan pilih mata pelajaran.'
@@ -1158,6 +1265,7 @@ export default function TambahKelas() {
     /*
      * Validasi jadwal.
      */
+
     if (schedules.length === 0) {
       setError(
         'Silakan pilih minimal satu jam pelajaran.'
@@ -1170,6 +1278,7 @@ export default function TambahKelas() {
      * Pastikan setiap blok jadwal
      * mengikuti timetable resmi.
      */
+
     const hasInvalidSchedule =
       schedules.some(
         (schedule) =>
@@ -1189,6 +1298,7 @@ export default function TambahKelas() {
     /*
      * Cek ulang slot yang terpakai.
      */
+
     const hasOccupiedSelection =
       Object.entries(
         selectedSlots
@@ -1215,6 +1325,7 @@ export default function TambahKelas() {
      * Cek bentrok antar blok yang
      * dibentuk pada sisi frontend.
      */
+
     for (
       let i = 0;
       i < schedules.length;
@@ -1289,12 +1400,21 @@ export default function TambahKelas() {
 
       /*
        * Mode kelas tambahan:
-       * kirim subject_id yang dipilih.
+       *
+       * Kirim subject_id yang dipilih.
+       *
+       * Backend akan otomatis menambahkan
+       * subject tersebut ke teacher_subject
+       * dengan is_primary = false apabila
+       * belum terdaftar pada guru.
        *
        * Mode utama:
-       * backend akan menggunakan
-       * subject utama guru.
+       *
+       * Tidak mengirim subject_id.
+       * Backend akan menggunakan mata
+       * pelajaran utama guru.
        */
+
       if (isAdditionalClass) {
         payload.subject_id =
           Number(
