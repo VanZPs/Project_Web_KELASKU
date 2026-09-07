@@ -11,6 +11,280 @@ use Illuminate\Validation\ValidationException;
 class ScheduleController extends Controller
 {
     /**
+     * ==========================================================
+     * KONFIGURASI JAM PELAJARAN SEKOLAH
+     * ==========================================================
+     *
+     * Setiap JP mempunyai waktu dan durasi yang sudah ditentukan.
+     *
+     * JP 1  : 07:00 - 07:45
+     * JP 2  : 07:45 - 08:30
+     * JP 3  : 08:30 - 09:15
+     *
+     * Istirahat:
+     * 09:15 - 09:30
+     *
+     * JP 4  : 09:30 - 10:15
+     * JP 5  : 10:15 - 11:00
+     * JP 6  : 11:00 - 11:45
+     *
+     * Istirahat:
+     * 11:45 - 12:30
+     *
+     * JP 7  : 12:30 - 13:10
+     * JP 8  : 13:10 - 13:50
+     * JP 9  : 13:50 - 14:30
+     * JP 10 : 14:30 - 15:15
+     */
+    private function lessonSlots(): array
+    {
+        return [
+            [
+                'jp' => 1,
+                'start' => '07:00',
+                'end' => '07:45',
+                'duration' => 45,
+            ],
+            [
+                'jp' => 2,
+                'start' => '07:45',
+                'end' => '08:30',
+                'duration' => 45,
+            ],
+            [
+                'jp' => 3,
+                'start' => '08:30',
+                'end' => '09:15',
+                'duration' => 45,
+            ],
+
+            [
+                'break' => true,
+                'start' => '09:15',
+                'end' => '09:30',
+                'duration' => 15,
+            ],
+
+            [
+                'jp' => 4,
+                'start' => '09:30',
+                'end' => '10:15',
+                'duration' => 45,
+            ],
+            [
+                'jp' => 5,
+                'start' => '10:15',
+                'end' => '11:00',
+                'duration' => 45,
+            ],
+            [
+                'jp' => 6,
+                'start' => '11:00',
+                'end' => '11:45',
+                'duration' => 45,
+            ],
+
+            [
+                'break' => true,
+                'start' => '11:45',
+                'end' => '12:30',
+                'duration' => 45,
+            ],
+
+            [
+                'jp' => 7,
+                'start' => '12:30',
+                'end' => '13:10',
+                'duration' => 40,
+            ],
+            [
+                'jp' => 8,
+                'start' => '13:10',
+                'end' => '13:50',
+                'duration' => 40,
+            ],
+            [
+                'jp' => 9,
+                'start' => '13:50',
+                'end' => '14:30',
+                'duration' => 40,
+            ],
+            [
+                'jp' => 10,
+                'start' => '14:30',
+                'end' => '15:15',
+                'duration' => 45,
+            ],
+        ];
+    }
+
+    /**
+     * ==========================================================
+     * KONVERSI WAKTU KE MENIT
+     * ==========================================================
+     */
+    private function timeToMinutes(string $time): int
+    {
+        [$hour, $minute] = array_map(
+            'intval',
+            explode(':', substr($time, 0, 5))
+        );
+
+        return ($hour * 60) + $minute;
+    }
+
+    /**
+     * ==========================================================
+     * MENCARI SLOT JP BERDASARKAN WAKTU MULAI
+     * ==========================================================
+     */
+    private function findLessonSlot(string $startTime): ?array
+    {
+        $startTime = substr($startTime, 0, 5);
+
+        foreach ($this->lessonSlots() as $slot) {
+            if (
+                isset($slot['jp']) &&
+                $slot['start'] === $startTime
+            ) {
+                return $slot;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * ==========================================================
+     * MENCARI SLOT JP BERDASARKAN WAKTU SELESAI
+     * ==========================================================
+     */
+    private function findLessonSlotByEnd(string $endTime): ?array
+    {
+        $endTime = substr($endTime, 0, 5);
+
+        foreach ($this->lessonSlots() as $slot) {
+            if (
+                isset($slot['jp']) &&
+                $slot['end'] === $endTime
+            ) {
+                return $slot;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * ==========================================================
+     * VALIDASI RENTANG WAKTU SESUAI SLOT SEKOLAH
+     * ==========================================================
+     *
+     * Contoh valid:
+     *
+     * 07:00 - 07:45
+     * 07:00 - 08:30
+     * 07:00 - 09:15
+     * 09:30 - 10:15
+     * 09:30 - 11:45
+     * 12:30 - 14:30
+     * 13:50 - 15:15
+     *
+     * Contoh tidak valid:
+     *
+     * 07:15 - 08:00
+     * 09:15 - 09:30
+     * 11:00 - 12:30
+     * 11:00 - 13:10
+     * 12:30 - 14:00
+     */
+    private function isValidLessonRange(
+        string $startTime,
+        string $endTime
+    ): bool {
+        $slots = $this->lessonSlots();
+
+        $startTime = substr($startTime, 0, 5);
+        $endTime = substr($endTime, 0, 5);
+
+        /*
+         * Start harus merupakan awal JP.
+         */
+        $startIndex = null;
+
+        foreach ($slots as $index => $slot) {
+            if (
+                isset($slot['jp']) &&
+                $slot['start'] === $startTime
+            ) {
+                $startIndex = $index;
+                break;
+            }
+        }
+
+        if ($startIndex === null) {
+            return false;
+        }
+
+        /*
+         * End harus merupakan akhir JP.
+         */
+        $endIndex = null;
+
+        foreach ($slots as $index => $slot) {
+            if (
+                isset($slot['jp']) &&
+                $slot['end'] === $endTime
+            ) {
+                $endIndex = $index;
+                break;
+            }
+        }
+
+        if ($endIndex === null) {
+            return false;
+        }
+
+        /*
+         * End harus berada setelah start.
+         */
+        if ($endIndex <= $startIndex) {
+            return false;
+        }
+
+        /*
+         * Pastikan tidak ada break yang berada
+         * di tengah-tengah rentang jadwal.
+         *
+         * Contoh:
+         *
+         * 07:00 - 09:15
+         * valid karena JP 1-3 tidak memiliki break.
+         *
+         * 07:00 - 10:15
+         * tidak valid karena melewati break 09:15-09:30.
+         */
+        for (
+            $index = $startIndex;
+            $index <= $endIndex;
+            $index++
+        ) {
+            if (
+                isset($slots[$index]['break']) &&
+                $slots[$index]['break'] === true
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * ==========================================================
+     * GET /api/schedules
+     * ==========================================================
+     *
      * Menampilkan jadwal.
      *
      * Guru:
@@ -57,39 +331,20 @@ class ScheduleController extends Controller
     }
 
     /**
+     * ==========================================================
+     * POST /api/guru/kelas
+     * ==========================================================
+     *
      * Menambahkan jadwal baru oleh guru.
-     *
-     * Kelas utama:
-     * {
-     *     "classroom_id": 1,
-     *     "schedules": [
-     *         {
-     *             "day": "Senin",
-     *             "start_time": "07:00",
-     *             "end_time": "08:30"
-     *         }
-     *     ]
-     * }
-     *
-     * Kelas tambahan:
-     * {
-     *     "classroom_id": 1,
-     *     "subject_id": 2,
-     *     "schedules": [
-     *         {
-     *             "day": "Senin",
-     *             "start_time": "09:15",
-     *             "end_time": "10:45"
-     *         }
-     *     ]
-     * }
      */
     public function store(Request $request)
     {
         $user = $request->user();
 
         /*
-         * Hanya guru yang boleh membuat jadwal.
+         * ------------------------------------------------------
+         * VALIDASI ROLE
+         * ------------------------------------------------------
          */
         if ($user->role !== 'guru') {
             return response()->json([
@@ -100,7 +355,9 @@ class ScheduleController extends Controller
         }
 
         /*
-         * Pastikan data guru tersedia.
+         * ------------------------------------------------------
+         * PASTIKAN DATA GURU TERSEDIA
+         * ------------------------------------------------------
          */
         $teacher = $user->teacher;
 
@@ -113,7 +370,9 @@ class ScheduleController extends Controller
         }
 
         /*
-         * Validasi request.
+         * ------------------------------------------------------
+         * VALIDASI REQUEST
+         * ------------------------------------------------------
          */
         $validated = $request->validate([
             'classroom_id' => [
@@ -152,21 +411,16 @@ class ScheduleController extends Controller
         ]);
 
         /*
-         * ---------------------------------------------------------
-         * MENENTUKAN MATA PELAJARAN
-         * ---------------------------------------------------------
-         *
-         * Jika subject_id dikirim:
-         * → berarti kelas tambahan.
-         *
-         * Jika subject_id tidak dikirim:
-         * → gunakan mata pelajaran utama guru.
+         * ------------------------------------------------------
+         * TENTUKAN MATA PELAJARAN
+         * ------------------------------------------------------
          */
-
         if (!empty($validated['subject_id'])) {
             /*
-             * Pastikan mata pelajaran tersebut memang
-             * dimiliki/diajarkan oleh guru.
+             * Kelas tambahan.
+             *
+             * Pastikan mata pelajaran memang diajarkan
+             * oleh guru tersebut.
              */
             $hasSubject = $teacher
                 ->subjects()
@@ -188,12 +442,10 @@ class ScheduleController extends Controller
                 (int) $validated['subject_id'];
         } else {
             /*
-             * Untuk sementara, mata pelajaran utama
-             * menggunakan mata pelajaran pertama guru.
+             * Kelas utama.
              *
-             * Jika nanti database sudah mempunyai
-             * penanda mata pelajaran utama, bagian ini
-             * dapat diubah menggunakan is_primary.
+             * Untuk sementara mata pelajaran utama
+             * menggunakan subject dengan ID paling kecil.
              */
             $mainSubject = $teacher
                 ->subjects()
@@ -213,19 +465,10 @@ class ScheduleController extends Controller
         }
 
         /*
-         * ---------------------------------------------------------
-         * KONFIGURASI JAM SEKOLAH
-         * ---------------------------------------------------------
+         * ------------------------------------------------------
+         * DAFTAR HARI
+         * ------------------------------------------------------
          */
-
-        $schoolStart = 7 * 60;   // 07:00
-        $schoolEnd = 16 * 60;    // 16:00
-
-        /*
-         * 1 JP = 45 menit.
-         */
-        $lessonDuration = 45;
-
         $validDays = [
             'Senin',
             'Selasa',
@@ -236,30 +479,35 @@ class ScheduleController extends Controller
         ];
 
         /*
-         * Menampung jadwal yang dikirim dalam request.
+         * ------------------------------------------------------
+         * KONFIGURASI BATAS WAKTU SEKOLAH
+         * ------------------------------------------------------
+         */
+        $schoolStart = $this->timeToMinutes('07:00');
+        $schoolEnd = $this->timeToMinutes('15:15');
+
+        /*
+         * Menampung jadwal baru.
          *
          * Digunakan untuk mengecek bentrok
-         * antar jadwal dalam request yang sama.
+         * antar data dalam request yang sama.
          */
         $newSchedules = [];
 
         /*
-         * ---------------------------------------------------------
+         * ------------------------------------------------------
          * VALIDASI SETIAP JADWAL
-         * ---------------------------------------------------------
+         * ------------------------------------------------------
          */
         foreach ($validated['schedules'] as $schedule) {
-            $day =
-                $schedule['day'];
-
-            $startTime =
-                $schedule['start_time'];
-
-            $endTime =
-                $schedule['end_time'];
+            $day = $schedule['day'];
+            $startTime = $schedule['start_time'];
+            $endTime = $schedule['end_time'];
 
             /*
-             * Pastikan hari valid.
+             * --------------------------------------------------
+             * VALIDASI HARI
+             * --------------------------------------------------
              */
             if (!in_array(
                 $day,
@@ -274,38 +522,20 @@ class ScheduleController extends Controller
             }
 
             /*
-             * Konversi waktu mulai menjadi menit.
+             * --------------------------------------------------
+             * KONVERSI WAKTU
+             * --------------------------------------------------
              */
-            [
-                $startHour,
-                $startMinute
-            ] = array_map(
-                'intval',
-                explode(':', $startTime)
-            );
-
-            /*
-             * Konversi waktu selesai menjadi menit.
-             */
-            [
-                $endHour,
-                $endMinute
-            ] = array_map(
-                'intval',
-                explode(':', $endTime)
-            );
-
             $startMinutes =
-                ($startHour * 60) +
-                $startMinute;
+                $this->timeToMinutes($startTime);
 
             $endMinutes =
-                ($endHour * 60) +
-                $endMinute;
+                $this->timeToMinutes($endTime);
 
             /*
-             * Pastikan berada di antara
-             * 07:00 - 16:00.
+             * --------------------------------------------------
+             * BATAS WAKTU SEKOLAH
+             * --------------------------------------------------
              */
             if (
                 $startMinutes < $schoolStart ||
@@ -314,13 +544,14 @@ class ScheduleController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' =>
-                        'Jadwal harus berada antara pukul 07:00 sampai 16:00.',
+                        "Jadwal {$day} {$startTime} - {$endTime} berada di luar jam pelajaran sekolah.",
                 ], 422);
             }
 
             /*
-             * Waktu mulai harus lebih kecil
-             * daripada waktu selesai.
+             * --------------------------------------------------
+             * START < END
+             * --------------------------------------------------
              */
             if (
                 $startMinutes >= $endMinutes
@@ -333,34 +564,73 @@ class ScheduleController extends Controller
             }
 
             /*
-             * Hitung durasi.
+             * --------------------------------------------------
+             * VALIDASI SLOT RESMI SEKOLAH
+             * --------------------------------------------------
+             *
+             * Ini merupakan perubahan utama.
+             *
+             * Backend tidak lagi menggunakan:
+             *
+             * duration % 45 === 0
+             *
+             * karena JP 7-9 hanya 40 menit.
              */
-            $duration =
-                $endMinutes -
-                $startMinutes;
-
-            /*
-             * Durasi harus kelipatan 45 menit.
-             */
-            if (
-                $duration % $lessonDuration !== 0
-            ) {
+            if (!$this->isValidLessonRange(
+                $startTime,
+                $endTime
+            )) {
                 return response()->json([
                     'success' => false,
                     'message' =>
-                        "Durasi jadwal {$day} {$startTime} - {$endTime} harus merupakan kelipatan 45 menit.",
+                        "Waktu {$day} {$startTime} - {$endTime} tidak sesuai dengan slot jam pelajaran sekolah atau melewati waktu istirahat.",
                 ], 422);
             }
 
             /*
-             * -----------------------------------------------------
-             * CEK BENTROK ANTAR DATA REQUEST
-             * -----------------------------------------------------
+             * --------------------------------------------------
+             * CEK SLOT START
+             * --------------------------------------------------
+             */
+            $startSlot =
+                $this->findLessonSlot($startTime);
+
+            if (!$startSlot) {
+                return response()->json([
+                    'success' => false,
+                    'message' =>
+                        "Waktu mulai {$startTime} bukan merupakan awal jam pelajaran yang valid.",
+                ], 422);
+            }
+
+            /*
+             * --------------------------------------------------
+             * CEK SLOT END
+             * --------------------------------------------------
+             */
+            $endSlot =
+                $this->findLessonSlotByEnd($endTime);
+
+            if (!$endSlot) {
+                return response()->json([
+                    'success' => false,
+                    'message' =>
+                        "Waktu selesai {$endTime} bukan merupakan akhir jam pelajaran yang valid.",
+                ], 422);
+            }
+
+            /*
+             * --------------------------------------------------
+             * CEK BENTROK ANTAR REQUEST
+             * --------------------------------------------------
              */
             foreach (
                 $newSchedules
                 as $existingNewSchedule
             ) {
+                /*
+                 * Hari berbeda tidak mungkin bentrok.
+                 */
                 if (
                     $existingNewSchedule['day']
                     !== $day
@@ -391,6 +661,11 @@ class ScheduleController extends Controller
                 }
             }
 
+            /*
+             * --------------------------------------------------
+             * SIMPAN KE ARRAY TEMPORARY
+             * --------------------------------------------------
+             */
             $newSchedules[] = [
                 'day' =>
                     $day,
@@ -410,14 +685,9 @@ class ScheduleController extends Controller
         }
 
         /*
-         * ---------------------------------------------------------
+         * ------------------------------------------------------
          * SIMPAN KE DATABASE
-         * ---------------------------------------------------------
-         *
-         * Transaction digunakan supaya:
-         *
-         * - Jika semua berhasil → commit.
-         * - Jika satu gagal → rollback semuanya.
+         * ------------------------------------------------------
          */
         try {
             $createdSchedules =
@@ -429,10 +699,10 @@ class ScheduleController extends Controller
                         $newSchedules
                     ) {
                         /*
-                         * Ambil jadwal yang berpotensi bentrok:
+                         * Ambil semua jadwal yang berpotensi bentrok:
                          *
                          * 1. Jadwal pada kelas yang sama.
-                         * 2. Jadwal milik guru yang sama.
+                         * 2. Jadwal guru yang sama.
                          */
                         $existingSchedules =
                             Schedule::query()
@@ -465,9 +735,9 @@ class ScheduleController extends Controller
                                 ]);
 
                         /*
-                         * -------------------------------------------------
-                         * CEK SETIAP JADWAL BARU
-                         * -------------------------------------------------
+                         * --------------------------------------------------
+                         * CEK BENTROK DENGAN DATABASE
+                         * --------------------------------------------------
                          */
                         foreach (
                             $newSchedules
@@ -488,17 +758,12 @@ class ScheduleController extends Controller
                                     'day'
                                 ];
 
-                            /*
-                             * Bandingkan dengan jadwal
-                             * yang sudah ada di database.
-                             */
                             foreach (
                                 $existingSchedules
                                 as $existing
                             ) {
                                 /*
-                                 * Jadwal di hari berbeda
-                                 * tidak mungkin bentrok.
+                                 * Hari berbeda tidak bentrok.
                                  */
                                 if (
                                     $existing->day
@@ -508,7 +773,8 @@ class ScheduleController extends Controller
                                 }
 
                                 /*
-                                 * Ambil HH:MM dari waktu database.
+                                 * Normalisasi waktu database
+                                 * menjadi HH:MM.
                                  */
                                 $existingStartTime =
                                     substr(
@@ -527,51 +793,23 @@ class ScheduleController extends Controller
                                     );
 
                                 /*
-                                 * Konversi start time.
+                                 * Konversi waktu existing
+                                 * menjadi menit.
                                  */
-                                [
-                                    $existingStartHour,
-                                    $existingStartMinute
-                                ] = array_map(
-                                    'intval',
-                                    explode(
-                                        ':',
-                                        $existingStartTime
-                                    )
-                                );
-
-                                /*
-                                 * Konversi end time.
-                                 */
-                                [
-                                    $existingEndHour,
-                                    $existingEndMinute
-                                ] = array_map(
-                                    'intval',
-                                    explode(
-                                        ':',
-                                        $existingEndTime
-                                    )
-                                );
-
                                 $existingStart =
-                                    (
-                                        $existingStartHour
-                                        * 60
-                                    ) +
-                                    $existingStartMinute;
+                                    $this->timeToMinutes(
+                                        $existingStartTime
+                                    );
 
                                 $existingEnd =
-                                    (
-                                        $existingEndHour
-                                        * 60
-                                    ) +
-                                    $existingEndMinute;
+                                    $this->timeToMinutes(
+                                        $existingEndTime
+                                    );
 
                                 /*
-                                 * -------------------------------------------------
+                                 * --------------------------------------------------
                                  * RUMUS BENTROK
-                                 * -------------------------------------------------
+                                 * --------------------------------------------------
                                  */
                                 $overlap =
                                     $existingStart < $newEnd &&
@@ -582,9 +820,9 @@ class ScheduleController extends Controller
                                 }
 
                                 /*
-                                 * -------------------------------------------------
+                                 * --------------------------------------------------
                                  * BENTROK DENGAN GURU SENDIRI
-                                 * -------------------------------------------------
+                                 * --------------------------------------------------
                                  */
                                 if (
                                     (int)
@@ -600,12 +838,9 @@ class ScheduleController extends Controller
                                 }
 
                                 /*
-                                 * -------------------------------------------------
+                                 * --------------------------------------------------
                                  * BENTROK DENGAN KELAS
-                                 * -------------------------------------------------
-                                 *
-                                 * Guru lain tidak boleh menggunakan
-                                 * kelas yang sama pada waktu yang sama.
+                                 * --------------------------------------------------
                                  */
                                 if (
                                     (int)
@@ -625,9 +860,9 @@ class ScheduleController extends Controller
                         }
 
                         /*
-                         * -------------------------------------------------
+                         * --------------------------------------------------
                          * BUAT JADWAL
-                         * -------------------------------------------------
+                         * --------------------------------------------------
                          */
                         $created = [];
 
@@ -674,7 +909,9 @@ class ScheduleController extends Controller
                 );
 
             /*
-             * Load relasi untuk response.
+             * ------------------------------------------------------
+             * LOAD RELASI
+             * ------------------------------------------------------
              */
             $createdSchedules =
                 collect(
@@ -701,7 +938,7 @@ class ScheduleController extends Controller
             ValidationException $e
         ) {
             /*
-             * Error validasi yang memang kita buat sendiri.
+             * Error validasi yang kita buat sendiri.
              */
             return response()->json([
                 'success' => false,
@@ -736,14 +973,15 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Mengambil seluruh jadwal untuk kalender guru.
-     *
-     * Endpoint:
+     * ==========================================================
      * GET /api/guru/jadwal-terpakai
+     * ==========================================================
+     *
+     * Mengambil seluruh jadwal untuk kalender guru.
      *
      * Digunakan frontend untuk membedakan:
      *
-     * - Jadwal guru yang sedang login
+     * - Jadwal guru sendiri
      *   → light blue
      *
      * - Jadwal guru lain
@@ -754,8 +992,9 @@ class ScheduleController extends Controller
         $user = $request->user();
 
         /*
-         * Hanya guru yang membutuhkan
-         * informasi jadwal ini.
+         * ------------------------------------------------------
+         * VALIDASI ROLE
+         * ------------------------------------------------------
          */
         if ($user->role !== 'guru') {
             return response()->json([
@@ -767,16 +1006,12 @@ class ScheduleController extends Controller
         }
 
         /*
-         * Ambil SEMUA jadwal.
+         * ------------------------------------------------------
+         * AMBIL SEMUA JADWAL
+         * ------------------------------------------------------
          *
-         * Sebelumnya endpoint ini hanya mengambil
-         * jadwal guru lain menggunakan:
-         *
-         * where('teacher_id', '!=', $user->id)
-         *
-         * Sekarang semua jadwal dikirim agar frontend
-         * dapat membedakan jadwal milik sendiri dan
-         * jadwal guru lain.
+         * Frontend membutuhkan semua jadwal agar dapat
+         * membedakan jadwal sendiri dan jadwal guru lain.
          */
         $schedules =
             Schedule::query()
@@ -818,10 +1053,10 @@ class ScheduleController extends Controller
 
                             /*
                              * True:
-                             * jadwal milik guru yang sedang login.
+                             * jadwal guru yang sedang login.
                              *
                              * False:
-                             * jadwal milik guru lain.
+                             * jadwal guru lain.
                              */
                             'is_mine' =>
                                 (int) $schedule->teacher_id

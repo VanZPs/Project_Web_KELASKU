@@ -1,23 +1,23 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   FormEvent,
   MouseEvent,
 } from 'react';
 
-import {
-  useNavigate,
-} from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import api from '../../api/axios';
 
 import {
   KelasSayaLayout,
 } from '../../layouts/Guru/KelasSayaLayout';
+
+/*
+ * ============================================================
+ * INTERFACE
+ * ============================================================
+ */
 
 interface Classroom {
   id: number;
@@ -47,6 +47,33 @@ interface OccupiedSchedule {
   is_mine?: boolean;
 }
 
+/*
+ * ============================================================
+ * TIPE SLOT JADWAL
+ * ============================================================
+ */
+
+interface TimeSlot {
+  jp: number;
+  start: string;
+  end: string;
+  duration: number;
+}
+
+interface BreakSlot {
+  break: true;
+  start: string;
+  end: string;
+}
+
+type ScheduleSlot = TimeSlot | BreakSlot;
+
+/*
+ * ============================================================
+ * HARI
+ * ============================================================
+ */
+
 const DAYS = [
   'Senin',
   'Selasa',
@@ -56,42 +83,109 @@ const DAYS = [
   'Sabtu',
 ];
 
-const SCHOOL_START_HOUR = 7;
-const SCHOOL_END_HOUR = 16;
-const SLOT_MINUTES = 45;
+/*
+ * ============================================================
+ * JADWAL SEKOLAH RESMI
+ * ============================================================
+ *
+ * JP 1  : 07:00 - 07:45 = 45 menit
+ * JP 2  : 07:45 - 08:30 = 45 menit
+ * JP 3  : 08:30 - 09:15 = 45 menit
+ *
+ * Istirahat:
+ * 09:15 - 09:30 = 15 menit
+ *
+ * JP 4  : 09:30 - 10:15 = 45 menit
+ * JP 5  : 10:15 - 11:00 = 45 menit
+ * JP 6  : 11:00 - 11:45 = 45 menit
+ *
+ * Istirahat:
+ * 11:45 - 12:30 = 45 menit
+ *
+ * JP 7  : 12:30 - 13:10 = 40 menit
+ * JP 8  : 13:10 - 13:50 = 40 menit
+ * JP 9  : 13:50 - 14:30 = 40 menit
+ * JP 10 : 14:30 - 15:15 = 45 menit
+ */
 
-const generateTimeSlots = (): string[] => {
-  const slots: string[] = [];
+const TIME_SLOTS: ScheduleSlot[] = [
+  {
+    jp: 1,
+    start: '07:00',
+    end: '07:45',
+    duration: 45,
+  },
+  {
+    jp: 2,
+    start: '07:45',
+    end: '08:30',
+    duration: 45,
+  },
+  {
+    jp: 3,
+    start: '08:30',
+    end: '09:15',
+    duration: 45,
+  },
+  {
+    break: true,
+    start: '09:15',
+    end: '09:30',
+  },
+  {
+    jp: 4,
+    start: '09:30',
+    end: '10:15',
+    duration: 45,
+  },
+  {
+    jp: 5,
+    start: '10:15',
+    end: '11:00',
+    duration: 45,
+  },
+  {
+    jp: 6,
+    start: '11:00',
+    end: '11:45',
+    duration: 45,
+  },
+  {
+    break: true,
+    start: '11:45',
+    end: '12:30',
+  },
+  {
+    jp: 7,
+    start: '12:30',
+    end: '13:10',
+    duration: 40,
+  },
+  {
+    jp: 8,
+    start: '13:10',
+    end: '13:50',
+    duration: 40,
+  },
+  {
+    jp: 9,
+    start: '13:50',
+    end: '14:30',
+    duration: 40,
+  },
+  {
+    jp: 10,
+    start: '14:30',
+    end: '15:15',
+    duration: 45,
+  },
+];
 
-  const startMinutes =
-    SCHOOL_START_HOUR * 60;
-
-  const endMinutes =
-    SCHOOL_END_HOUR * 60;
-
-  for (
-    let minutes = startMinutes;
-    minutes < endMinutes;
-    minutes += SLOT_MINUTES
-  ) {
-    const hour =
-      Math.floor(minutes / 60);
-
-    const minute =
-      minutes % 60;
-
-    slots.push(
-      `${String(hour).padStart(2, '0')}:${String(
-        minute
-      ).padStart(2, '0')}`
-    );
-  }
-
-  return slots;
-};
-
-const TIME_SLOTS =
-  generateTimeSlots();
+/*
+ * ============================================================
+ * HELPER WAKTU
+ * ============================================================
+ */
 
 const timeToMinutes = (
   time: string
@@ -107,39 +201,151 @@ const timeToMinutes = (
   return hour * 60 + minute;
 };
 
-const minutesToTime = (
-  minutes: number
-): string => {
-  const hour =
-    Math.floor(minutes / 60);
-
-  const minute =
-    minutes % 60;
-
-  return `${String(hour).padStart(
-    2,
-    '0'
-  )}:${String(minute).padStart(
-    2,
-    '0'
-  )}`;
-};
-
-const getEndTime = (
-  startTime: string,
-  slotCount: number
-): string => {
-  return minutesToTime(
-    timeToMinutes(startTime) +
-      slotCount * SLOT_MINUTES
-  );
-};
-
 const formatTime = (
   time: string
 ): string => {
   return time.slice(0, 5);
 };
+
+/*
+ * ============================================================
+ * CARI SLOT BERDASARKAN JAM MULAI
+ * ============================================================
+ */
+
+const getTimeSlot = (
+  time: string
+): TimeSlot | null => {
+  const slot = TIME_SLOTS.find(
+    (item) =>
+      'jp' in item &&
+      item.start === formatTime(time)
+  );
+
+  return slot && 'jp' in slot
+    ? slot
+    : null;
+};
+
+/*
+ * ============================================================
+ * CARI SLOT BERDASARKAN JAM SELESAI
+ * ============================================================
+ */
+
+const getTimeSlotByEnd = (
+  time: string
+): TimeSlot | null => {
+  const slot = TIME_SLOTS.find(
+    (item) =>
+      'jp' in item &&
+      item.end === formatTime(time)
+  );
+
+  return slot && 'jp' in slot
+    ? slot
+    : null;
+};
+
+/*
+ * ============================================================
+ * CEK SLOT BERURUTAN
+ * ============================================================
+ *
+ * Slot hanya boleh digabung apabila:
+ *
+ * JP sebelumnya langsung diikuti JP berikutnya.
+ *
+ * Karena break berada di antara:
+ *
+ * JP 3 -> JP 4
+ * JP 6 -> JP 7
+ *
+ * maka keduanya tidak akan digabung.
+ */
+
+const areConsecutiveSlots = (
+  previousTime: string,
+  currentTime: string
+): boolean => {
+  const previousIndex =
+    TIME_SLOTS.findIndex(
+      (slot) =>
+        'jp' in slot &&
+        slot.start ===
+          formatTime(previousTime)
+    );
+
+  const currentIndex =
+    TIME_SLOTS.findIndex(
+      (slot) =>
+        'jp' in slot &&
+        slot.start ===
+          formatTime(currentTime)
+    );
+
+  if (
+    previousIndex === -1 ||
+    currentIndex === -1
+  ) {
+    return false;
+  }
+
+  if (
+    currentIndex !==
+    previousIndex + 1
+  ) {
+    return false;
+  }
+
+  const previousSlot =
+    TIME_SLOTS[previousIndex];
+
+  const currentSlot =
+    TIME_SLOTS[currentIndex];
+
+  return (
+    'jp' in previousSlot &&
+    'jp' in currentSlot
+  );
+};
+
+/*
+ * ============================================================
+ * FORMAT DURASI
+ * ============================================================
+ */
+
+const formatDuration = (
+  minutes: number
+): string => {
+  if (
+    minutes === 40 ||
+    minutes === 45
+  ) {
+    return `${minutes} menit`;
+  }
+
+  const hours =
+    Math.floor(minutes / 60);
+
+  const remaining =
+    minutes % 60;
+
+  if (hours > 0) {
+    return remaining > 0
+      ? `${hours} jam ${remaining} menit`
+      : `${hours} jam`;
+  }
+
+  return `${minutes} menit`;
+};
+
+/*
+ * ============================================================
+ * COMPONENT
+ * ============================================================
+ */
 
 export default function TambahKelas() {
   const navigate = useNavigate();
@@ -177,9 +383,7 @@ export default function TambahKelas() {
   const [
     selectedSlots,
     setSelectedSlots,
-  ] = useState<
-    Record<string, string[]>
-  >({});
+  ] = useState<Record<string, string[]>>({});
 
   const [
     loadingData,
@@ -236,9 +440,7 @@ export default function TambahKelas() {
 
   if (storedUser) {
     try {
-      user = JSON.parse(
-        storedUser
-      );
+      user = JSON.parse(storedUser);
     } catch {
       user = {
         name: 'Guru',
@@ -254,8 +456,10 @@ export default function TambahKelas() {
 
   const getInitials = (
     name: string
-  ) => {
-    if (!name) return 'GR';
+  ): string => {
+    if (!name) {
+      return 'GR';
+    }
 
     return name
       .split(' ')
@@ -272,53 +476,43 @@ export default function TambahKelas() {
    */
 
   useEffect(() => {
-    const loadData =
-      async () => {
-        try {
-          setLoadingData(true);
-          setError('');
+    const loadData = async () => {
+      try {
+        setLoadingData(true);
+        setError('');
 
-          const [
-            classroomResponse,
-            subjectResponse,
-            occupiedResponse,
-          ] = await Promise.all([
-            api.get('/classrooms'),
+        const [
+          classroomResponse,
+          subjectResponse,
+          occupiedResponse,
+        ] = await Promise.all([
+          api.get('/classrooms'),
+          api.get('/guru/mata-pelajaran'),
+          api.get('/guru/jadwal-terpakai'),
+        ]);
 
-            api.get(
-              '/guru/mata-pelajaran'
-            ),
+        setClassrooms(
+          classroomResponse.data.data || []
+        );
 
-            api.get(
-              '/guru/jadwal-terpakai'
-            ),
-          ]);
+        setSubjects(
+          subjectResponse.data.data || []
+        );
 
-          setClassrooms(
-            classroomResponse.data.data ||
-              []
-          );
+        setOccupiedSchedules(
+          occupiedResponse.data.data || []
+        );
+      } catch (err: any) {
+        console.error(err);
 
-          setSubjects(
-            subjectResponse.data.data ||
-              []
-          );
-
-          setOccupiedSchedules(
-            occupiedResponse.data.data ||
-              []
-          );
-        } catch (err: any) {
-          console.error(err);
-
-          setError(
-            err?.response?.data?.message ||
-              'Gagal memuat data kelas dan jadwal.'
-          );
-        } finally {
-          setLoadingData(false);
-        }
-      };
+        setError(
+          err?.response?.data?.message ||
+            'Gagal memuat data kelas dan jadwal.'
+        );
+      } finally {
+        setLoadingData(false);
+      }
+    };
 
     loadData();
   }, []);
@@ -327,9 +521,6 @@ export default function TambahKelas() {
    * ============================================================
    * KELAS AKTIF
    * ============================================================
-   *
-   * Kelas yang sudah diarsipkan tidak boleh digunakan
-   * untuk membuat jadwal baru.
    */
 
   const activeClassrooms =
@@ -398,32 +589,37 @@ export default function TambahKelas() {
 
   /*
    * ============================================================
-   * CARI JADWAL YANG BERTABRAKAN DENGAN SLOT
+   * CARI JADWAL TERPAKAI
    * ============================================================
    *
-   * Logika:
+   * Jadwal guru sendiri:
+   * selalu diblokir.
    *
-   * 1. Jadwal guru sendiri:
-   *    selalu dianggap terpakai.
-   *
-   * 2. Jadwal guru lain:
-   *    hanya dianggap terpakai apabila
-   *    berada di kelas yang sedang dipilih.
-   *
-   * Jadi guru lain yang sedang mengajar
-   * kelas berbeda pada jam yang sama tidak
-   * membuat slot menjadi merah.
+   * Jadwal guru lain:
+   * diblokir jika classroom_id sama
+   * dengan kelas yang dipilih.
    */
 
   const getOccupiedSchedule = (
     day: string,
     time: string
   ): OccupiedSchedule | null => {
+    const currentSlot =
+      getTimeSlot(time);
+
+    if (!currentSlot) {
+      return null;
+    }
+
     const slotStart =
-      timeToMinutes(time);
+      timeToMinutes(
+        currentSlot.start
+      );
 
     const slotEnd =
-      slotStart + SLOT_MINUTES;
+      timeToMinutes(
+        currentSlot.end
+      );
 
     const selectedClassroomId =
       Number(classroomId);
@@ -431,9 +627,7 @@ export default function TambahKelas() {
     const schedule =
       occupiedSchedules.find(
         (item) => {
-          if (
-            item.day !== day
-          ) {
+          if (item.day !== day) {
             return false;
           }
 
@@ -456,7 +650,7 @@ export default function TambahKelas() {
           }
 
           /*
-           * Jadwal guru sendiri.
+           * Jadwal milik guru sendiri.
            */
           if (
             Number(item.teacher_id) ===
@@ -466,10 +660,8 @@ export default function TambahKelas() {
           }
 
           /*
-           * Jadwal guru lain.
-           *
-           * Hanya blokir jika kelasnya
-           * sama dengan kelas yang dipilih.
+           * Jadwal guru lain hanya
+           * memblokir kelas yang sama.
            */
           return (
             Number(item.classroom_id) ===
@@ -483,7 +675,7 @@ export default function TambahKelas() {
 
   /*
    * ============================================================
-   * CEK JADWAL TERPAKAI
+   * STATUS SLOT
    * ============================================================
    */
 
@@ -499,12 +691,6 @@ export default function TambahKelas() {
     );
   };
 
-  /*
-   * ============================================================
-   * CEK JADWAL MILIK GURU SENDIRI
-   * ============================================================
-   */
-
   const isOwnSchedule = (
     day: string,
     time: string
@@ -515,21 +701,12 @@ export default function TambahKelas() {
         time
       );
 
-    if (!schedule) {
-      return false;
-    }
-
     return (
+      !!schedule &&
       Number(schedule.teacher_id) ===
-      currentUserId
+        currentUserId
     );
   };
-
-  /*
-   * ============================================================
-   * CEK JADWAL GURU LAIN
-   * ============================================================
-   */
 
   const isOtherTeacherSchedule = (
     day: string,
@@ -541,21 +718,12 @@ export default function TambahKelas() {
         time
       );
 
-    if (!schedule) {
-      return false;
-    }
-
     return (
+      !!schedule &&
       Number(schedule.teacher_id) !==
-      currentUserId
+        currentUserId
     );
   };
-
-  /*
-   * ============================================================
-   * CEK SLOT TERPILIH
-   * ============================================================
-   */
 
   const isSlotSelected = (
     day: string,
@@ -578,10 +746,6 @@ export default function TambahKelas() {
     day: string,
     time: string
   ) => {
-    /*
-     * Slot yang sudah terpakai
-     * tidak dapat dipilih.
-     */
     if (
       isSlotOccupied(
         day,
@@ -603,12 +767,15 @@ export default function TambahKelas() {
           current.includes(time);
 
         if (exists) {
-          return {
-            ...previous,
-            [day]: current.filter(
+          const updated =
+            current.filter(
               (item) =>
                 item !== time
-            ),
+            );
+
+          return {
+            ...previous,
+            [day]: updated,
           };
         }
 
@@ -631,20 +798,33 @@ export default function TambahKelas() {
    * ============================================================
    * GABUNGKAN SLOT MENJADI BLOK JADWAL
    * ============================================================
+   *
+   * Contoh:
+   *
+   * JP 1 + 2 + 3
+   * => 07:00 - 09:15
+   *
+   * JP 3 + 4
+   * => 08:30 - 09:15
+   *    09:30 - 10:15
+   *
+   * JP 6 + 7
+   * => 11:00 - 11:45
+   *    12:30 - 13:10
+   *
+   * JP 7 + 8 + 9 + 10
+   * => 12:30 - 15:15
    */
 
   const buildSchedules =
     (): ScheduleSelection[] => {
-      const schedules:
-        ScheduleSelection[] = [];
+      const schedules: ScheduleSelection[] = [];
 
       DAYS.forEach((day) => {
         const slots =
           selectedSlots[day] || [];
 
-        if (
-          slots.length === 0
-        ) {
+        if (slots.length === 0) {
           return;
         }
 
@@ -658,63 +838,78 @@ export default function TambahKelas() {
         let blockStart =
           sortedSlots[0];
 
-        let previousStart =
-          timeToMinutes(
-            sortedSlots[0]
-          );
+        let previousTime =
+          sortedSlots[0];
 
         for (
           let i = 1;
           i < sortedSlots.length;
           i++
         ) {
-          const currentStart =
-            timeToMinutes(
-              sortedSlots[i]
-            );
+          const currentTime =
+            sortedSlots[i];
 
-          const expectedNext =
-            previousStart +
-            SLOT_MINUTES;
-
+          /*
+           * Hanya gabungkan slot yang
+           * benar-benar bersebelahan.
+           */
           if (
-            currentStart ===
-            expectedNext
+            areConsecutiveSlots(
+              previousTime,
+              currentTime
+            )
           ) {
-            previousStart =
-              currentStart;
+            previousTime =
+              currentTime;
 
             continue;
           }
 
+          /*
+           * Akhiri blok sebelumnya.
+           */
+          const previousSlot =
+            getTimeSlot(
+              previousTime
+            );
+
+          if (previousSlot) {
+            schedules.push({
+              day,
+              start_time:
+                blockStart,
+              end_time:
+                previousSlot.end,
+            });
+          }
+
+          /*
+           * Mulai blok baru.
+           */
+          blockStart =
+            currentTime;
+
+          previousTime =
+            currentTime;
+        }
+
+        /*
+         * Simpan blok terakhir.
+         */
+        const lastSlot =
+          getTimeSlot(
+            previousTime
+          );
+
+        if (lastSlot) {
           schedules.push({
             day,
             start_time:
               blockStart,
             end_time:
-              minutesToTime(
-                previousStart +
-                  SLOT_MINUTES
-              ),
+              lastSlot.end,
           });
-
-          blockStart =
-            sortedSlots[i];
-
-          previousStart =
-            currentStart;
         }
-
-        schedules.push({
-          day,
-          start_time:
-            blockStart,
-          end_time:
-            minutesToTime(
-              previousStart +
-                SLOT_MINUTES
-            ),
-        });
       });
 
       return schedules;
@@ -722,7 +917,7 @@ export default function TambahKelas() {
 
   const schedules =
     useMemo(
-      () => buildSchedules(),
+      buildSchedules,
       [selectedSlots]
     );
 
@@ -738,6 +933,36 @@ export default function TambahKelas() {
     ).reduce(
       (total, slots) =>
         total + slots.length,
+      0
+    );
+
+  /*
+   * ============================================================
+   * TOTAL MENIT
+   * ============================================================
+   */
+
+  const selectedTotalMinutes =
+    Object.values(
+      selectedSlots
+    ).reduce(
+      (total, slots) =>
+        total +
+        slots.reduce(
+          (
+            slotTotal,
+            time
+          ) => {
+            const slot =
+              getTimeSlot(time);
+
+            return (
+              slotTotal +
+              (slot?.duration || 0)
+            );
+          },
+          0
+        ),
       0
     );
 
@@ -769,6 +994,87 @@ export default function TambahKelas() {
 
   /*
    * ============================================================
+   * VALIDASI RANGE JADWAL
+   * ============================================================
+   *
+   * Validasi ini mengikuti aturan
+   * ScheduleController.php.
+   *
+   * Backend tetap menjadi validasi
+   * utama, tetapi frontend melakukan
+   * validasi lebih awal agar UX lebih baik.
+   */
+
+  const isValidScheduleRange = (
+    schedule: ScheduleSelection
+  ): boolean => {
+    const startSlot =
+      getTimeSlot(
+        schedule.start_time
+      );
+
+    const endSlot =
+      getTimeSlotByEnd(
+        schedule.end_time
+      );
+
+    if (!startSlot || !endSlot) {
+      return false;
+    }
+
+    const startIndex =
+      TIME_SLOTS.findIndex(
+        (slot) =>
+          'jp' in slot &&
+          slot.start ===
+            startSlot.start
+      );
+
+    const endIndex =
+      TIME_SLOTS.findIndex(
+        (slot) =>
+          'jp' in slot &&
+          slot.end ===
+            endSlot.end
+      );
+
+    if (
+      startIndex === -1 ||
+      endIndex === -1
+    ) {
+      return false;
+    }
+
+    if (
+      endIndex <= startIndex
+    ) {
+      return false;
+    }
+
+    /*
+     * Pastikan tidak ada break
+     * di dalam blok jadwal.
+     */
+    for (
+      let index = startIndex;
+      index <= endIndex;
+      index++
+    ) {
+      const slot =
+        TIME_SLOTS[index];
+
+      if (
+        'break' in slot
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  /*
+   * ============================================================
    * SUBMIT
    * ============================================================
    */
@@ -793,7 +1099,7 @@ export default function TambahKelas() {
     }
 
     /*
-     * Pastikan kelas benar-benar tersedia.
+     * Pastikan kelas tersedia.
      */
     const classroom =
       classrooms.find(
@@ -822,14 +1128,12 @@ export default function TambahKelas() {
     }
 
     /*
-     * Pastikan kelas masih termasuk
-     * kelas aktif.
+     * Pastikan kelas masih aktif.
      */
     const isActiveClassroom =
       activeClassrooms.some(
         (item) =>
-          item.id ===
-          classroom.id
+          item.id === classroom.id
       );
 
     if (!isActiveClassroom) {
@@ -854,11 +1158,29 @@ export default function TambahKelas() {
     /*
      * Validasi jadwal.
      */
-    if (
-      schedules.length === 0
-    ) {
+    if (schedules.length === 0) {
       setError(
         'Silakan pilih minimal satu jam pelajaran.'
+      );
+
+      return;
+    }
+
+    /*
+     * Pastikan setiap blok jadwal
+     * mengikuti timetable resmi.
+     */
+    const hasInvalidSchedule =
+      schedules.some(
+        (schedule) =>
+          !isValidScheduleRange(
+            schedule
+          )
+      );
+
+    if (hasInvalidSchedule) {
+      setError(
+        'Terdapat blok jadwal yang tidak sesuai dengan jam pelajaran sekolah. Pastikan jadwal tidak melewati waktu istirahat.'
       );
 
       return;
@@ -881,14 +1203,75 @@ export default function TambahKelas() {
           )
       );
 
-    if (
-      hasOccupiedSelection
-    ) {
+    if (hasOccupiedSelection) {
       setError(
         'Ada jam yang sudah digunakan. Silakan pilih jam lain.'
       );
 
       return;
+    }
+
+    /*
+     * Cek bentrok antar blok yang
+     * dibentuk pada sisi frontend.
+     */
+    for (
+      let i = 0;
+      i < schedules.length;
+      i++
+    ) {
+      for (
+        let j = i + 1;
+        j < schedules.length;
+        j++
+      ) {
+        const first =
+          schedules[i];
+
+        const second =
+          schedules[j];
+
+        if (
+          first.day !==
+          second.day
+        ) {
+          continue;
+        }
+
+        const firstStart =
+          timeToMinutes(
+            first.start_time
+          );
+
+        const firstEnd =
+          timeToMinutes(
+            first.end_time
+          );
+
+        const secondStart =
+          timeToMinutes(
+            second.start_time
+          );
+
+        const secondEnd =
+          timeToMinutes(
+            second.end_time
+          );
+
+        const overlaps =
+          firstStart <
+            secondEnd &&
+          firstEnd >
+            secondStart;
+
+        if (overlaps) {
+          setError(
+            'Terdapat jadwal yang saling bertabrakan. Silakan periksa kembali pilihan Anda.'
+          );
+
+          return;
+        }
+      }
     }
 
     try {
@@ -901,20 +1284,18 @@ export default function TambahKelas() {
       } = {
         classroom_id:
           Number(classroomId),
-
         schedules,
       };
 
       /*
-       * Jika mode kelas tambahan,
+       * Mode kelas tambahan:
        * kirim subject_id yang dipilih.
        *
-       * Jika mode utama, backend akan
-       * menggunakan mata pelajaran utama.
+       * Mode utama:
+       * backend akan menggunakan
+       * subject utama guru.
        */
-      if (
-        isAdditionalClass
-      ) {
+      if (isAdditionalClass) {
         payload.subject_id =
           Number(
             selectedSubjectId
@@ -989,9 +1370,7 @@ export default function TambahKelas() {
 
   const handleOccupiedMouseLeave =
     () => {
-      setHoveredOccupiedSlot(
-        null
-      );
+      setHoveredOccupiedSlot(null);
     };
 
   /*
@@ -1068,7 +1447,8 @@ export default function TambahKelas() {
             </button>
 
             <div className="text-[13px] text-[#6B7080]">
-              Semester ganjil 2026/2027
+              Semester ganjil
+              2026/2027
             </div>
 
             <h1 className="mt-0.5 font-['Fraunces',serif] text-[27px] font-semibold tracking-[-0.01em] text-[#141C30]">
@@ -1076,8 +1456,9 @@ export default function TambahKelas() {
             </h1>
 
             <p className="mt-1 max-w-[680px] text-[13px] leading-6 text-[#777B88]">
-              Atur kelas dan jadwal mengajar
-              Anda untuk semester ini.
+              Atur kelas dan jadwal
+              mengajar Anda untuk
+              semester ini.
             </p>
           </div>
 
@@ -1110,11 +1491,17 @@ export default function TambahKelas() {
 
               <div className="font-['Fraunces',serif] text-[20px] font-semibold leading-none text-[#141C30]">
                 {selectedSlotCount}{' '}
-
                 <span className="font-sans text-[11px] font-semibold text-[#6B7080]">
                   JP
                 </span>
               </div>
+
+              {selectedSlotCount > 0 && (
+                <div className="mt-1 text-[9.5px] text-[#8A8F9D]">
+                  {selectedTotalMinutes}{' '}
+                  menit
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1163,9 +1550,7 @@ export default function TambahKelas() {
           </div>
         )}
 
-        <form
-          onSubmit={handleSubmit}
-        >
+        <form onSubmit={handleSubmit}>
 
           {/* =====================================================
               INFORMASI KELAS
@@ -1185,7 +1570,6 @@ export default function TambahKelas() {
                   strokeWidth="1.8"
                 >
                   <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v18H6.5A2.5 2.5 0 0 1 4 18.5v-13z" />
-
                   <path d="M8 7h8M8 11h8M8 15h5" />
                 </svg>
               </div>
@@ -1196,9 +1580,9 @@ export default function TambahKelas() {
                 </h2>
 
                 <p className="mt-0.5 text-[11.5px] leading-5 text-[#8A8F9D]">
-                  Tentukan kelas dan mata
-                  pelajaran yang akan Anda
-                  ajarkan.
+                  Tentukan kelas dan
+                  mata pelajaran yang
+                  akan Anda ajarkan.
                 </p>
               </div>
             </div>
@@ -1220,32 +1604,25 @@ export default function TambahKelas() {
                     </div>
 
                     <div className="mt-0.5 text-[10.5px] leading-4 text-[#8D5A50]">
-                      Semua kelas Anda saat ini
-                      berada di arsip. Pulihkan
-                      kelas terlebih dahulu melalui
-                      halaman Kelas Saya.
+                      Semua kelas Anda
+                      saat ini berada di
+                      arsip. Pulihkan
+                      kelas terlebih dahulu
+                      melalui halaman Kelas
+                      Saya.
                     </div>
                   </div>
                 ) : (
                   <div className="relative">
                     <select
-                      value={
-                        classroomId
-                      }
-                      onChange={(
-                        event
-                      ) => {
+                      value={classroomId}
+                      onChange={(event) => {
                         setClassroomId(
                           event.target.value
                         );
 
                         setError('');
                         setSuccess('');
-
-                        /*
-                         * Jadwal yang dipilih sebelumnya
-                         * tidak relevan jika kelas berubah.
-                         */
                         setSelectedSlots({});
                       }}
                       className="w-full appearance-none rounded-[10px] border border-[#DED7CC] bg-[#FCFAF5] px-3.5 py-3 pr-10 text-[13px] font-semibold text-[#23283A] outline-none transition hover:border-[#C9B99F] focus:border-[#1E2A47] focus:bg-white focus:ring-2 focus:ring-[#1E2A47]/10"
@@ -1255,9 +1632,7 @@ export default function TambahKelas() {
                       </option>
 
                       {activeClassrooms.map(
-                        (
-                          classroom
-                        ) => (
+                        (classroom) => (
                           <option
                             key={
                               classroom.id
@@ -1266,9 +1641,7 @@ export default function TambahKelas() {
                               classroom.id
                             }
                           >
-                            {
-                              classroom.name
-                            }
+                            {classroom.name}
                           </option>
                         )
                       )}
@@ -1315,7 +1688,6 @@ export default function TambahKelas() {
 
                 {!isAdditionalClass ? (
                   <div className="flex min-h-[48px] items-center justify-between gap-3 rounded-[10px] border border-[#D8E0EE] bg-[#F5F7FB] px-3.5 py-2.5">
-
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-semibold text-[#1E2A47]">
                         {mainSubject
@@ -1324,7 +1696,8 @@ export default function TambahKelas() {
                       </div>
 
                       <div className="mt-0.5 text-[10.5px] text-[#7D8699]">
-                        Mata pelajaran utama
+                        Mata pelajaran
+                        utama
                       </div>
                     </div>
 
@@ -1338,9 +1711,7 @@ export default function TambahKelas() {
                       value={
                         selectedSubjectId
                       }
-                      onChange={(
-                        event
-                      ) =>
+                      onChange={(event) =>
                         setSelectedSubjectId(
                           event.target.value
                         )
@@ -1352,9 +1723,7 @@ export default function TambahKelas() {
                       </option>
 
                       {additionalSubjects.map(
-                        (
-                          subject
-                        ) => (
+                        (subject) => (
                           <option
                             key={
                               subject.id
@@ -1363,9 +1732,7 @@ export default function TambahKelas() {
                               subject.id
                             }
                           >
-                            {
-                              subject.name
-                            }
+                            {subject.name}
                           </option>
                         )
                       )}
@@ -1416,7 +1783,6 @@ export default function TambahKelas() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-
                     <div
                       className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] ${
                         !isAdditionalClass
@@ -1433,16 +1799,15 @@ export default function TambahKelas() {
                         strokeWidth="1.8"
                       >
                         <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v18H6.5A2.5 2.5 0 0 1 4 18.5v-13z" />
-
                         <path d="M8 8h8M8 12h8M8 16h5" />
                       </svg>
                     </div>
 
                     <div className="min-w-0 flex-1">
-
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[12.5px] font-semibold text-[#303646]">
-                          Mata pelajaran utama
+                          Mata pelajaran
+                          utama
                         </span>
 
                         {!isAdditionalClass && (
@@ -1453,8 +1818,9 @@ export default function TambahKelas() {
                       </div>
 
                       <div className="mt-0.5 text-[10.5px] leading-4 text-[#8A8F9D]">
-                        Gunakan mata pelajaran
-                        utama Anda.
+                        Gunakan mata
+                        pelajaran utama
+                        Anda.
                       </div>
                     </div>
                   </div>
@@ -1479,7 +1845,6 @@ export default function TambahKelas() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-
                     <div
                       className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] ${
                         isAdditionalClass
@@ -1500,7 +1865,6 @@ export default function TambahKelas() {
                     </div>
 
                     <div className="min-w-0 flex-1">
-
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[12.5px] font-semibold text-[#303646]">
                           Kelas tambahan
@@ -1514,8 +1878,9 @@ export default function TambahKelas() {
                       </div>
 
                       <div className="mt-0.5 text-[10.5px] leading-4 text-[#8A8F9D]">
-                        Pilih mata pelajaran
-                        lain yang Anda ajarkan.
+                        Pilih mata
+                        pelajaran lain
+                        yang Anda ajarkan.
                       </div>
                     </div>
                   </div>
@@ -1525,13 +1890,13 @@ export default function TambahKelas() {
               {isAdditionalClass &&
                 selectedSubject && (
                   <div className="mt-3 flex items-center gap-2 rounded-[10px] border border-[#D8E0EE] bg-[#F5F7FB] px-3.5 py-2.5">
-
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E7ECF4] text-[11px] font-bold text-[#1E2A47]">
                       ✓
                     </span>
 
                     <div className="text-[11px] text-[#6E778A]">
-                      Mata pelajaran tambahan:{' '}
+                      Mata pelajaran
+                      tambahan:{' '}
 
                       <span className="font-semibold text-[#35415A]">
                         {
@@ -1553,9 +1918,7 @@ export default function TambahKelas() {
             {/* CALENDAR HEADER */}
 
             <div className="flex flex-col gap-4 border-b border-[#EDE5D9] p-5 sm:flex-row sm:items-center sm:justify-between">
-
               <div className="flex items-start gap-3">
-
                 <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-[#E7D3A8] text-[#7A5A20]">
                   <svg
                     width="17"
@@ -1585,14 +1948,14 @@ export default function TambahKelas() {
                   </h2>
 
                   <p className="mt-0.5 text-[11.5px] leading-5 text-[#8A8F9D]">
-                    Pilih satu atau beberapa slot
-                    waktu pada kalender.
+                    Pilih satu atau
+                    beberapa slot waktu
+                    pada kalender.
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 self-start rounded-[10px] border border-[#E3DACB] bg-[#FCFAF5] px-3 py-2 sm:self-auto">
-
                 <svg
                   width="15"
                   height="15"
@@ -1617,8 +1980,35 @@ export default function TambahKelas() {
                   </div>
 
                   <div className="text-[11.5px] font-semibold text-[#303646]">
-                    07:00 — 16:00
+                    07:00 — 15:15
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* INFO */}
+
+            <div className="mx-5 mt-5 rounded-[10px] border border-[#E3DACB] bg-[#F8F5EE] px-3.5 py-3">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#E7D3A8] text-[10px] font-bold text-[#7A5A20]">
+                  i
+                </span>
+
+                <div className="text-[10.5px] leading-5 text-[#737783]">
+                  <span className="font-semibold text-[#4C5260]">
+                    Jadwal sekolah:
+                  </span>{' '}
+
+                  JP 1–6 masing-masing
+                  45 menit, JP 7–9
+                  masing-masing 40 menit,
+                  dan JP 10 selama
+                  45 menit.
+
+                  <span className="ml-1">
+                    Slot istirahat tidak
+                    dapat dipilih.
+                  </span>
                 </div>
               </div>
             </div>
@@ -1626,9 +2016,7 @@ export default function TambahKelas() {
             {/* CALENDAR */}
 
             <div className="p-5">
-
               <div className="overflow-x-auto rounded-[12px] border border-[#E3DACB] bg-[#FCFAF5]">
-
                 <div className="min-w-[1030px]">
 
                   {/* HEADER */}
@@ -1640,24 +2028,17 @@ export default function TambahKelas() {
                         '122px repeat(6, minmax(0, 1fr))',
                     }}
                   >
-
-                    {/* HEADER WAKTU */}
-
                     <div className="flex items-center justify-center border-b border-r border-[#E3DACB] bg-[#F3EFE7] px-3 py-3">
-
                       <div className="text-center">
-
                         <div className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#8A8F9D]">
                           Jam Pelajaran
                         </div>
 
                         <div className="mt-0.5 text-[8.5px] text-[#A3A5AC]">
-                          1 JP = 45 menit
+                          10 JP
                         </div>
                       </div>
                     </div>
-
-                    {/* HEADER HARI */}
 
                     {DAYS.map(
                       (
@@ -1673,7 +2054,6 @@ export default function TambahKelas() {
                               : ''
                           }`}
                         >
-
                           <div className="text-[11.5px] font-semibold text-[#303646]">
                             {day}
                           </div>
@@ -1688,255 +2068,288 @@ export default function TambahKelas() {
 
                   {TIME_SLOTS.map(
                     (
-                      time,
-                      slotIndex
-                    ) => (
-                      <div
-                        key={time}
-                        className="grid"
-                        style={{
-                          gridTemplateColumns:
-                            '122px repeat(6, minmax(0, 1fr))',
-                        }}
-                      >
+                      slot
+                    ) => {
 
-                        {/* JAM */}
+                      /*
+                       * BREAK
+                       */
 
-                        <div className="flex min-h-[58px] items-center border-b border-r border-[#E8E1D6] bg-[#FBFAF7] px-3">
+                      if (
+                        'break' in
+                        slot
+                      ) {
+                        const breakDuration =
+                          timeToMinutes(
+                            slot.end
+                          ) -
+                          timeToMinutes(
+                            slot.start
+                          );
 
-                          <div className="flex w-full items-center gap-2">
+                        return (
+                          <div
+                            key={`break-${slot.start}`}
+                            className="grid border-b border-[#E3DACB]"
+                            style={{
+                              gridTemplateColumns:
+                                '122px repeat(6, minmax(0, 1fr))',
+                            }}
+                          >
+                            <div className="flex min-h-[40px] items-center justify-center border-r border-[#E3DACB] bg-[#F1ECE4] px-2">
+                              <div className="text-center">
+                                <div className="text-[9px] font-bold uppercase tracking-[0.06em] text-[#8A8F9D]">
+                                  Istirahat
+                                </div>
 
-                            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-[#E7ECF4] text-[10px] font-bold text-[#1E2A47]">
-                              {slotIndex + 1}
+                                <div className="mt-0.5 text-[8px] text-[#A3A5AC]">
+                                  {formatTime(
+                                    slot.start
+                                  )}{' '}
+                                  —{' '}
+                                  {formatTime(
+                                    slot.end
+                                  )}
+                                </div>
+                              </div>
                             </div>
 
-                            <div className="min-w-0">
+                            <div className="col-span-6 flex min-h-[40px] items-center justify-center bg-[#F7F3EB]">
+                              <div className="flex items-center gap-2 text-[9.5px] font-medium text-[#99958C]">
+                                <span className="h-1 w-1 rounded-full bg-[#B8B0A2]" />
 
-                              <div className="text-[10.5px] font-bold leading-4 text-[#555A68]">
-                                Jam ke-
-                                {slotIndex + 1}
-                              </div>
+                                Waktu istirahat
+                                ·{' '}
+                                {breakDuration}{' '}
+                                menit
 
-                              <div className="mt-0.5 whitespace-nowrap text-[9.5px] font-medium text-[#92959D]">
-                                {formatTime(
-                                  time
-                                )}{' '}
-                                —{' '}
-                                {getEndTime(
-                                  time,
-                                  1
-                                )}
+                                <span className="h-1 w-1 rounded-full bg-[#B8B0A2]" />
                               </div>
                             </div>
                           </div>
-                        </div>
+                        );
+                      }
 
-                        {/* DAYS */}
+                      /*
+                       * JP
+                       */
 
-                        {DAYS.map(
-                          (
-                            day,
-                            dayIndex
-                          ) => {
+                      return (
+                        <div
+                          key={slot.start}
+                          className="grid"
+                          style={{
+                            gridTemplateColumns:
+                              '122px repeat(6, minmax(0, 1fr))',
+                          }}
+                        >
+                          {/* JAM */}
 
-                            const selected =
-                              isSlotSelected(
-                                day,
-                                time
-                              );
-
-                            const occupied =
-                              isSlotOccupied(
-                                day,
-                                time
-                              );
-
-                            const ownSchedule =
-                              isOwnSchedule(
-                                day,
-                                time
-                              );
-
-                            const otherTeacher =
-                              isOtherTeacherSchedule(
-                                day,
-                                time
-                              );
-
-                            /*
-                             * Warna background.
-                             */
-                            let slotClass =
-                              'bg-[#FFFDF8] hover:bg-[#F5F1E9]';
-
-                            if (
-                              selected
-                            ) {
-                              slotClass =
-                                'bg-[#1E2A47] hover:bg-[#141C30]';
-                            } else if (
-                              ownSchedule
-                            ) {
-                              slotClass =
-                                'bg-[#DCEBFA]';
-                            } else if (
-                              otherTeacher
-                            ) {
-                              slotClass =
-                                'bg-[#F9D8D4]';
-                            }
-
-                            return (
-                              <div
-                                key={`${day}-${time}`}
-                                className={`relative border-b border-[#E8E1D6] ${
-                                  dayIndex <
-                                  DAYS.length - 1
-                                    ? 'border-r'
-                                    : ''
-                                }`}
-                              >
-
-                                <button
-                                  type="button"
-                                  disabled={
-                                    occupied
-                                  }
-                                  aria-label={
-                                    ownSchedule
-                                      ? `${day} ${time}, jadwal Anda`
-                                      : otherTeacher
-                                        ? `${day} ${time}, digunakan guru lain`
-                                        : `${day} ${time}`
-                                  }
-                                  aria-pressed={
-                                    selected
-                                  }
-                                  onClick={() =>
-                                    toggleSlot(
-                                      day,
-                                      time
-                                    )
-                                  }
-                                  onMouseEnter={(
-                                    event
-                                  ) => {
-
-                                    if (
-                                      occupied
-                                    ) {
-                                      handleOccupiedMouseEnter(
-                                        event,
-                                        day,
-                                        time
-                                      );
-                                    }
-                                  }}
-                                  onMouseMove={(
-                                    event
-                                  ) => {
-
-                                    if (
-                                      occupied
-                                    ) {
-                                      handleOccupiedMouseMove(
-                                        event
-                                      );
-                                    }
-                                  }}
-                                  onMouseLeave={() => {
-
-                                    if (
-                                      occupied
-                                    ) {
-                                      handleOccupiedMouseLeave();
-                                    }
-                                  }}
-                                  className={`group relative flex min-h-[58px] w-full items-center justify-center overflow-hidden transition-all ${slotClass}`}
-                                >
-
-                                  {/* =================================================
-                                      SLOT TERPILIH
-                                      ================================================= */}
-
-                                  {selected && (
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/15">
-
-                                      <svg
-                                        width="13"
-                                        height="13"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="white"
-                                        strokeWidth="2.5"
-                                      >
-                                        <path d="m5 12 4 4L19 6" />
-                                      </svg>
-
-                                    </span>
-                                  )}
-
-                                  {/* =================================================
-                                      JADWAL GURU SENDIRI
-                                      ================================================= */}
-
-                                  {!selected &&
-                                    ownSchedule && (
-                                      <div className="flex flex-col items-center gap-1">
-
-                                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#BFD9F2]">
-
-                                          <svg
-                                            width="12"
-                                            height="12"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="#356A9F"
-                                            strokeWidth="2.4"
-                                          >
-                                            <path d="m5 12 4 4L19 6" />
-                                          </svg>
-
-                                        </span>
-
-                                        <span className="text-[8.5px] font-bold uppercase tracking-[0.04em] text-[#356A9F]">
-                                          Jadwal Anda
-                                        </span>
-                                      </div>
-                                    )}
-
-                                  {/* =================================================
-                                      JADWAL GURU LAIN
-                                      ================================================= */}
-
-                                  {!selected &&
-                                    otherTeacher && (
-                                      <div className="flex flex-col items-center gap-1">
-
-                                        <span className="h-1.5 w-1.5 rounded-full bg-[#B94A48]" />
-
-                                        <span className="text-[8.5px] font-bold uppercase tracking-[0.04em] text-[#B94A48]">
-                                          Terpakai
-                                        </span>
-                                      </div>
-                                    )}
-
-                                  {/* =================================================
-                                      TERSEDIA
-                                      ================================================= */}
-
-                                  {!selected &&
-                                    !occupied && (
-                                      <span className="h-1.5 w-1.5 rounded-full bg-[#DDD5C8] opacity-0 transition-opacity group-hover:opacity-100" />
-                                    )}
-
-                                </button>
+                          <div className="flex min-h-[58px] items-center border-b border-r border-[#E8E1D6] bg-[#FBFAF7] px-3">
+                            <div className="flex w-full items-center gap-2">
+                              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[7px] bg-[#E7ECF4] text-[10px] font-bold text-[#1E2A47]">
+                                {slot.jp}
                               </div>
-                            );
-                          }
-                        )}
-                      </div>
-                    )
+
+                              <div className="min-w-0">
+                                <div className="text-[10.5px] font-bold leading-4 text-[#555A68]">
+                                  Jam ke-
+                                  {slot.jp}
+                                </div>
+
+                                <div className="mt-0.5 whitespace-nowrap text-[9.5px] font-medium text-[#92959D]">
+                                  {formatTime(
+                                    slot.start
+                                  )}{' '}
+                                  —{' '}
+                                  {formatTime(
+                                    slot.end
+                                  )}
+                                </div>
+
+                                <div className="mt-0.5 text-[8.5px] text-[#AAA8A2]">
+                                  {slot.duration}{' '}
+                                  menit
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* DAYS */}
+
+                          {DAYS.map(
+                            (
+                              day,
+                              dayIndex
+                            ) => {
+                              const selected =
+                                isSlotSelected(
+                                  day,
+                                  slot.start
+                                );
+
+                              const occupied =
+                                isSlotOccupied(
+                                  day,
+                                  slot.start
+                                );
+
+                              const ownSchedule =
+                                isOwnSchedule(
+                                  day,
+                                  slot.start
+                                );
+
+                              const otherTeacher =
+                                isOtherTeacherSchedule(
+                                  day,
+                                  slot.start
+                                );
+
+                              let slotClass =
+                                'bg-[#FFFDF8] hover:bg-[#F5F1E9]';
+
+                              if (
+                                selected
+                              ) {
+                                slotClass =
+                                  'bg-[#1E2A47] hover:bg-[#141C30]';
+                              } else if (
+                                ownSchedule
+                              ) {
+                                slotClass =
+                                  'bg-[#DCEBFA]';
+                              } else if (
+                                otherTeacher
+                              ) {
+                                slotClass =
+                                  'bg-[#F9D8D4]';
+                              }
+
+                              return (
+                                <div
+                                  key={`${day}-${slot.start}`}
+                                  className={`relative border-b border-[#E8E1D6] ${
+                                    dayIndex <
+                                    DAYS.length - 1
+                                      ? 'border-r'
+                                      : ''
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      occupied
+                                    }
+                                    aria-label={
+                                      ownSchedule
+                                        ? `${day} JP ${slot.jp}, jadwal Anda`
+                                        : otherTeacher
+                                          ? `${day} JP ${slot.jp}, digunakan guru lain`
+                                          : `${day} JP ${slot.jp}`
+                                    }
+                                    aria-pressed={
+                                      selected
+                                    }
+                                    onClick={() =>
+                                      toggleSlot(
+                                        day,
+                                        slot.start
+                                      )
+                                    }
+                                    onMouseEnter={(
+                                      event
+                                    ) => {
+                                      if (
+                                        occupied
+                                      ) {
+                                        handleOccupiedMouseEnter(
+                                          event,
+                                          day,
+                                          slot.start
+                                        );
+                                      }
+                                    }}
+                                    onMouseMove={(
+                                      event
+                                    ) => {
+                                      if (
+                                        occupied
+                                      ) {
+                                        handleOccupiedMouseMove(
+                                          event
+                                        );
+                                      }
+                                    }}
+                                    onMouseLeave={() => {
+                                      if (
+                                        occupied
+                                      ) {
+                                        handleOccupiedMouseLeave();
+                                      }
+                                    }}
+                                    className={`group relative flex min-h-[58px] w-full items-center justify-center overflow-hidden transition-all ${slotClass}`}
+                                  >
+                                    {selected && (
+                                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/15">
+                                        <svg
+                                          width="13"
+                                          height="13"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="white"
+                                          strokeWidth="2.5"
+                                        >
+                                          <path d="m5 12 4 4L19 6" />
+                                        </svg>
+                                      </span>
+                                    )}
+
+                                    {!selected &&
+                                      ownSchedule && (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#BFD9F2]">
+                                            <svg
+                                              width="12"
+                                              height="12"
+                                              viewBox="0 0 24 24"
+                                              fill="none"
+                                              stroke="#356A9F"
+                                              strokeWidth="2.4"
+                                            >
+                                              <path d="m5 12 4 4L19 6" />
+                                            </svg>
+                                          </span>
+
+                                          <span className="text-[8.5px] font-bold uppercase tracking-[0.04em] text-[#356A9F]">
+                                            Jadwal Anda
+                                          </span>
+                                        </div>
+                                      )}
+
+                                    {!selected &&
+                                      otherTeacher && (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-[#B94A48]" />
+
+                                          <span className="text-[8.5px] font-bold uppercase tracking-[0.04em] text-[#B94A48]">
+                                            Terpakai
+                                          </span>
+                                        </div>
+                                      )}
+
+                                    {!selected &&
+                                      !occupied && (
+                                        <span className="h-1.5 w-1.5 rounded-full bg-[#DDD5C8] opacity-0 transition-opacity group-hover:opacity-100" />
+                                      )}
+                                  </button>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      );
+                    }
                   )}
                 </div>
               </div>
@@ -1947,12 +2360,8 @@ export default function TambahKelas() {
 
               <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-[#EDE5D9] pb-4">
 
-                {/* DIPILIH */}
-
                 <div className="flex items-center gap-2 text-[10.5px] text-[#6B7080]">
-
                   <span className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-[#1E2A47]">
-
                     <svg
                       width="9"
                       height="9"
@@ -1963,46 +2372,37 @@ export default function TambahKelas() {
                     >
                       <path d="m5 12 4 4L19 6" />
                     </svg>
-
                   </span>
 
                   Jam dipilih
                 </div>
 
-                {/* JADWAL SENDIRI */}
-
                 <div className="flex items-center gap-2 text-[10.5px] text-[#6B7080]">
-
                   <span className="h-4 w-4 rounded-[4px] border border-[#BFD9F2] bg-[#DCEBFA]" />
-
                   Jadwal Anda
                 </div>
 
-                {/* JADWAL GURU LAIN */}
-
                 <div className="flex items-center gap-2 text-[10.5px] text-[#6B7080]">
-
                   <span className="h-4 w-4 rounded-[4px] border border-[#E8B8AA] bg-[#F9D8D4]" />
-
                   Digunakan guru lain
                 </div>
 
-                {/* TERSEDIA */}
-
                 <div className="flex items-center gap-2 text-[10.5px] text-[#6B7080]">
-
                   <span className="h-4 w-4 rounded-[4px] border border-[#E3DACB] bg-[#FFFDF8]" />
-
                   Tersedia
                 </div>
 
-                <div className="ml-auto flex items-center gap-2 rounded-full bg-[#F3EFE7] px-3 py-1.5 text-[10px] font-medium text-[#6B7080]">
+                <div className="flex items-center gap-2 text-[10.5px] text-[#6B7080]">
+                  <span className="h-4 w-4 rounded-[4px] border border-[#DDD5C8] bg-[#F1ECE4]" />
+                  Istirahat
+                </div>
 
+                <div className="ml-auto flex items-center gap-2 rounded-full bg-[#F3EFE7] px-3 py-1.5 text-[10px] font-medium text-[#6B7080]">
                   <span className="font-bold text-[#1E2A47]">
-                    1 JP
+                    10 JP
                   </span>
 
-                  = 45 menit
+                  = 07:00–15:15
                 </div>
               </div>
 
@@ -2013,9 +2413,7 @@ export default function TambahKelas() {
               <div className="mt-5">
 
                 <div className="mb-3 flex items-center justify-between">
-
                   <div>
-
                     <h3 className="font-['Fraunces',serif] text-[17px] font-semibold text-[#141C30]">
                       Ringkasan jadwal
                     </h3>
@@ -2031,9 +2429,7 @@ export default function TambahKelas() {
                   {selectedSlotCount >
                     0 && (
                     <div className="rounded-full bg-[#E7ECF4] px-3 py-1.5 text-[10.5px] font-bold text-[#1E2A47]">
-                      {
-                        selectedSlotCount
-                      }{' '}
+                      {selectedSlotCount}{' '}
                       JP
                     </div>
                   )}
@@ -2042,13 +2438,11 @@ export default function TambahKelas() {
                 {schedules.length >
                 0 ? (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-
                     {schedules.map(
                       (
                         schedule,
                         index
                       ) => {
-
                         const duration =
                           timeToMinutes(
                             schedule.end_time
@@ -2057,20 +2451,56 @@ export default function TambahKelas() {
                             schedule.start_time
                           );
 
+                        const selectedForDay =
+                          selectedSlots[
+                            schedule.day
+                          ] || [];
+
                         const periods =
-                          duration /
-                          SLOT_MINUTES;
+                          selectedForDay.filter(
+                            (time) => {
+                              const slot =
+                                getTimeSlot(
+                                  time
+                                );
+
+                              if (
+                                !slot
+                              ) {
+                                return false;
+                              }
+
+                              const slotStart =
+                                timeToMinutes(
+                                  slot.start
+                                );
+
+                              const scheduleStart =
+                                timeToMinutes(
+                                  schedule.start_time
+                                );
+
+                              const scheduleEnd =
+                                timeToMinutes(
+                                  schedule.end_time
+                                );
+
+                              return (
+                                slotStart >=
+                                  scheduleStart &&
+                                slotStart <
+                                  scheduleEnd
+                              );
+                            }
+                          ).length;
 
                         return (
                           <div
                             key={`${schedule.day}-${schedule.start_time}-${index}`}
                             className="group rounded-[11px] border border-[#E3DACB] bg-[#FCFAF5] p-3.5 transition hover:border-[#C9B99F] hover:bg-white"
                           >
-
                             <div className="flex items-start justify-between gap-3">
-
                               <div>
-
                                 <div className="text-[11.5px] font-bold text-[#303646]">
                                   {
                                     schedule.day
@@ -2078,7 +2508,6 @@ export default function TambahKelas() {
                                 </div>
 
                                 <div className="mt-1 flex items-center gap-1.5 text-[12px] font-semibold text-[#1E2A47]">
-
                                   <svg
                                     width="13"
                                     height="13"
@@ -2096,25 +2525,25 @@ export default function TambahKelas() {
                                     <path d="M12 7v5l3 2" />
                                   </svg>
 
-                                  {
-                                    formatTime(
-                                      schedule.start_time
-                                    )
-                                  }{' '}
+                                  {formatTime(
+                                    schedule.start_time
+                                  )}{' '}
                                   —{' '}
+                                  {formatTime(
+                                    schedule.end_time
+                                  )}
+                                </div>
 
-                                  {
-                                    formatTime(
-                                      schedule.end_time
-                                    )
-                                  }
+                                <div className="mt-1 text-[9.5px] text-[#92959D]">
+                                  Durasi{' '}
+                                  {formatDuration(
+                                    duration
+                                  )}
                                 </div>
                               </div>
 
                               <span className="rounded-[7px] bg-[#E7ECF4] px-2 py-1 text-[9.5px] font-bold text-[#1E2A47]">
-                                {
-                                  periods
-                                }{' '}
+                                {periods}{' '}
                                 JP
                               </span>
                             </div>
@@ -2125,9 +2554,7 @@ export default function TambahKelas() {
                   </div>
                 ) : (
                   <div className="rounded-[11px] border border-dashed border-[#D9CFBF] bg-[#FCFAF5] px-5 py-7 text-center">
-
                     <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-[#F1ECE4] text-[#8A8F9D]">
-
                       <svg
                         width="17"
                         height="17"
@@ -2152,8 +2579,9 @@ export default function TambahKelas() {
                     </div>
 
                     <div className="mt-0.5 text-[10.5px] text-[#9A9DA6]">
-                      Klik slot pada kalender
-                      untuk menambahkan jam
+                      Klik slot pada
+                      kalender untuk
+                      menambahkan jam
                       mengajar.
                     </div>
                   </div>
@@ -2165,7 +2593,6 @@ export default function TambahKelas() {
                   ================================================= */}
 
               <div className="mt-6 flex flex-col-reverse gap-2.5 border-t border-[#EDE5D9] pt-5 sm:flex-row sm:items-center sm:justify-end">
-
                 <button
                   type="button"
                   onClick={() =>
@@ -2232,13 +2659,13 @@ export default function TambahKelas() {
               : 'border border-[#E8B8AA] bg-[#FFFDF8]'
           }`}
           style={{
-            left: mousePosition.x,
-            top: mousePosition.y,
+            left:
+              mousePosition.x,
+            top:
+              mousePosition.y,
           }}
         >
-
           <div className="flex items-center gap-2">
-
             <span
               className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] ${
                 hoveredOccupiedSlot.type ===
@@ -2254,7 +2681,6 @@ export default function TambahKelas() {
             </span>
 
             <div>
-
               <div
                 className={`text-[11.5px] font-bold ${
                   hoveredOccupiedSlot.type ===

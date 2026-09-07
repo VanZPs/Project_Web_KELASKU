@@ -20,7 +20,6 @@ return new class extends Migration
             $table->rememberToken();
             $table->timestamps();
             $table->enum('role', ['guru', 'siswa', 'admin'])->default('siswa');
-            $table->string('nip_nis')->unique()->nullable(); // Untuk NIP Guru atau NIS Siswa
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
