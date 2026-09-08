@@ -15,7 +15,7 @@ class AuthController extends Controller
 {
     /**
      * Register user baru.
-     */ 
+     */
     public function register(Request $request)
     {
         $validated = $request->validate([
@@ -93,6 +93,7 @@ class AuthController extends Controller
                 'role' => $validated['role'],
             ]);
 
+
             /*
              * 2. Jika Guru
              */
@@ -111,6 +112,7 @@ class AuthController extends Controller
                 );
             }
 
+
             /*
              * 3. Jika Siswa
              */
@@ -125,8 +127,10 @@ class AuthController extends Controller
                 );
             }
 
+
             return $user;
         });
+
 
         /*
          * Load relasi agar response API langsung
@@ -138,10 +142,12 @@ class AuthController extends Controller
             'classrooms',
         ]);
 
+
         /*
          * Buat token Sanctum.
          */
         $token = $user->createToken('auth_token')->plainTextToken;
+
 
         return response()->json([
             'success' => true,
@@ -169,12 +175,16 @@ class AuthController extends Controller
             ],
         ]);
 
+
         if (!Auth::attempt($credentials)) {
+
             return response()->json([
                 'success' => false,
                 'message' => 'Email atau password salah.',
             ], 401);
+
         }
+
 
         $user = Auth::user();
 
@@ -187,6 +197,7 @@ class AuthController extends Controller
 
 
         $token = $user->createToken('auth_token')->plainTextToken;
+
 
         return response()->json([
             'success' => true,
@@ -204,6 +215,7 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()?->delete();
 
+
         return response()->json([
             'success' => true,
             'message' => 'Logout berhasil',
@@ -218,14 +230,78 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
+
         $user->load([
             'teacher.subjects',
             'student',
             'classrooms',
         ]);
 
+
         return response()->json([
             'success' => true,
+            'data' => $user,
+        ]);
+    }
+
+
+    /**
+     * Memperbarui nama user yang sedang login.
+     *
+     * Endpoint:
+     * PUT /api/me
+     */
+    public function updateProfile(Request $request)
+    {
+        /*
+         * Ambil user yang sedang login
+         * berdasarkan token Sanctum.
+         */
+        $user = $request->user();
+
+
+        /*
+         * Validasi nama.
+         */
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+        ]);
+
+
+        /*
+         * Hapus spasi berlebih di awal dan akhir
+         * sebelum disimpan ke database.
+         */
+        $name = trim($validated['name']);
+
+
+        /*
+         * Update nama user.
+         */
+        $user->update([
+            'name' => $name,
+        ]);
+
+
+        /*
+         * Load kembali relasi user agar response
+         * memiliki struktur data profile yang sama
+         * dengan endpoint /me.
+         */
+        $user->load([
+            'teacher.subjects',
+            'student',
+            'classrooms',
+        ]);
+
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Nama berhasil diperbarui.',
             'data' => $user,
         ]);
     }
@@ -237,6 +313,7 @@ class AuthController extends Controller
     public function stats(Request $request)
     {
         $user = $request->user();
+
 
         return response()->json([
             'success' => true,

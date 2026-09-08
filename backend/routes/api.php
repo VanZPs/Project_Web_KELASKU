@@ -94,15 +94,25 @@ Route::middleware('auth:sanctum')->group(
         );
 
         /*
+         * Memperbarui nama user yang sedang login
+         */
+        Route::put(
+            '/me',
+            [AuthController::class, 'updateProfile']
+        );
+
+
+        /*
          * ======================================================
          * GURU - MATA PELAJARAN
          * ======================================================
          */
+
         Route::get(
             '/guru/mata-pelajaran',
             [TeacherSubjectController::class, 'index']
         );
-        
+
         Route::post(
             '/guru/mata-pelajaran',
             [TeacherSubjectController::class, 'store']
@@ -112,6 +122,7 @@ Route::middleware('auth:sanctum')->group(
             '/guru/mata-pelajaran/{subject}',
             [TeacherSubjectController::class, 'destroy']
         );
+
 
         /*
          * ======================================================
@@ -135,21 +146,28 @@ Route::middleware('auth:sanctum')->group(
             [ScheduleController::class, 'store']
         );
 
+        /*
+         * Jadwal yang sudah digunakan.
+         */
         Route::get(
             '/guru/jadwal-terpakai',
             [ScheduleController::class, 'occupied']
         );
+
 
         /*
          * ======================================================
          * ARCHIVE CLASSROOM
          * ======================================================
          */
+
+        /*
+         * Mengarsipkan kelas.
+         */
         Route::patch(
             '/guru/kelas/{classroom}/arsip',
             [ClassroomController::class, 'archive']
         );
-
 
         /*
          * Memulihkan kelas dari arsip.

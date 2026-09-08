@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\Schedule;
 use App\Models\Subject;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class TeacherSubjectController extends Controller
 {
@@ -135,7 +137,9 @@ class TeacherSubjectController extends Controller
     /**
      * DELETE /api/guru/mata-pelajaran/{subject}
      *
-     * Menghapus mata pelajaran dari guru.
+     * Menghapus mata pelajaran tambahan dari guru
+     * beserta seluruh jadwal yang menggunakan
+     * mata pelajaran tersebut.
      */
     public function destroy(
         Request $request,
@@ -143,6 +147,11 @@ class TeacherSubjectController extends Controller
     ) {
         $user = $request->user();
 
+        /*
+         * ======================================================
+         * VALIDASI ROLE
+         * ======================================================
+         */
         if ($user->role !== 'guru') {
             return response()->json([
                 'success' => false,
@@ -151,6 +160,11 @@ class TeacherSubjectController extends Controller
             ], 403);
         }
 
+        /*
+         * ======================================================
+         * AMBIL DATA GURU
+         * ======================================================
+         */
         $teacher = $user->teacher;
 
         if (!$teacher) {
@@ -161,6 +175,14 @@ class TeacherSubjectController extends Controller
             ], 404);
         }
 
+        /*
+         * ======================================================
+         * CEK KEPEMILIKAN MATA PELAJARAN
+         *
+         * Memastikan mata pelajaran yang akan dihapus
+         * memang terdaftar pada guru yang sedang login.
+         * ======================================================
+         */
         $pivot = $teacher
             ->subjects()
             ->where('subjects.id', $subject->id)
@@ -174,6 +196,14 @@ class TeacherSubjectController extends Controller
             ], 404);
         }
 
+        /*
+         * ======================================================
+         * CEK MATA PELAJARAN UTAMA
+         *
+         * Mata pelajaran utama ditentukan oleh sekolah
+         * sehingga tidak boleh dihapus oleh guru.
+         * ======================================================
+         */
         if ((bool) $pivot->pivot->is_primary) {
             return response()->json([
                 'success' => false,
@@ -182,14 +212,31 @@ class TeacherSubjectController extends Controller
             ], 422);
         }
 
-        $teacher->subjects()->detach(
-            $subject->id
-        );
+        /*
+         * ======================================================
+         * HAPUS MATA PELAJARAN + JADWAL TERKAIT
+         * ======================================================
+         */
+        DB::transaction(function () use (
+            $teacher,
+            $user,
+            $subject
+        ) {
+            Schedule::where('teacher_id', $user->id)
+                ->where('subject_id', $subject->id)
+                ->delete();
+
+            /*
+             * Setelah seluruh jadwal terkait dihapus,
+             * lepaskan hubungan mata pelajaran dari guru.
+             */
+            $teacher->subjects()->detach($subject->id);
+        });
 
         return response()->json([
             'success' => true,
             'message' =>
-                'Mata pelajaran berhasil dihapus.',
+                'Mata pelajaran dan seluruh jadwal terkait berhasil dihapus.',
         ]);
     }
 }
