@@ -5,6 +5,7 @@ import {
 } from 'react';
 
 import { useNavigate } from 'react-router-dom';
+import { Archive } from 'lucide-react';
 
 import api from '../../api/axios';
 import { KelasSayaLayout } from '../../layouts/Guru/KelasSayaLayout';
@@ -185,6 +186,67 @@ export default function KelasSaya() {
       .join('')
       .substring(0, 2)
       .toUpperCase();
+  };
+
+  /*
+   * ==========================================================
+   * INITIAL KELAS
+   * ==========================================================
+   */
+  const getClassInitials = (name: string) => {
+    if (!name) {
+      return 'KL';
+    }
+
+    const normalizedName = name
+      .replace(/^kelas\s+/i, '')
+      .trim();
+
+    const parts = normalizedName
+      .split(/[\s-]+/)
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      return `${parts[0]}${parts[parts.length - 1]}`
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .substring(0, 4)
+        .toUpperCase();
+    }
+
+    return normalizedName
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .substring(0, 3)
+      .toUpperCase();
+  };
+
+  /*
+   * ==========================================================
+   * WARNA MATA PELAJARAN
+   *
+   * Warna ini digunakan bersama pada:
+   * 1. Card Daftar Kelas
+   * 2. Modal Detail Kelas
+   * 3. Jadwal mengajar pada modal
+   *
+   * Index 0 = kuning/oranye
+   * Index 1 = hijau
+   * Index berikutnya mengikuti pola yang sama.
+   * ==========================================================
+   */
+  const getMapelColor = (index: number) => {
+    if (index % 2 === 0) {
+      return {
+        background: '#FAEEDA',
+        text: '#633806',
+        dot: '#C68A2E',
+      };
+    }
+
+    return {
+      background: '#EAF3DE',
+      text: '#27500A',
+      dot: '#5A8A3A',
+    };
   };
 
   const namaGuru =
@@ -449,11 +511,13 @@ export default function KelasSaya() {
       >
         <div className="flex h-[60vh] items-center justify-center">
           <div className="text-center">
+
             <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#E3DACB] border-t-[#1E2A47]" />
 
             <div className="font-semibold text-[#1E2A47]">
               Memuat data kelas...
             </div>
+
           </div>
         </div>
       </KelasSayaLayout>
@@ -477,36 +541,36 @@ export default function KelasSaya() {
             HEADER
         ====================================================== */}
         <div className="mb-7">
+
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 
             <div>
-              {/* Label semester */}
+
               <div className="mb-2 flex items-center gap-2">
+
                 <span className="h-1.5 w-1.5 rounded-full bg-[#C49A5A]" />
 
                 <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8A806F]">
                   Semester Ganjil 2026/2027
                 </span>
+
               </div>
 
-              {/* Judul */}
               <h1 className="font-['Fraunces',serif] text-[32px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#141C30] sm:text-[36px]">
                 Kelas saya
               </h1>
 
-              {/* Deskripsi */}
               <p className="mt-2 max-w-[520px] text-[13px] leading-5 text-[#6B7080]">
                 Kelola kelas yang Anda ajar dan pantau aktivitas
                 pembelajaran dalam satu tempat.
               </p>
+
             </div>
 
-            {/* =================================================
-                HEADER ACTION
-            ================================================== */}
+            {/* HEADER ACTION */}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
 
-              {/* TOMBOL TAMBAH KELAS */}
+              {/* TAMBAH KELAS */}
               <button
                 type="button"
                 onClick={() =>
@@ -516,6 +580,7 @@ export default function KelasSaya() {
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-[12px] bg-[#1E2A47] px-4 py-3 text-[12px] font-semibold text-white shadow-[0_4px_16px_-10px_rgba(30,25,15,0.3)] transition-all hover:bg-[#293754] hover:shadow-[0_8px_20px_-10px_rgba(30,25,15,0.35)] active:scale-[0.98]"
               >
+
                 <svg
                   width="16"
                   height="16"
@@ -531,12 +596,14 @@ export default function KelasSaya() {
                 </svg>
 
                 Tambah kelas
+
               </button>
 
               {/* SEMESTER BADGE */}
               <div className="flex items-center gap-3 rounded-[12px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-3 shadow-[0_4px_16px_-10px_rgba(30,25,15,0.2)]">
 
                 <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[#F1E8D8] text-[#7A5A20]">
+
                   <svg
                     width="17"
                     height="17"
@@ -554,14 +621,14 @@ export default function KelasSaya() {
                     />
 
                     <path d="M16 2v4" />
-
                     <path d="M8 2v4" />
-
                     <path d="M3 10h18" />
                   </svg>
+
                 </div>
 
                 <div>
+
                   <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8C94]">
                     Tahun ajaran
                   </div>
@@ -569,6 +636,7 @@ export default function KelasSaya() {
                   <div className="mt-0.5 text-[12px] font-semibold text-[#1E2A47]">
                     2026/2027 · Ganjil
                   </div>
+
                 </div>
 
               </div>
@@ -576,13 +644,14 @@ export default function KelasSaya() {
             </div>
 
           </div>
-        </div>
 
+        </div>
 
         {/* =====================================================
             ERROR
         ====================================================== */}
         {error && (
+
           <div className="mb-5 flex items-start justify-between gap-4 rounded-[12px] border border-[#E8B8AA] bg-[#FFF4F0] px-4 py-3 text-[13px] text-[#AE5A3E]">
 
             <div>
@@ -608,8 +677,8 @@ export default function KelasSaya() {
             </button>
 
           </div>
-        )}
 
+        )}
 
         {/* =====================================================
             TOOLBAR
@@ -644,6 +713,7 @@ export default function KelasSaya() {
 
                 {tab === 'Arsip' &&
                   jumlahKelasArsip > 0 && (
+
                     <span
                       className={`ml-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full text-[10px] ${
                         activeTab === 'Arsip'
@@ -653,6 +723,7 @@ export default function KelasSaya() {
                     >
                       {jumlahKelasArsip}
                     </span>
+
                   )}
 
               </button>
@@ -660,7 +731,6 @@ export default function KelasSaya() {
             ))}
 
           </div>
-
 
           {/* FILTER + SEARCH */}
           <div className="flex flex-col items-stretch gap-2.5 md:flex-row md:items-center">
@@ -682,7 +752,6 @@ export default function KelasSaya() {
               </svg>
 
             </div>
-
 
             <div className="flex min-w-[220px] items-center gap-2 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] p-[9px_13px]">
 
@@ -722,7 +791,6 @@ export default function KelasSaya() {
 
         </div>
 
-
         {/* =====================================================
             STATISTIK
         ====================================================== */}
@@ -759,7 +827,6 @@ export default function KelasSaya() {
             </div>
 
           </div>
-
 
           {/* SISWA */}
           <div className="flex w-full items-center gap-[11px] lg:w-auto lg:border-r lg:border-[#E3DACB] lg:pr-[22px]">
@@ -800,7 +867,6 @@ export default function KelasSaya() {
 
           </div>
 
-
           {/* KEHADIRAN */}
           <div className="flex w-full items-center gap-[11px] lg:w-auto lg:border-r lg:border-[#E3DACB] lg:pr-[22px]">
 
@@ -835,7 +901,6 @@ export default function KelasSaya() {
 
           </div>
 
-
           {/* TUGAS */}
           <div className="flex w-full items-center gap-[11px] lg:w-auto">
 
@@ -856,6 +921,7 @@ export default function KelasSaya() {
                 <path d="M8 13h8" />
 
                 <path d="M8 17h5" />
+
               </svg>
 
             </div>
@@ -875,7 +941,6 @@ export default function KelasSaya() {
           </div>
 
         </div>
-
 
         {/* =====================================================
             JUDUL LIST
@@ -910,7 +975,6 @@ export default function KelasSaya() {
           </div>
 
         </div>
-
 
         {/* =====================================================
             EMPTY STATE
@@ -954,7 +1018,6 @@ export default function KelasSaya() {
 
             </div>
 
-
             <div className="font-semibold text-[#1E2A47]">
 
               {searchTerm
@@ -967,7 +1030,6 @@ export default function KelasSaya() {
 
             </div>
 
-
             <div className="mt-1 text-[13px] text-[#6B7080]">
 
               {searchTerm
@@ -978,11 +1040,9 @@ export default function KelasSaya() {
 
             </div>
 
-            {/* =================================================
-                TOMBOL TAMBAH KELAS - EMPTY STATE
-            ================================================== */}
             {!searchTerm &&
               activeTab === 'Semua kelas' && (
+
                 <button
                   type="button"
                   onClick={() =>
@@ -992,6 +1052,7 @@ export default function KelasSaya() {
                   }
                   className="mt-5 inline-flex items-center gap-2 rounded-[10px] bg-[#1E2A47] px-4 py-2.5 text-[12px] font-semibold text-white transition-all hover:bg-[#293754] active:scale-[0.98]"
                 >
+
                   <svg
                     width="15"
                     height="15"
@@ -1007,7 +1068,9 @@ export default function KelasSaya() {
                   </svg>
 
                   Tambah kelas
+
                 </button>
+
               )}
 
           </div>
@@ -1017,32 +1080,15 @@ export default function KelasSaya() {
           /* ===================================================
              CLASS CARDS
           ==================================================== */
-          <div className="grid grid-cols-1 gap-[14px] xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
 
             {filteredKelas.map(
               (kelas) => {
 
-                /*
-                 * Mata pelajaran utama yang
-                 * ditampilkan pada bagian atas card.
-                 */
                 const mataPelajaranUtama =
                   kelas.mata_pelajaran?.[0] ||
                   'Belum ada mata pelajaran';
 
-                /*
-                 * ==================================================
-                 * MATA PELAJARAN PADA BAGIAN BAWAH CARD
-                 *
-                 * Maksimal 2 mata pelajaran ditampilkan.
-                 *
-                 * Contoh:
-                 * 1 mapel -> PPKn
-                 * 2 mapel -> PPKn, Matematika
-                 * 3 mapel -> PPKn, Matematika +1 lainnya
-                 * 4 mapel -> PPKn, Matematika +2 lainnya
-                 * ==================================================
-                 */
                 const mataPelajaranTampil =
                   kelas.mata_pelajaran?.slice(
                     0,
@@ -1055,104 +1101,119 @@ export default function KelasSaya() {
                     0
                   );
 
+                const initialKelas =
+                  getClassInitials(
+                    kelas.nama
+                  );
+
                 return (
+
                   <div
                     key={kelas.id}
-                    className={`group rounded-[14px] border bg-[#FFFDF8] p-[18px] transition-all ${
+                    className={`group flex overflow-hidden rounded-[14px] border bg-white transition-all duration-200 ${
                       kelas.archived
-                        ? 'border-[#E3DACB] opacity-[0.9]'
-                        : 'border-[#E3DACB] hover:border-[#CFC4B3] hover:shadow-[0_8px_25px_-15px_rgba(30,25,15,0.25)]'
+                        ? 'border-[#E4DFD1] opacity-[0.92]'
+                        : 'border-[#E4DFD1] hover:-translate-y-[1px] hover:border-[#D6CCBC] hover:shadow-[0_12px_30px_-18px_rgba(30,25,15,0.35)]'
                     }`}
                   >
 
-                    {/* =========================================
-                        CARD HEADER
-                    ========================================== */}
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="w-[6px] flex-shrink-0 bg-[#C68A2E]" />
 
-                      <div className="min-w-0">
+                    <div className="min-w-0 flex-1 p-5 sm:px-[22px]">
 
-                        <div className="flex flex-wrap items-center gap-2">
+                      <div className="mb-[14px] flex items-start justify-between gap-3">
 
-                          <h3 className="font-['Fraunces',serif] text-[22px] font-semibold tracking-[-0.01em] text-[#141C30]">
-                            {kelas.nama}
-                          </h3>
+                        <div className="flex min-w-0 items-center gap-3">
 
-                          {kelas.archived && (
-                            <span className="rounded-full bg-[#F1ECE3] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#6B7080]">
-                              Diarsipkan
-                            </span>
-                          )}
+                          <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-[12px] bg-[#1B2A4A] font-['Georgia',serif] text-[17px] font-bold text-[#F0C879]">
+                            {initialKelas}
+                          </div>
+
+                          <div className="min-w-0">
+
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <h3 className="truncate font-['Georgia',serif] text-[19px] font-bold leading-[1.2] text-[#1B2A4A]">
+                                {kelas.nama}
+                              </h3>
+
+                              {kelas.archived && (
+                                <span className="rounded-full bg-[#F1ECE3] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#6B7080]">
+                                  Diarsipkan
+                                </span>
+                              )}
+
+                            </div>
+
+                            <p className="mt-[3px] truncate text-[13px] text-[#8A8574]">
+
+                              {mataPelajaranUtama}
+
+                              <span className="mx-1">
+                                ·
+                              </span>
+
+                              Semester ganjil
+
+                            </p>
+
+                          </div>
 
                         </div>
 
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedClass(
+                              kelas
+                            )
+                          }
+                          aria-label="Menu kelas"
+                          title="Lihat detail kelas"
+                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-[#8A8574] transition-colors hover:bg-[#F7F3EA] hover:text-[#1B2A4A]"
+                        >
 
-                        <div className="mt-1 text-[13px] font-semibold text-[#6B7080]">
-                          {mataPelajaranUtama}
-                        </div>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <circle
+                              cx="5"
+                              cy="12"
+                              r="1"
+                            />
+
+                            <circle
+                              cx="12"
+                              cy="12"
+                              r="1"
+                            />
+
+                            <circle
+                              cx="19"
+                              cy="12"
+                              r="1"
+                            />
+
+                          </svg>
+
+                        </button>
 
                       </div>
 
+                      <div className="mb-4 grid grid-cols-2 gap-2.5">
 
-                      {/* DETAIL BUTTON */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSelectedClass(
-                            kelas
-                          )
-                        }
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F5F1E9] hover:text-[#1E2A47]"
-                        title="Lihat detail kelas"
-                      >
+                        <div className="rounded-[10px] bg-[#F7F3EA] px-3 py-2.5">
 
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <circle
-                            cx="5"
-                            cy="12"
-                            r="1"
-                          />
-
-                          <circle
-                            cx="12"
-                            cy="12"
-                            r="1"
-                          />
-
-                          <circle
-                            cx="19"
-                            cy="12"
-                            r="1"
-                          />
-                        </svg>
-
-                      </button>
-
-                    </div>
-
-
-                    {/* =========================================
-                        STATISTIK CARD
-                    ========================================== */}
-                    <div className="mt-6 grid grid-cols-2 gap-4">
-
-                      {/* JUMLAH SISWA */}
-                      <div>
-
-                        <div className="flex items-center gap-2.5">
-
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] bg-[#E7D3A8] text-[#7A5A20]">
+                          <div className="mb-1 flex items-center gap-1.5 text-[12px] text-[#8A8574]">
 
                             <svg
-                              width="16"
-                              height="16"
+                              width="15"
+                              height="15"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -1169,38 +1230,27 @@ export default function KelasSaya() {
                               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
 
                               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+
                             </svg>
 
-                          </div>
-
-
-                          <div>
-
-                            <div className="text-[10px] uppercase tracking-[0.04em] text-[#8A8C94]">
-                              Jumlah siswa
-                            </div>
-
-                            <div className="mt-0.5 font-['Fraunces',serif] text-[20px] font-semibold leading-tight text-[#141C30]">
-                              {kelas.jumlah_siswa} siswa
-                            </div>
+                            Siswa
 
                           </div>
+
+                          <p className="m-0 font-['Georgia',serif] text-[17px] font-semibold text-[#1B2A4A]">
+                            {kelas.jumlah_siswa}{' '}
+                            orang
+                          </p>
 
                         </div>
 
-                      </div>
+                        <div className="rounded-[10px] bg-[#F7F3EA] px-3 py-2.5">
 
-
-                      {/* JUMLAH JADWAL */}
-                      <div>
-
-                        <div className="flex items-center gap-2.5">
-
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] bg-[#E7ECF4] text-[#1E2A47]">
+                          <div className="mb-1 flex items-center gap-1.5 text-[12px] text-[#8A8574]">
 
                             <svg
-                              width="16"
-                              height="16"
+                              width="15"
+                              height="15"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -1215,63 +1265,61 @@ export default function KelasSaya() {
                               />
 
                               <path d="M16 2v4" />
-
                               <path d="M8 2v4" />
-
                               <path d="M3 10h18" />
+
                             </svg>
 
-                          </div>
-
-
-                          <div>
-
-                            <div className="text-[10px] uppercase tracking-[0.04em] text-[#8A8C94]">
-                              Jumlah jadwal
-                            </div>
-
-                            <div className="mt-0.5 font-['Fraunces',serif] text-[20px] font-semibold leading-tight text-[#141C30]">
-                              {kelas.jumlah_jadwal} jadwal
-                            </div>
+                            Jadwal
 
                           </div>
+
+                          <p className="m-0 font-['Georgia',serif] text-[17px] font-semibold text-[#1B2A4A]">
+                            {kelas.jumlah_jadwal}{' '}
+                            sesi
+                          </p>
 
                         </div>
 
                       </div>
 
-                    </div>
-
-
-                    {/* =========================================
-                        MATA PELAJARAN
-                    ========================================== */}
-                    <div className="mt-6 border-t border-[#E3DACB] pt-4">
-
-                      <div className="text-[10px] uppercase tracking-[0.05em] text-[#8A8C94]">
-                        Mata pelajaran
-                      </div>
-
-
-                      <div className="mt-1.5 flex items-center gap-2">
+                      <div className="mb-[18px] flex min-h-[26px] flex-wrap items-center gap-1.5">
 
                         {mataPelajaranTampil.length > 0 ? (
 
                           <>
-                            <span className="text-[14px] font-semibold text-[#1E2A47]">
-                              {mataPelajaranTampil.join(', ')}
-                            </span>
+
+                            {mataPelajaranTampil.map(
+                              (mapel, index) => (
+
+                                <span
+                                  key={`${mapel}-${index}`}
+                                  className={`rounded-full px-[10px] py-1 text-[12px] ${
+                                    index === 0
+                                      ? 'bg-[#FAEEDA] text-[#633806]'
+                                      : 'bg-[#EAF3DE] text-[#27500A]'
+                                  }`}
+                                >
+                                  {mapel}
+                                </span>
+
+                              )
+                            )}
 
                             {jumlahMapelLainnya > 0 && (
-                              <span className="whitespace-nowrap text-[11px] text-[#6B7080]">
-                                +{jumlahMapelLainnya} lainnya
+
+                              <span className="rounded-full bg-[#F1ECE3] px-[10px] py-1 text-[11px] font-medium text-[#6B7080]">
+                                +{jumlahMapelLainnya}{' '}
+                                lainnya
                               </span>
+
                             )}
+
                           </>
 
                         ) : (
 
-                          <span className="text-[12px] text-[#6B7080]">
+                          <span className="text-[12px] text-[#8A8574]">
                             Belum ada mata pelajaran
                           </span>
 
@@ -1279,19 +1327,8 @@ export default function KelasSaya() {
 
                       </div>
 
-                    </div>
+                      <div className="flex items-center gap-2 border-t border-[#E4DFD1] pt-[14px]">
 
-
-                    {/* =========================================
-                        FOOTER / ACTION
-                    ========================================== */}
-                    <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#E3DACB] pt-4">
-
-                      <div className="flex items-center text-[11px] text-[#8A8C94]"></div>
-
-                      <div className="flex items-center gap-2">
-
-                        {/* DETAIL */}
                         <button
                           type="button"
                           onClick={() =>
@@ -1299,14 +1336,29 @@ export default function KelasSaya() {
                               kelas
                             )
                           }
-                          className="rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-3 py-2 text-[11.5px] font-semibold text-[#1E2A47] transition hover:bg-[#F5F1E9]"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#1B2A4A] px-3 py-[9px] text-[14px] font-medium text-[#F7F3EA] transition-all hover:bg-[#26395F] active:scale-[0.98]"
                         >
+
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M5 12h14" />
+                            <path d="m13 6 6 6-6 6" />
+                          </svg>
+
                           Lihat kelas
+
                         </button>
 
-
-                        {/* ARSIP */}
                         {!kelas.archived && (
+
                           <button
                             type="button"
                             onClick={() =>
@@ -1314,34 +1366,22 @@ export default function KelasSaya() {
                                 kelas
                               )
                             }
-                            className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-3 py-2 text-[11.5px] font-semibold text-[#6B7080] transition hover:border-[#E8B8AA] hover:bg-[#FFF4F0] hover:text-[#B94A48]"
+                            aria-label="Arsipkan kelas"
+                            title="Arsipkan kelas"
+                            className="group/archive flex h-[38px] w-[42px] flex-shrink-0 items-center justify-center rounded-[9px] border border-[#E4DFD1] bg-white text-[#8A8574] transition-all hover:border-[#E7D3A8] hover:bg-[#FAEEDA] hover:text-[#7A5A20]"
                           >
 
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                            >
-                              <path d="M3 6h18" />
-
-                              <path d="M5 6l1 15h12l1-15" />
-
-                              <path d="M9 6V3h6v3" />
-
-                              <path d="M9 11h6" />
-                            </svg>
-
-                            Arsip
+                            <Archive
+                              size={16}
+                              strokeWidth={1.8}
+                            />
 
                           </button>
+
                         )}
 
-
-                        {/* PULIHKAN */}
                         {kelas.archived && (
+
                           <button
                             type="button"
                             onClick={() =>
@@ -1349,12 +1389,14 @@ export default function KelasSaya() {
                                 kelas
                               )
                             }
-                            className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#BFD6C5] bg-[#F2F8F3] px-3 py-2 text-[11.5px] font-semibold text-[#4C7A5E] transition hover:bg-[#E7F0EA]"
+                            aria-label="Pulihkan kelas"
+                            title="Pulihkan kelas"
+                            className="flex h-[38px] w-[42px] flex-shrink-0 items-center justify-center rounded-[9px] border border-[#BFD6C5] bg-[#F2F8F3] text-[#4C7A5E] transition-all hover:bg-[#E7F0EA]"
                           >
 
                             <svg
-                              width="14"
-                              height="14"
+                              width="16"
+                              height="16"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -1363,11 +1405,11 @@ export default function KelasSaya() {
                               <path d="M3 12a9 9 0 1 0 3-6.7" />
 
                               <path d="M3 4v6h6" />
+
                             </svg>
 
-                            Pulihkan
-
                           </button>
+
                         )}
 
                       </div>
@@ -1375,6 +1417,7 @@ export default function KelasSaya() {
                     </div>
 
                   </div>
+
                 );
               }
             )}
@@ -1383,9 +1426,7 @@ export default function KelasSaya() {
 
         )}
 
-
       </div>
-
 
       {/* =======================================================
           MODAL DETAIL KELAS
@@ -1393,183 +1434,226 @@ export default function KelasSaya() {
       {selectedClass && (
 
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141C30]/40 px-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171A21]/40 px-4 py-5 backdrop-blur-[3px]"
           onClick={() =>
             setSelectedClass(null)
           }
         >
 
           <div
-            className="max-h-[85vh] w-full max-w-[680px] overflow-hidden rounded-[16px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_20px_60px_-20px_rgba(20,28,48,0.35)]"
+            className="flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[22px] border border-[#EEF0F3] bg-white shadow-[0_24px_60px_-18px_rgba(23,26,33,0.28),0_2px_8px_rgba(23,26,33,0.04)]"
             onClick={(event) =>
               event.stopPropagation()
             }
           >
 
-            {/* HEADER */}
-            <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4">
-
-              <div>
-
-                <div className="text-[11px] uppercase tracking-[0.08em] text-[#8A8C94]">
-                  Detail kelas
-                </div>
-
-                <h2 className="mt-0.5 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
-                  {selectedClass.nama}
-                </h2>
-
-                <div className="mt-1 text-[12px] text-[#6B7080]">
-
-                  {selectedClass.mata_pelajaran.length > 0
-                    ? selectedClass.mata_pelajaran.join(
-                        ' • '
-                      )
-                    : 'Belum ada mata pelajaran'}
-
-                </div>
-
-              </div>
-
+            {/* =================================================
+                MODAL HEADER
+            ================================================== */}
+            <div className="relative flex-shrink-0 px-[26px] pb-5 pt-[26px]">
 
               <button
                 type="button"
                 onClick={() =>
                   setSelectedClass(null)
                 }
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6B7080] hover:bg-[#F5F1E9]"
+                aria-label="Tutup detail kelas"
+                className="absolute right-[22px] top-[22px] flex h-8 w-8 items-center justify-center rounded-full bg-[#F7F8FA] text-[#737985] transition-colors hover:bg-[#ECEEF2] hover:text-[#252932]"
               >
-                ✕
+
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6L6 18" />
+                </svg>
+
               </button>
 
-            </div>
+              <div className="pr-12">
 
-
-            {/* CONTENT */}
-            <div className="max-h-[calc(85vh-80px)] overflow-y-auto p-5">
-
-              {/* SUMMARY */}
-              <div className="grid grid-cols-2 gap-3">
-
-                <div className="rounded-[11px] border border-[#E3DACB] bg-[#F8F6F1] p-3.5">
-
-                  <div className="text-[10px] uppercase tracking-[0.05em] text-[#8A8C94]">
-                    Jumlah siswa
-                  </div>
-
-                  <div className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
-                    {selectedClass.jumlah_siswa} siswa
-                  </div>
-
+                <div className="text-[13px] font-medium text-[#B1B5BD]">
+                  Detail kelas
                 </div>
 
+                <h2 className="mt-2 font-['Newsreader',Georgia,serif] text-[42px] font-medium leading-none tracking-[-0.025em] text-[#171A21]">
+                  {selectedClass.nama}
+                </h2>
 
-                <div className="rounded-[11px] border border-[#E3DACB] bg-[#F8F6F1] p-3.5">
-
-                  <div className="text-[10px] uppercase tracking-[0.05em] text-[#8A8C94]">
-                    Jumlah jadwal
-                  </div>
-
-                  <div className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
-                    {selectedClass.jumlah_jadwal} jadwal
-                  </div>
-
+                <div className="mt-3 text-[14.5px] leading-5 text-[#777D87]">
+                  semester ganjil 2026/2027
                 </div>
 
               </div>
 
+            </div>
 
-              {/* MATA PELAJARAN */}
-              <div className="mt-6">
+            {/* =================================================
+                STATS
+            ================================================== */}
+            <div className="flex flex-shrink-0 items-stretch gap-[26px] border-y border-[#F0F1F3] px-[26px] py-[22px]">
 
-                <div className="mb-2.5 flex items-center justify-between">
+              {/* JUMLAH SISWA */}
+              <div className="min-w-0 flex-1">
 
-                  <h3 className="font-['Fraunces',serif] text-[17px] font-semibold text-[#141C30]">
-                    Mata pelajaran
-                  </h3>
-
-                  <span className="text-[11px] text-[#6B7080]">
-                    {selectedClass.mata_pelajaran.length}{' '}
-                    mata pelajaran
-                  </span>
-
+                <div className="font-['Newsreader',Georgia,serif] text-[30px] font-medium leading-none tracking-[-0.02em] text-[#171A21]">
+                  {selectedClass.jumlah_siswa}
                 </div>
 
+                <div className="mt-1.5 text-[13.5px] text-[#777D87]">
+                  Siswa terdaftar
+                </div>
 
-                {selectedClass.mata_pelajaran.length === 0 ? (
+                {selectedClass.jumlah_siswa === 0 && (
 
-                  <div className="rounded-[11px] border border-dashed border-[#E3DACB] px-4 py-6 text-center text-[12px] text-[#6B7080]">
-                    Belum ada mata pelajaran.
-                  </div>
-
-                ) : (
-
-                  <div className="flex flex-wrap gap-2">
-
-                    {selectedClass.mata_pelajaran.map(
-                      (mapel) => (
-
-                        <div
-                          key={mapel}
-                          className="rounded-[10px] bg-[#E7ECF4] px-3 py-2 text-[12px] font-semibold text-[#1E2A47]"
-                        >
-                          {mapel}
-                        </div>
-
-                      )
-                    )}
-
+                  <div className="mt-1.5 text-[11.5px] leading-4 text-[#C68A2E]">
+                    Belum ada siswa ditambahkan
                   </div>
 
                 )}
 
               </div>
 
+              {/* PEMISAH */}
+              <div className="w-px bg-[#E9EBF0]" />
 
-              {/* JADWAL */}
-              <div className="mt-6">
+              {/* JUMLAH JADWAL */}
+              <div className="min-w-0 flex-1">
 
-                <div className="mb-2.5 flex items-center justify-between">
+                <div className="font-['Newsreader',Georgia,serif] text-[30px] font-medium leading-none tracking-[-0.02em] text-[#171A21]">
+                  {selectedClass.jumlah_jadwal}
+                </div>
 
-                  <h3 className="font-['Fraunces',serif] text-[17px] font-semibold text-[#141C30]">
-                    Jadwal mengajar
+                <div className="mt-1.5 text-[13.5px] text-[#777D87]">
+                  Jadwal per minggu
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                MODAL BODY
+            ================================================== */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-[26px] pb-[26px] pt-1 [scrollbar-color:#D6D9E0_transparent] [scrollbar-width:thin]">
+
+              {/* =================================================
+                  MATA PELAJARAN
+              ================================================== */}
+              <section className="pt-[18px]">
+
+                <div className="mb-[14px] flex items-center justify-between">
+
+                  <h3 className="text-[16.5px] font-semibold tracking-[-0.01em] text-[#252932]">
+                    Mata pelajaran
                   </h3>
 
-                  <span className="text-[11px] text-[#6B7080]">
-                    {selectedClass.jadwal.length}{' '}
-                    jadwal
+                  <span className="text-[13px] text-[#B1B5BD]">
+                    {selectedClass.mata_pelajaran.length}
                   </span>
 
                 </div>
 
+                {selectedClass.mata_pelajaran.length === 0 ? (
+
+                  <div className="rounded-[12px] border border-dashed border-[#E2E5EA] px-4 py-5 text-center text-[13px] text-[#8A909A]">
+                    Belum ada mata pelajaran.
+                  </div>
+
+                ) : (
+
+                  <div className="flex flex-wrap gap-[7px]">
+
+                    {selectedClass.mata_pelajaran.map(
+                      (mapel, index) => {
+
+                        const warnaMapel =
+                          getMapelColor(index);
+
+                        return (
+
+                          <span
+                            key={`${mapel}-${index}`}
+                            className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[7px] text-[13.5px] font-medium"
+                            style={{
+                              backgroundColor:
+                                warnaMapel.background,
+                              color:
+                                warnaMapel.text,
+                            }}
+                          >
+
+                            <span
+                              className="h-[7px] w-[7px] rounded-full"
+                              style={{
+                                backgroundColor:
+                                  warnaMapel.dot,
+                              }}
+                            />
+
+                            {mapel}
+
+                          </span>
+
+                        );
+                      }
+                    )}
+
+                  </div>
+
+                )}
+
+              </section>
+
+              {/* =================================================
+                  PEMISAH
+              ================================================== */}
+              <div className="my-6 h-px bg-[#E9EBF0]" />
+
+              {/* =================================================
+                  JADWAL MENGAJAR
+              ================================================== */}
+              <section>
+
+                <div className="mb-[14px] flex items-center justify-between">
+
+                  <h3 className="text-[16.5px] font-semibold tracking-[-0.01em] text-[#252932]">
+                    Jadwal mengajar
+                  </h3>
+
+                  <span className="text-[13px] text-[#B1B5BD]">
+                    {selectedClass.jadwal.length}
+                  </span>
+
+                </div>
 
                 {selectedClass.jadwal.length === 0 ? (
 
-                  <div className="rounded-[11px] border border-dashed border-[#E3DACB] px-4 py-6 text-center text-[12px] text-[#6B7080]">
+                  <div className="rounded-[12px] border border-dashed border-[#E2E5EA] px-4 py-5 text-center text-[13px] text-[#8A909A]">
                     Belum ada jadwal.
                   </div>
 
                 ) : (
 
-                  <div className="space-y-2">
+                  <div className="relative pl-[22px]">
 
-                    {/*
-                     * ==================================================
-                     * URUTKAN JADWAL
-                     *
-                     * 1. Senin -> Sabtu
-                     * 2. Jika hari sama -> jam mulai paling awal
-                     *
-                     * Contoh:
-                     * Senin 07:00
-                     * Selasa 09:30
-                     * Rabu 07:00
-                     * Rabu 13:50
-                     * Jumat 07:00
-                     * ==================================================
-                     */}
+                    {/* GARIS TIMELINE */}
+                    <div className="absolute bottom-[6px] left-[4px] top-[6px] w-[1.5px] bg-[#E1E4E9]" />
+
+                    {/* ==================================================
+                        URUTKAN JADWAL
+                        1. Senin -> Sabtu
+                        2. Hari sama -> jam mulai paling awal
+                    ================================================== */}
                     {[...(selectedClass.jadwal || [])]
                       .sort((a, b) => {
+
                         const urutanHari: Record<
                           string,
                           number
@@ -1596,10 +1680,6 @@ export default function KelasSaya() {
                         /*
                          * Jika hari sama, ambil jam mulai
                          * dari field waktu.
-                         *
-                         * Contoh:
-                         * "07:00 - 08:30" -> "07:00"
-                         * "13:50 - 15:15" -> "13:50"
                          */
                         const jamMulaiA =
                           a.waktu
@@ -1616,99 +1696,155 @@ export default function KelasSaya() {
                         );
                       })
                       .map(
-                        (jadwal) => (
+                        (jadwal) => {
 
-                          <div
-                            key={jadwal.id}
-                            className="flex items-center justify-between gap-3 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3.5 py-3"
-                          >
+                          /*
+                           * Cari index mata pelajaran
+                           * berdasarkan nama.
+                           */
+                          const mapelIndex =
+                            selectedClass.mata_pelajaran.findIndex(
+                              (mapel) =>
+                                mapel.toLowerCase() ===
+                                jadwal.mata_pelajaran.toLowerCase()
+                            );
 
-                            <div>
+                          /*
+                           * Jika tidak ditemukan,
+                           * gunakan warna pertama.
+                           */
+                          const warnaMapel =
+                            getMapelColor(
+                              mapelIndex >= 0
+                                ? mapelIndex
+                                : 0
+                            );
 
-                              <div className="font-semibold text-[12.5px] text-[#1E2A47]">
-                                {jadwal.hari}
+                          return (
+
+                            <div
+                              key={jadwal.id}
+                              className="group relative flex items-center justify-between gap-3 rounded-[10px] py-3 transition-colors hover:bg-[#F7F8FA]"
+                            >
+
+                              {/* NODE TIMELINE */}
+                              <span
+                                className="absolute -left-[22px] top-1/2 h-[9px] w-[9px] -translate-y-1/2 rounded-full border-2 bg-white"
+                                style={{
+                                  borderColor:
+                                    warnaMapel.dot,
+                                }}
+                              />
+
+                              {/* HARI + WAKTU */}
+                              <div className="min-w-0">
+
+                                <div className="text-[15px] font-semibold leading-5 text-[#252932]">
+                                  {jadwal.hari}
+                                </div>
+
+                                <div className="mt-0.5 text-[13px] text-[#777D87]">
+                                  {jadwal.waktu}
+                                </div>
+
                               </div>
 
-                              <div className="mt-0.5 text-[11.5px] text-[#6B7080]">
-                                {jadwal.waktu}
+                              {/* SUBJECT */}
+                              <div
+                                className="flex-shrink-0 rounded-full px-[12px] py-[5px] text-[12.5px] font-medium"
+                                style={{
+                                  backgroundColor:
+                                    warnaMapel.background,
+                                  color:
+                                    warnaMapel.text,
+                                }}
+                              >
+                                {jadwal.mata_pelajaran}
                               </div>
 
                             </div>
 
-
-                            <div className="rounded-full bg-[#E7ECF4] px-2.5 py-1 text-[10.5px] font-semibold text-[#1E2A47]">
-                              {jadwal.mata_pelajaran}
-                            </div>
-
-                          </div>
-
-                        )
+                          );
+                        }
                       )}
 
                   </div>
 
                 )}
 
-              </div>
+              </section>
 
+              {/* =================================================
+                  PEMISAH SEBELUM SISWA
+              ================================================== */}
+              <div className="my-6 h-px bg-[#E9EBF0]" />
 
-              {/* SISWA */}
-              <div className="mt-6">
+              {/* =================================================
+                  SISWA
+              ================================================== */}
+              <section>
 
-                <div className="mb-2.5 flex items-center justify-between">
+                <div className="mb-[14px] flex items-center justify-between">
 
-                  <h3 className="font-['Fraunces',serif] text-[17px] font-semibold text-[#141C30]">
+                  <h3 className="text-[16.5px] font-semibold tracking-[-0.01em] text-[#252932]">
                     Siswa
                   </h3>
 
-                  <span className="text-[11px] text-[#6B7080]">
-                    {selectedClass.siswa.length}{' '}
-                    siswa
+                  <span className="text-[13px] text-[#B1B5BD]">
+                    {selectedClass.siswa.length}
                   </span>
 
                 </div>
 
-
                 {selectedClass.siswa.length === 0 ? (
 
-                  <div className="rounded-[11px] border border-dashed border-[#E3DACB] px-4 py-6 text-center text-[12px] text-[#6B7080]">
-                    Belum ada siswa di kelas ini.
+                  <div className="rounded-[12px] border border-dashed border-[#E2E5EA] px-4 py-5 text-center">
+
+                    <div className="text-[13px] font-medium text-[#777D87]">
+                      Belum ada siswa di kelas ini.
+                    </div>
+
+                    <div className="mt-1 text-[11.5px] text-[#B1B5BD]">
+                      Siswa yang terdaftar akan muncul di sini.
+                    </div>
+
                   </div>
 
                 ) : (
 
-                  <div className="max-h-[240px] overflow-y-auto rounded-[11px] border border-[#E3DACB]">
+                  <div className="overflow-hidden rounded-[12px] border border-[#E9EBF0]">
 
                     {selectedClass.siswa.map(
                       (siswa, index) => (
 
                         <div
                           key={siswa.id}
-                          className={`flex items-center gap-3 px-3.5 py-3 ${
+                          className={`flex items-center gap-3 px-3.5 py-3 transition-colors hover:bg-[#F7F8FA] ${
                             index !==
                             selectedClass
                               .siswa
                               .length -
                               1
-                              ? 'border-b border-[#E3DACB]'
+                              ? 'border-b border-[#E9EBF0]'
                               : ''
                           }`}
                         >
 
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#E7D3A8] text-[10px] font-bold text-[#7A5A20]">
+                          {/* AVATAR */}
+                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#FAEEDA] text-[10.5px] font-bold text-[#633806]">
                             {getInitials(
                               siswa.nama
                             )}
                           </div>
 
+                          {/* DATA SISWA */}
+                          <div className="min-w-0 flex-1">
 
-                          <div className="min-w-0">
-
-                            <div className="truncate text-[12.5px] font-semibold text-[#1E2A47]">
+                            <div className="truncate text-[13px] font-semibold text-[#252932]">
                               {siswa.nama}
                             </div>
 
-                            <div className="truncate text-[11px] text-[#6B7080]">
+                            <div className="mt-0.5 truncate text-[11.5px] text-[#8A909A]">
                               {siswa.email}
                             </div>
 
@@ -1723,7 +1859,7 @@ export default function KelasSaya() {
 
                 )}
 
-              </div>
+              </section>
 
             </div>
 
@@ -1732,7 +1868,6 @@ export default function KelasSaya() {
         </div>
 
       )}
-
 
       {/* =======================================================
           MODAL KONFIRMASI ARSIP
@@ -1765,18 +1900,19 @@ export default function KelasSaya() {
                 strokeWidth="1.8"
               >
                 <path d="M3 6h18" />
+
                 <path d="M5 6l1 15h12l1-15" />
+
                 <path d="M9 6V3h6v3" />
+
                 <path d="M9 11h6" />
               </svg>
 
             </div>
 
-
             <h2 className="mt-4 font-['Fraunces',serif] text-[20px] font-semibold text-[#141C30]">
               Arsipkan kelas?
             </h2>
-
 
             <p className="mt-2 text-[13px] leading-6 text-[#6B7080]">
 
@@ -1790,13 +1926,11 @@ export default function KelasSaya() {
 
             </p>
 
-
             <p className="mt-2 text-[12px] leading-5 text-[#8A8C94]">
               Kelas tidak akan dihapus.
               Data kelas dan riwayat
               pembelajaran tetap tersimpan.
             </p>
-
 
             <div className="mt-6 flex justify-end gap-2.5">
 
@@ -1812,7 +1946,6 @@ export default function KelasSaya() {
               >
                 Batal
               </button>
-
 
               <button
                 type="button"
@@ -1838,7 +1971,6 @@ export default function KelasSaya() {
         </div>
 
       )}
-
 
       {/* =======================================================
           MODAL KONFIRMASI PULIHKAN
@@ -1877,11 +2009,9 @@ export default function KelasSaya() {
 
             </div>
 
-
             <h2 className="mt-4 font-['Fraunces',serif] text-[20px] font-semibold text-[#141C30]">
               Pulihkan kelas?
             </h2>
-
 
             <p className="mt-2 text-[13px] leading-6 text-[#6B7080]">
 
@@ -1895,7 +2025,6 @@ export default function KelasSaya() {
               pada daftar kelas aktif?
 
             </p>
-
 
             <div className="mt-6 flex justify-end gap-2.5">
 
@@ -1911,7 +2040,6 @@ export default function KelasSaya() {
               >
                 Batal
               </button>
-
 
               <button
                 type="button"
