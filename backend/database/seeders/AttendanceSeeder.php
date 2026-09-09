@@ -13,12 +13,18 @@ class AttendanceSeeder extends Seeder
     {
         /*
          * Ambil jadwal milik guru demo.
+         *
+         * schedules.teacher_id menyimpan users.id.
+         * NIPY berada di tabel teachers.
+         *
+         * Relasi:
+         * Schedule -> User -> Teacher -> nipy
          */
         $schedules = Schedule::with([
             'classroom',
             'subject',
         ])
-            ->whereHas('teacher', function ($query) {
+            ->whereHas('teacher.teacher', function ($query) {
                 $query->where('nipy', '123456789');
             })
             ->get();
@@ -74,6 +80,7 @@ class AttendanceSeeder extends Seeder
          * - hadir
          * - sakit
          * - izin
+         * - dispen
          * - alpa
          */
         $statusDemo = [
@@ -84,7 +91,7 @@ class AttendanceSeeder extends Seeder
             'citra@gmail.com' => 'hadir',
             'dimas@gmail.com' => 'sakit',
 
-            'eka@gmail.com' => 'hadir',
+            'eka@gmail.com' => 'dispen',
             'fajar@gmail.com' => 'izin',
 
             'gita@gmail.com' => 'hadir',
@@ -132,6 +139,7 @@ class AttendanceSeeder extends Seeder
                     'notes' => match ($status) {
                         'sakit' => 'Siswa tidak masuk karena sakit.',
                         'izin' => 'Siswa mendapatkan izin.',
+                        'dispen' => 'Siswa mendapatkan dispensasi.',
                         'alpa' => 'Siswa tidak hadir tanpa keterangan.',
                         default => null,
                     },

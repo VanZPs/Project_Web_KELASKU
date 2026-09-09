@@ -12,13 +12,19 @@ class JournalSeeder extends Seeder
     {
         /*
          * Ambil seluruh schedule milik guru demo.
+         *
+         * Schedule -> teacher() -> User
+         * User -> teacher() -> Teacher
+         *
+         * NIPY berada pada tabel teachers, sehingga pencarian menggunakan teacher.teacher.
          */
         $schedules = Schedule::with([
             'classroom',
             'subject',
             'teacher',
+            'teacher.teacher',
         ])
-            ->whereHas('teacher', function ($query) {
+            ->whereHas('teacher.teacher', function ($query) {
                 $query->where('nipy', '123456789');
             })
             ->get();
@@ -32,43 +38,54 @@ class JournalSeeder extends Seeder
         }
 
         /*
-         * Hapus seluruh jurnal yang terhubung
-         * dengan schedule guru demo.
-         *
-         * Dengan begitu, setiap reseeding menghasilkan
-         * data jurnal yang bersih dan tidak duplikat.
+         * Hapus seluruh jurnal yang terhubung dengan schedule guru demo.
+         * Dengan begitu, setiap reseeding menghasilkan data jurnal yang bersih dan tidak duplikat.
          */
         Journal::whereIn(
             'schedule_id',
             $schedules->pluck('id')
         )->delete();
 
+        /*
+         * Data jurnal demo berdasarkan nama kelas.
+         */
         $journalData = [
             'X - 1' => [
                 'date' => now()->toDateString(),
                 'topic' => 'Pancasila dan Nilai-Nilai Kebangsaan',
-                'description' => 'Pembelajaran mengenai nilai-nilai Pancasila dalam kehidupan sehari-hari.',
+                'description' =>
+                    'Pembelajaran mengenai nilai-nilai Pancasila '
+                    . 'dalam kehidupan sehari-hari.',
             ],
 
             'X - 2' => [
                 'date' => now()->subDay()->toDateString(),
                 'topic' => 'Norma dan Keadilan',
-                'description' => 'Membahas jenis-jenis norma dan penerapannya dalam kehidupan bermasyarakat.',
+                'description' =>
+                    'Membahas jenis-jenis norma dan penerapannya '
+                    . 'dalam kehidupan bermasyarakat.',
             ],
 
             'XI - 1' => [
                 'date' => now()->subDays(2)->toDateString(),
                 'topic' => 'Demokrasi di Indonesia',
-                'description' => 'Mempelajari konsep demokrasi dan penerapannya dalam sistem pemerintahan Indonesia.',
+                'description' =>
+                    'Mempelajari konsep demokrasi dan penerapannya '
+                    . 'dalam sistem pemerintahan Indonesia.',
             ],
 
             'XI - 2' => [
                 'date' => now()->subDays(3)->toDateString(),
                 'topic' => 'Hak dan Kewajiban Warga Negara',
-                'description' => 'Pembahasan mengenai hak dan kewajiban warga negara berdasarkan konstitusi.',
+                'description' =>
+                    'Pembahasan mengenai hak dan kewajiban warga '
+                    . 'negara berdasarkan konstitusi.',
             ],
         ];
 
+        /*
+         * Buat jurnal untuk setiap schedule.
+         */
         foreach ($schedules as $schedule) {
             $classroomName = $schedule->classroom?->name;
 

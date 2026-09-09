@@ -89,7 +89,7 @@ class ScheduleSeeder extends Seeder
             ->filter()
             ->values();
 
-        Schedule::where('teacher_id', $teacher->id)
+        Schedule::where('teacher_id', $teacher->user_id)
             ->get()
             ->each(function ($schedule) use ($validScheduleKeys) {
                 $isValid = $validScheduleKeys->contains(function ($key) use ($schedule) {
@@ -121,7 +121,7 @@ class ScheduleSeeder extends Seeder
 
             Schedule::updateOrCreate(
                 [
-                    'teacher_id' => $teacher->id,
+                    'teacher_id' => $teacher->user_id,
                     'classroom_id' => $classroom->id,
                     'day' => $scheduleData['day'],
                     'start_time' => $scheduleData['start_time'],

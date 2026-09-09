@@ -9,6 +9,7 @@ use App\Http\Controllers\API\ClassroomController;
 use App\Http\Controllers\API\SubjectController;
 use App\Http\Controllers\API\DashboardController;
 use App\Http\Controllers\API\TeacherSubjectController;
+use App\Http\Controllers\API\JournalController;
 
 /*
 |--------------------------------------------------------------------------
@@ -199,6 +200,64 @@ Route::middleware('auth:sanctum')->group(
         Route::get(
             '/guru/kelas-saya',
             [MyClassController::class, 'index']
+        );
+
+
+        /*
+         * ======================================================
+         * GURU - JURNAL KELAS & PRESENSI
+         * ======================================================
+         */
+
+        /*
+         * Daftar jadwal guru beserta status jurnal
+         * dan ringkasan presensi.
+         *
+         * GET /api/guru/jurnal
+         */
+        Route::get(
+            '/guru/jurnal',
+            [JournalController::class, 'index']
+        );
+
+        /*
+         * Riwayat jurnal suatu jadwal.
+         *
+         * Route ini harus diletakkan sebelum
+         * /guru/jurnal/{schedule} agar "riwayat"
+         * tidak dianggap sebagai parameter schedule.
+         *
+         * GET /api/guru/jurnal/riwayat/{schedule}
+         */
+        Route::get(
+            '/guru/jurnal/riwayat/{schedule}',
+            [JournalController::class, 'history']
+        );
+
+        /*
+         * Detail satu jadwal:
+         * - informasi kelas
+         * - mata pelajaran
+         * - daftar siswa
+         * - riwayat jurnal
+         *
+         * GET /api/guru/jurnal/{schedule}
+         */
+        Route::get(
+            '/guru/jurnal/{schedule}',
+            [JournalController::class, 'showSchedule']
+        );
+
+        /*
+         * Mulai kelas dan menyimpan:
+         * - jurnal mengajar
+         * - presensi seluruh siswa
+         *
+         * POST /api/guru/jurnal/{schedule}/mulai
+         */
+        Route::post(
+            '/guru/jurnal/{schedule}/mulai',
+            [JournalController::class, 'store']
         );
     }
 );

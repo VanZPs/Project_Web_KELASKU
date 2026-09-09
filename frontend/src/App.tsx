@@ -22,6 +22,8 @@ import TambahKelas from './pages/Guru/TambahKelas';
 
 import EditProfile from './pages/Guru/EditProfile';
 
+import JurnalKelas from './pages/Guru/JurnalKelas';
+
 
 /*
 |--------------------------------------------------------------------------
@@ -328,6 +330,20 @@ export default function App() {
               allowedRole="guru"
             >
               <TambahKelas />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* Jurnal Mengajar */}
+
+        <Route
+          path="/guru/jurnal"
+          element={
+            <ProtectedRoute
+              allowedRole="guru"
+            >
+              <JurnalKelas />
             </ProtectedRoute>
           }
         />
