@@ -19,6 +19,11 @@ return new class extends Migration
                 ->constrained('users')
                 ->cascadeOnDelete();
 
+            $table->enum('jenis_kelamin', [
+                'laki-laki',
+                'perempuan',
+            ]);
+
             $table->timestamps();
         });
     }

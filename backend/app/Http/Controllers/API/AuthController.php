@@ -75,6 +75,19 @@ class AuthController extends Controller
                 'exists:classrooms,id',
                 Rule::requiredIf($request->role === 'siswa'),
             ],
+
+            /*
+             * Jenis kelamin hanya wajib untuk siswa.
+             */
+            'jenis_kelamin' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'laki-laki',
+                    'perempuan',
+                ]),
+                Rule::requiredIf($request->role === 'siswa'),
+            ],
         ]);
 
 
@@ -120,6 +133,7 @@ class AuthController extends Controller
 
                 Student::create([
                     'user_id' => $user->id,
+                    'jenis_kelamin' => $validated['jenis_kelamin'],
                 ]);
 
                 $user->classrooms()->attach(

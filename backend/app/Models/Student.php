@@ -12,10 +12,11 @@ class Student extends Model
 
     protected $fillable = [
         'user_id',
+        'jenis_kelamin',
     ];
 
     /**
-     * Student dimiliki oleh satu User.
+     * Relasi ke user.
      */
     public function user(): BelongsTo
     {

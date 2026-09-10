@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
 import logoKesatrian from '../assets/Logo-Kesatrian.jpeg';
 import fotoGedung from '../assets/Foto-Gedung.png';
+import fotoGedungBackground from '../assets/Foto-Gedung-Background.png';
 
 interface Option {
   id: number;
@@ -27,6 +28,10 @@ export default function Register() {
   const [selectedSubject, setSelectedSubject] = useState<Option | null>(null);
   const [selectedClassroom, setSelectedClassroom] = useState<Option | null>(null);
 
+  const [jenisKelamin, setJenisKelamin] = useState<
+    'laki-laki' | 'perempuan' | ''
+  >('');
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -39,9 +44,14 @@ export default function Register() {
 
   const [error, setError] = useState('');
 
-  // State untuk kontrol custom dropdown
+  // State untuk custom dropdown kelas / mata pelajaran
   const [isOpen, setIsOpen] = useState(false);
+
+  // State khusus custom dropdown jenis kelamin
+  const [isGenderOpen, setIsGenderOpen] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const genderDropdownRef = useRef<HTMLDivElement>(null);
 
   const navigate = useNavigate();
 
@@ -65,15 +75,13 @@ export default function Register() {
         setSubjects(subjectData);
         setClassrooms(classroomData);
 
-        // Pilihan awal untuk guru
-        if (subjectData.length > 0) {
-          setSelectedSubject(subjectData[0]);
-        }
-
-        // Pilihan awal untuk siswa
-        if (classroomData.length > 0) {
-          setSelectedClassroom(classroomData[0]);
-        }
+        /*
+         * Tidak memilih item pertama secara otomatis.
+         * User harus memilih sendiri agar placeholder "Pilih"
+         * dapat ditampilkan ketika belum ada pilihan.
+         */
+        setSelectedSubject(null);
+        setSelectedClassroom(null);
       } catch (err: unknown) {
         console.error('Gagal mengambil data register:', err);
 
@@ -93,11 +101,20 @@ export default function Register() {
    */
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
+        !dropdownRef.current.contains(target)
       ) {
         setIsOpen(false);
+      }
+
+      if (
+        genderDropdownRef.current &&
+        !genderDropdownRef.current.contains(target)
+      ) {
+        setIsGenderOpen(false);
       }
     };
 
@@ -114,8 +131,23 @@ export default function Register() {
   const handleRoleChange = (newRole: 'guru' | 'siswa') => {
     if (role !== newRole) {
       setRole(newRole);
+
       setIsOpen(false);
+      setIsGenderOpen(false);
       setError('');
+
+      /*
+       * Reset pilihan sesuai role.
+       *
+       * Ketika berpindah role, pilihan sebelumnya tidak digunakan
+       * untuk role yang baru.
+       */
+      if (newRole === 'guru') {
+        setSelectedSubject(null);
+        setJenisKelamin('');
+      } else {
+        setSelectedClassroom(null);
+      }
     }
   };
 
@@ -230,6 +262,12 @@ export default function Register() {
       return;
     }
 
+    if (role === 'siswa' && !jenisKelamin) {
+      setError('Silakan pilih jenis kelamin terlebih dahulu.');
+
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -245,6 +283,7 @@ export default function Register() {
         nipy?: string;
         subject_id?: number;
         classroom_id?: number;
+        jenis_kelamin?: 'laki-laki' | 'perempuan';
       } = {
         name,
         email,
@@ -266,6 +305,9 @@ export default function Register() {
        */
       if (role === 'siswa') {
         registerData.classroom_id = selectedClassroom!.id;
+        registerData.jenis_kelamin = jenisKelamin as
+          | 'laki-laki'
+          | 'perempuan';
       }
 
       const response = await api.post('/register', registerData);
@@ -291,7 +333,7 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5F1E7] text-[#23283A] p-7 font-['Plus_Jakarta_Sans',sans-serif] antialiased animate-fade-only">
+    <div className="min-h-screen relative flex items-center justify-center text-[#23283A] p-7 font-['Plus_Jakarta_Sans',sans-serif] antialiased animate-fade-only overflow-hidden">
       <style>{`
         @keyframes fadeInOnly {
           from { opacity: 0; }
@@ -303,7 +345,30 @@ export default function Register() {
         }
       `}</style>
 
-      <div className="w-full max-w-[1040px] min-h-[680px] bg-[#FFFDF8] rounded-[22px] overflow-hidden grid grid-cols-1 md:grid-cols-[0.85fr_1.15fr] shadow-[0_1px_2px_rgba(30,25,15,0.04),0_20px_44px_-20px_rgba(20,17,10,0.28)]">
+      {/* ===== PAGE BACKGROUND ===== */}
+      <div className="absolute inset-0 overflow-hidden">
+        <img
+          src={fotoGedungBackground}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover blur-[0.5px] scale-[1.02]"
+        />
+
+        {/* Soft white overlay */}
+        <div className="absolute inset-0 bg-white/60" />
+
+        {/* Subtle black vignette on the edges */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(circle at center, transparent 40%, rgba(0, 0, 0, 0.12) 72%, rgba(0, 0, 0, 0.28) 100%)',
+          }}
+        />
+      </div>
+
+      {/* ===== REGISTER CARD ===== */}
+      <div className="relative z-10 w-full max-w-[1040px] min-h-[680px] bg-[#FFFDF8] rounded-[22px] overflow-hidden grid grid-cols-1 md:grid-cols-[0.85fr_1.15fr] shadow-[0_1px_2px_rgba(30,25,15,0.04),0_20px_44px_-20px_rgba(20,17,10,0.28)]">
 
         {/* ===== LEFT: brand panel ===== */}
         <div
@@ -473,30 +538,35 @@ export default function Register() {
           <form onSubmit={handleRegister}>
             <div key={role} className="animate-fade-only">
 
-              {/* Nama + NIPY / Email */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
+              {/* =====================================================
+                  GURU
+                  Baris 1: Nama + NIPY
+                  Baris 2: Mata Pelajaran + Email
+                  ===================================================== */}
+              {role === 'guru' && (
+                <>
+                  {/* Nama + NIPY */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
 
-                {/* Nama */}
-                <div>
-                  <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
-                    Nama lengkap
-                  </label>
+                    {/* Nama */}
+                    <div>
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Nama lengkap
+                      </label>
 
-                  <div className="flex items-center gap-[9px] border border-[#E3DACB] rounded-[10px] px-3 bg-[#FFFDF8] focus-within:border-[#2C3B5E] transition-all">
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      required
-                      placeholder="Sesuai data sekolah"
-                      className="w-full py-2.5 border-none outline-none bg-transparent text-[13.5px] placeholder-[#B3AE9C]"
-                    />
-                  </div>
-                </div>
+                      <div className="flex items-center gap-[9px] border border-[#E3DACB] rounded-[10px] px-3 bg-[#FFFDF8] focus-within:border-[#2C3B5E] transition-all">
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={e => setName(e.target.value)}
+                          required
+                          placeholder="Masukkan nama lengkap"
+                          className="w-full py-2.5 border-none outline-none bg-transparent text-[13.5px] placeholder-[#B3AE9C]"
+                        />
+                      </div>
+                    </div>
 
-                {/* NIPY untuk Guru / Email untuk Siswa */}
-                <div>
-                  {role === 'guru' ? (
+                    {/* NIPY */}
                     <div>
                       <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
                         NIPY
@@ -513,92 +583,74 @@ export default function Register() {
                         />
                       </div>
                     </div>
-                  ) : (
-                    <div>
-                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
-                        Email
-                      </label>
-
-                      <div className="flex items-center gap-[9px] border border-[#E3DACB] rounded-[10px] px-3 bg-[#FFFDF8] focus-within:border-[#2C3B5E] transition-all">
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={e => setEmail(e.target.value)}
-                          required
-                          placeholder="Masukkan email"
-                          className="w-full py-2.5 border-none outline-none bg-transparent text-[13.5px] placeholder-[#B3AE9C]"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Subject/Class + Email */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
-
-                {/* Dropdown */}
-                <div
-                  className="relative"
-                  ref={dropdownRef}
-                >
-                  <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
-                    {role === 'guru' ? 'Mata pelajaran' : 'Kelas'}
-                  </label>
-
-                  <div
-                    onClick={() => {
-                      if (!loadingOptions && currentOptions.length > 0) {
-                        setIsOpen(!isOpen);
-                      }
-                    }}
-                    className={`w-full py-2.5 px-3 border border-[#E3DACB] rounded-[10px] bg-[#FFFDF8] text-[13.5px] text-[#23283A] flex items-center justify-between select-none transition-all ${
-                      loadingOptions || currentOptions.length === 0
-                        ? 'cursor-not-allowed opacity-60'
-                        : 'cursor-pointer hover:border-[#2C3B5E]'
-                    }`}
-                  >
-                    <span>
-                      {loadingOptions
-                        ? 'Memuat data...'
-                        : currentSelection?.name ?? 'Pilih'}
-                    </span>
-
-                    <svg
-                      className={`w-4 h-4 text-[#6B7080] transition-transform duration-200 ${
-                        isOpen ? 'rotate-180' : ''
-                      }`}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      viewBox="0 0 24 24"
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
                   </div>
 
-                  {isOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] shadow-lg z-50 max-h-[210px] overflow-y-auto animate-fade-only">
-                      {currentOptions.map((option) => (
-                        <div
-                          key={option.id}
-                          onClick={() => handleOptionSelect(option)}
-                          className={`py-2 px-3 text-[13.5px] cursor-pointer transition-colors ${
-                            currentSelection?.id === option.id
-                              ? 'bg-[#1E2A47] text-white font-medium'
-                              : 'text-[#23283A] hover:bg-[#F5F1E7]'
-                          }`}
-                        >
-                          {option.name}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  {/* Mata Pelajaran + Email */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
 
-                {/* Email Guru */}
-                <div>
-                  {role === 'guru' && (
+                    {/* Mata Pelajaran */}
+                    <div
+                      className="relative"
+                      ref={dropdownRef}
+                    >
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Mata pelajaran
+                      </label>
+
+                      <div
+                        onClick={() => {
+                          if (!loadingOptions && currentOptions.length > 0) {
+                            setIsOpen(!isOpen);
+                            setIsGenderOpen(false);
+                          }
+                        }}
+                        className={`w-full py-2.5 px-3 border border-[#E3DACB] rounded-[10px] bg-[#FFFDF8] text-[13.5px] flex items-center justify-between select-none transition-all ${
+                          loadingOptions || currentOptions.length === 0
+                            ? 'text-[#B3AE9C] cursor-not-allowed opacity-60'
+                            : currentSelection
+                              ? 'text-[#23283A] cursor-pointer hover:border-[#2C3B5E]'
+                              : 'text-[#B3AE9C] cursor-pointer hover:border-[#2C3B5E]'
+                        }`}
+                      >
+                        <span>
+                          {loadingOptions
+                            ? 'Memuat data...'
+                            : currentSelection?.name ?? 'Pilih'}
+                        </span>
+
+                        <svg
+                          className={`w-4 h-4 text-[#6B7080] transition-transform duration-200 ${
+                            isOpen ? 'rotate-180' : ''
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          viewBox="0 0 24 24"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </div>
+
+                      {isOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] shadow-lg z-50 max-h-[210px] overflow-y-auto animate-fade-only">
+                          {currentOptions.map((option) => (
+                            <div
+                              key={option.id}
+                              onClick={() => handleOptionSelect(option)}
+                              className={`py-2 px-3 text-[13.5px] cursor-pointer transition-colors ${
+                                currentSelection?.id === option.id
+                                  ? 'bg-[#1E2A47] text-white font-medium'
+                                  : 'text-[#23283A] hover:bg-[#F5F1E7]'
+                              }`}
+                            >
+                              {option.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Email */}
                     <div>
                       <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
                         Email
@@ -615,9 +667,205 @@ export default function Register() {
                         />
                       </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
+                </>
+              )}
+
+              {/* =====================================================
+                  SISWA
+                  Baris 1: Nama + Email
+                  Baris 2: Jenis Kelamin + Kelas
+                  ===================================================== */}
+              {role === 'siswa' && (
+                <>
+                  {/* Nama + Email */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
+
+                    {/* Nama */}
+                    <div>
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Nama lengkap
+                      </label>
+
+                      <div className="flex items-center gap-[9px] border border-[#E3DACB] rounded-[10px] px-3 bg-[#FFFDF8] focus-within:border-[#2C3B5E] transition-all">
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={e => setName(e.target.value)}
+                          required
+                          placeholder="Masukkan nama lengkap"
+                          className="w-full py-2.5 border-none outline-none bg-transparent text-[13.5px] placeholder-[#B3AE9C]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Email */}
+                    <div>
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Email
+                      </label>
+
+                      <div className="flex items-center gap-[9px] border border-[#E3DACB] rounded-[10px] px-3 bg-[#FFFDF8] focus-within:border-[#2C3B5E] transition-all">
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          required
+                          placeholder="Masukkan email"
+                          className="w-full py-2.5 border-none outline-none bg-transparent text-[13.5px] placeholder-[#B3AE9C]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Jenis Kelamin + Kelas */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
+
+                    {/* Jenis Kelamin */}
+                    <div
+                      className="relative"
+                      ref={genderDropdownRef}
+                    >
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Jenis kelamin
+                      </label>
+
+                      {/* Selected value / placeholder */}
+                      <div
+                        onClick={() => {
+                          setIsGenderOpen(!isGenderOpen);
+                          setIsOpen(false);
+                        }}
+                        className={`w-full py-2.5 px-3 border border-[#E3DACB] rounded-[10px] bg-[#FFFDF8] text-[13.5px] flex items-center justify-between select-none cursor-pointer hover:border-[#2C3B5E] transition-all ${
+                          jenisKelamin
+                            ? 'text-[#23283A]'
+                            : 'text-[#B3AE9C]'
+                        }`}
+                      >
+                        <span>
+                          {jenisKelamin === 'laki-laki'
+                            ? 'Laki-laki'
+                            : jenisKelamin === 'perempuan'
+                              ? 'Perempuan'
+                              : 'Pilih'}
+                        </span>
+
+                        <svg
+                          className={`w-4 h-4 text-[#6B7080] transition-transform duration-200 ${
+                            isGenderOpen ? 'rotate-180' : ''
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          viewBox="0 0 24 24"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </div>
+
+                      {/* Dropdown options */}
+                      {isGenderOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] shadow-lg z-50 overflow-hidden animate-fade-only">
+
+                          {/* Laki-laki */}
+                          <div
+                            onClick={() => {
+                              setJenisKelamin('laki-laki');
+                              setIsGenderOpen(false);
+                              setError('');
+                            }}
+                            className={`py-2 px-3 text-[13.5px] cursor-pointer transition-colors ${
+                              jenisKelamin === 'laki-laki'
+                                ? 'bg-[#1E2A47] text-white font-medium'
+                                : 'text-[#23283A] hover:bg-[#F5F1E7]'
+                            }`}
+                          >
+                            Laki-laki
+                          </div>
+
+                          {/* Perempuan */}
+                          <div
+                            onClick={() => {
+                              setJenisKelamin('perempuan');
+                              setIsGenderOpen(false);
+                              setError('');
+                            }}
+                            className={`py-2 px-3 text-[13.5px] cursor-pointer transition-colors ${
+                              jenisKelamin === 'perempuan'
+                                ? 'bg-[#1E2A47] text-white font-medium'
+                                : 'text-[#23283A] hover:bg-[#F5F1E7]'
+                            }`}
+                          >
+                            Perempuan
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Kelas */}
+                    <div
+                      className="relative"
+                      ref={dropdownRef}
+                    >
+                      <label className="block text-[12.5px] font-semibold text-[#23283A] mb-1.5">
+                        Kelas
+                      </label>
+
+                      <div
+                        onClick={() => {
+                          if (!loadingOptions && currentOptions.length > 0) {
+                            setIsOpen(!isOpen);
+                            setIsGenderOpen(false);
+                          }
+                        }}
+                        className={`w-full py-2.5 px-3 border border-[#E3DACB] rounded-[10px] bg-[#FFFDF8] text-[13.5px] flex items-center justify-between select-none transition-all ${
+                          loadingOptions || currentOptions.length === 0
+                            ? 'text-[#B3AE9C] cursor-not-allowed opacity-60'
+                            : currentSelection
+                              ? 'text-[#23283A] cursor-pointer hover:border-[#2C3B5E]'
+                              : 'text-[#B3AE9C] cursor-pointer hover:border-[#2C3B5E]'
+                        }`}
+                      >
+                        <span>
+                          {loadingOptions
+                            ? 'Memuat data...'
+                            : currentSelection?.name ?? 'Pilih'}
+                        </span>
+
+                        <svg
+                          className={`w-4 h-4 text-[#6B7080] transition-transform duration-200 ${
+                            isOpen ? 'rotate-180' : ''
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          viewBox="0 0 24 24"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </div>
+
+                      {isOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] shadow-lg z-50 max-h-[210px] overflow-y-auto animate-fade-only">
+                          {currentOptions.map((option) => (
+                            <div
+                              key={option.id}
+                              onClick={() => handleOptionSelect(option)}
+                              className={`py-2 px-3 text-[13.5px] cursor-pointer transition-colors ${
+                                currentSelection?.id === option.id
+                                  ? 'bg-[#1E2A47] text-white font-medium'
+                                  : 'text-[#23283A] hover:bg-[#F5F1E7]'
+                              }`}
+                            >
+                              {option.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Password */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-[6px]">

@@ -6,7 +6,6 @@ use App\Models\Classroom;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class StudentSeeder extends Seeder
 {
@@ -17,41 +16,49 @@ class StudentSeeder extends Seeder
                 'name' => 'Andi Pratama',
                 'email' => 'andi@gmail.com',
                 'classroom' => 'X - 1',
+                'jenis_kelamin' => 'laki-laki',
             ],
             [
                 'name' => 'Budi Santoso',
                 'email' => 'budi@gmail.com',
                 'classroom' => 'X - 1',
+                'jenis_kelamin' => 'laki-laki',
             ],
             [
                 'name' => 'Citra Lestari',
                 'email' => 'citra@gmail.com',
                 'classroom' => 'X - 2',
+                'jenis_kelamin' => 'perempuan',
             ],
             [
                 'name' => 'Dimas Saputra',
                 'email' => 'dimas@gmail.com',
                 'classroom' => 'X - 2',
+                'jenis_kelamin' => 'laki-laki',
             ],
             [
                 'name' => 'Eka Putri',
                 'email' => 'eka@gmail.com',
                 'classroom' => 'XI - 1',
+                'jenis_kelamin' => 'perempuan',
             ],
             [
                 'name' => 'Fajar Ramadhan',
                 'email' => 'fajar@gmail.com',
                 'classroom' => 'XI - 1',
+                'jenis_kelamin' => 'laki-laki',
             ],
             [
                 'name' => 'Gita Maharani',
                 'email' => 'gita@gmail.com',
                 'classroom' => 'XI - 2',
+                'jenis_kelamin' => 'perempuan',
             ],
             [
                 'name' => 'Hendra Wijaya',
                 'email' => 'hendra@gmail.com',
                 'classroom' => 'XI - 2',
+                'jenis_kelamin' => 'laki-laki',
             ],
         ];
 
@@ -80,16 +87,21 @@ class StudentSeeder extends Seeder
                 ]
             );
 
-            $student = Student::firstOrCreate([
-                'user_id' => $user->id,
-            ]);
+            $student = Student::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                ],
+                [
+                    'jenis_kelamin' => $studentData['jenis_kelamin'],
+                ]
+            );
 
             $user->classrooms()->syncWithoutDetaching([
                 $classroom->id,
             ]);
 
             $this->command->info(
-                "{$studentData['name']} → {$classroom->name}"
+                "{$studentData['name']} → {$classroom->name} → {$studentData['jenis_kelamin']}"
             );
         }
 
