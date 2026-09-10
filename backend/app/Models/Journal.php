@@ -15,12 +15,15 @@ class Journal extends Model
         'date',
         'topic',
         'description',
+        'is_holiday',
+        'holiday_name',
     ];
 
     protected function casts(): array
     {
         return [
             'date' => 'date',
+            'is_holiday' => 'boolean',
         ];
     }
 

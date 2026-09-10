@@ -10,6 +10,8 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   FileText,
   History,
@@ -32,6 +34,8 @@ interface JurnalTerakhir {
   tanggal: string;
   topic: string;
   description: string | null;
+  is_holiday: boolean;
+  holiday_name: string | null;
 }
 
 interface Presensi {
@@ -42,14 +46,30 @@ interface Presensi {
   alpa: number;
 }
 
+interface JurnalSchedule {
+  id: number;
+  hari: string;
+  waktu: string;
+}
+
+interface JurnalScheduleToday {
+  id: number;
+  hari: string;
+  waktu: string;
+}
+
 interface JurnalItem {
   id: number;
   kelas: string;
   mata_pelajaran: string;
   hari: string;
   waktu: string;
-  jurnal_terakhir: JurnalTerakhir | null;
+  total_pertemuan: number;
+  jumlah_sesi: number;
   jumlah_jurnal: number;
+  jadwal: JurnalSchedule[];
+  jadwal_hari_ini: JurnalScheduleToday | null;
+  jurnal_terakhir: JurnalTerakhir | null;
   presensi: Presensi;
   status: 'lengkap' | 'menunggu';
 }
@@ -71,6 +91,7 @@ interface StudentItem {
   nama: string;
   email: string;
   status: AttendanceStatus;
+  notes: string;
 }
 
 interface ScheduleDetail {
@@ -81,7 +102,9 @@ interface ScheduleDetail {
     hari: string;
     waktu: string;
   };
+
   students: StudentItem[];
+
   journals: {
     id: number;
     tanggal: string;
@@ -95,8 +118,17 @@ interface HistoryItem {
   tanggal: string;
   topic: string;
   description: string | null;
+  is_holiday: boolean;
+  holiday_name: string | null;
   kelas: string;
   mata_pelajaran: string;
+}
+
+interface HistoryWeek {
+  weekNumber: number;
+  startDate: string;
+  endDate: string;
+  items: HistoryItem[];
 }
 
 const getStoredUser = (): StoredUser | null => {
@@ -210,6 +242,76 @@ const getToday = (): string => {
   return `${year}-${month}-${day}`;
 };
 
+const getTodayName = (): string => {
+  return new Intl.DateTimeFormat(
+    'id-ID',
+    {
+      weekday: 'long',
+    }
+  ).format(new Date());
+};
+
+const normalizeDay = (
+  day: string
+): string => {
+  return day
+    .trim()
+    .toLowerCase()
+    .replace(/\./g, '');
+};
+
+const getDayOrder = (
+  day: string
+): number => {
+  const normalized =
+    normalizeDay(day);
+
+  const dayOrder: Record<
+    string,
+    number
+  > = {
+    senin: 1,
+    selasa: 2,
+    rabu: 3,
+    kamis: 4,
+    jumat: 5,
+    sabtu: 6,
+    minggu: 7,
+  };
+
+  return dayOrder[
+    normalized
+  ] ?? 99;
+};
+
+const getStartTimeMinutes = (
+  time: string
+): number => {
+  if (!time) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const match =
+    time.match(
+      /(\d{1,2})[.:](\d{2})/
+    );
+
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const hour =
+    Number(match[1]);
+
+  const minute =
+    Number(match[2]);
+
+  return (
+    hour * 60 +
+    minute
+  );
+};
+
 const getSubjectTagClass = (
   subject: string
 ): string => {
@@ -249,6 +351,231 @@ const getSubjectIconClass = (
   }
 
   return 'bg-[#E5ECF5] text-[#3E6BAE]';
+};
+
+/*
+ * ============================================================
+ * HELPER RIWAYAT JURNAL
+ * ============================================================
+ */
+
+/*
+ * Format YYYY-MM-DD.
+ */
+const formatInputDate = (
+  date: Date
+): string => {
+  const year =
+    date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, '0');
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+/*
+ * Mengambil nama bulan dalam Bahasa Indonesia.
+ */
+const getMonthName = (
+  month: number
+): string => {
+  const date = new Date(
+    2026,
+    month - 1,
+    1
+  );
+
+  return date.toLocaleDateString(
+    'id-ID',
+    {
+      month: 'long',
+    }
+  );
+};
+
+/*
+ * Mengambil awal minggu (Senin)
+ * dari sebuah tanggal.
+ */
+const getMonday = (
+  date: Date
+): Date => {
+  const result =
+    new Date(date);
+
+  result.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const day =
+    result.getDay();
+
+  /*
+   * JavaScript:
+   *
+   * Minggu = 0
+   * Senin = 1
+   * ...
+   * Sabtu = 6
+   */
+  const difference =
+    day === 0
+      ? -6
+      : 1 - day;
+
+  result.setDate(
+    result.getDate() +
+      difference
+  );
+
+  return result;
+};
+
+/*
+ * Mengambil akhir minggu (Minggu)
+ * dari sebuah tanggal.
+ */
+const getSunday = (
+  date: Date
+): Date => {
+  const monday =
+    getMonday(date);
+
+  const result =
+    new Date(monday);
+
+  result.setDate(
+    result.getDate() + 6
+  );
+
+  return result;
+};
+
+/*
+ * Membuat daftar minggu dalam sebuah bulan.
+ *
+ * Contoh:
+ *
+ * September 2026
+ *
+ * Minggu 1
+ * 31 Agustus - 6 September
+ *
+ * Minggu 2
+ * 7 September - 13 September
+ *
+ * dst.
+ *
+ * Tetapi tanggal yang ditampilkan
+ * akan dipotong mengikuti bulan yang dipilih.
+ */
+const getWeeksOfMonth = (
+  year: number,
+  month: number
+): HistoryWeek[] => {
+  const firstDay =
+    new Date(
+      year,
+      month - 1,
+      1
+    );
+
+  const lastDay =
+    new Date(
+      year,
+      month,
+      0
+    );
+
+  const firstMonday =
+    getMonday(firstDay);
+
+  const weeks: HistoryWeek[] =
+    [];
+
+  let currentMonday =
+    new Date(firstMonday);
+
+  let weekNumber = 1;
+
+  while (
+    currentMonday <= lastDay
+  ) {
+    const currentSunday =
+      getSunday(
+        currentMonday
+      );
+
+    /*
+     * Awal minggu dipotong
+     * agar tidak keluar dari bulan.
+     */
+    const visibleStart =
+      currentMonday <
+      firstDay
+        ? new Date(firstDay)
+        : new Date(
+            currentMonday
+          );
+
+    /*
+     * Akhir minggu dipotong
+     * agar tidak keluar dari bulan.
+     */
+    const visibleEnd =
+      currentSunday >
+      lastDay
+        ? new Date(lastDay)
+        : new Date(
+            currentSunday
+          );
+
+    weeks.push({
+      weekNumber,
+      startDate:
+        formatInputDate(
+          visibleStart
+        ),
+      endDate:
+        formatInputDate(
+          visibleEnd
+        ),
+      items: [],
+    });
+
+    currentMonday =
+      new Date(currentMonday);
+
+    currentMonday.setDate(
+      currentMonday.getDate() +
+        7
+    );
+
+    weekNumber += 1;
+  }
+
+  return weeks;
+};
+
+/*
+ * Mengubah string tanggal
+ * menjadi objek Date lokal.
+ */
+const parseLocalDate = (
+  dateString: string
+): Date => {
+  return new Date(
+    `${dateString}T00:00:00`
+  );
 };
 
 export default function JurnalKelas() {
@@ -299,6 +626,13 @@ export default function JurnalKelas() {
   );
 
   const [
+    selectedScheduleId,
+    setSelectedScheduleId,
+  ] = useState<number | null>(
+    null
+  );
+
+  const [
     scheduleDetail,
     setScheduleDetail,
   ] = useState<ScheduleDetail | null>(
@@ -340,6 +674,12 @@ export default function JurnalKelas() {
     setModalError,
   ] = useState('');
 
+  /*
+   * ============================================================
+   * HISTORY STATE
+   * ============================================================
+   */
+
   const [
     showHistoryModal,
     setShowHistoryModal,
@@ -367,6 +707,70 @@ export default function JurnalKelas() {
     setHistoryError,
   ] = useState('');
 
+  /*
+   * Bulan yang sedang ditampilkan
+   * pada modal riwayat.
+   *
+   * Default:
+   * bulan saat ini.
+   */
+  const now = new Date();
+
+  const [
+    historyMonth,
+    setHistoryMonth,
+  ] = useState(
+    now.getMonth() + 1
+  );
+
+  /*
+   * Tahun yang sedang ditampilkan
+   * pada modal riwayat.
+   *
+   * Default:
+   * tahun saat ini.
+   */
+  const [
+    historyYear,
+    setHistoryYear,
+  ] = useState(
+    now.getFullYear()
+  );
+
+  /*
+   * Halaman minggu yang sedang dibuka.
+   *
+   * 0 = minggu pertama
+   * 1 = minggu kedua
+   * dst.
+   */
+  const [
+    historyWeekPage,
+    setHistoryWeekPage,
+  ] = useState(0);
+
+  /*
+   * ID card yang menampilkan warning.
+   */
+  const [
+    unavailableWarningId,
+    setUnavailableWarningId,
+  ] = useState<number | null>(
+    null
+  );
+
+  const todayName =
+    getTodayName();
+
+  const normalizedToday =
+    normalizeDay(todayName);
+
+  /*
+   * ============================================================
+   * MAPEL GURU
+   * ============================================================
+   */
+
   const mapelGuru = useMemo(() => {
     const semuaMapel =
       jurnalList
@@ -389,6 +793,12 @@ export default function JurnalKelas() {
       ? semuaMapel.join(', ')
       : 'Guru Mata Pelajaran';
   }, [jurnalList]);
+
+  /*
+   * ============================================================
+   * FETCH JURNAL
+   * ============================================================
+   */
 
   const fetchJurnal = async () => {
     try {
@@ -430,6 +840,44 @@ export default function JurnalKelas() {
   useEffect(() => {
     fetchJurnal();
   }, []);
+
+  /*
+   * ============================================================
+   * TODAY SCHEDULE
+   * ============================================================
+   */
+
+  const getTodaySchedule = (
+    item: JurnalItem
+  ): JurnalScheduleToday | null => {
+    if (item.jadwal_hari_ini) {
+      return item.jadwal_hari_ini;
+    }
+
+    const fallback =
+      item.jadwal?.find(
+        (schedule) =>
+          normalizeDay(
+            schedule.hari
+          ) === normalizedToday
+      );
+
+    return fallback ?? null;
+  };
+
+  const isScheduleToday = (
+    item: JurnalItem
+  ): boolean => {
+    return (
+      getTodaySchedule(item) !== null
+    );
+  };
+
+  /*
+   * ============================================================
+   * FILTER & SORT JURNAL
+   * ============================================================
+   */
 
   const filteredJurnal =
     useMemo(() => {
@@ -477,6 +925,136 @@ export default function JurnalKelas() {
           );
       }
 
+      result.sort(
+        (a, b) => {
+          const aToday =
+            isScheduleToday(a);
+
+          const bToday =
+            isScheduleToday(b);
+
+          if (
+            aToday &&
+            !bToday
+          ) {
+            return -1;
+          }
+
+          if (
+            !aToday &&
+            bToday
+          ) {
+            return 1;
+          }
+
+          const aSchedules =
+            [...(a.jadwal ?? [])].sort(
+              (
+                scheduleA,
+                scheduleB
+              ) => {
+                const dayDifference =
+                  getDayOrder(
+                    scheduleA.hari
+                  ) -
+                  getDayOrder(
+                    scheduleB.hari
+                  );
+
+                if (
+                  dayDifference !== 0
+                ) {
+                  return dayDifference;
+                }
+
+                return (
+                  getStartTimeMinutes(
+                    scheduleA.waktu
+                  ) -
+                  getStartTimeMinutes(
+                    scheduleB.waktu
+                  )
+                );
+              }
+            );
+
+          const bSchedules =
+            [...(b.jadwal ?? [])].sort(
+              (
+                scheduleA,
+                scheduleB
+              ) => {
+                const dayDifference =
+                  getDayOrder(
+                    scheduleA.hari
+                  ) -
+                  getDayOrder(
+                    scheduleB.hari
+                  );
+
+                if (
+                  dayDifference !== 0
+                ) {
+                  return dayDifference;
+                }
+
+                return (
+                  getStartTimeMinutes(
+                    scheduleA.waktu
+                  ) -
+                  getStartTimeMinutes(
+                    scheduleB.waktu
+                  )
+                );
+              }
+            );
+
+          const aFirst =
+            aSchedules[0];
+
+          const bFirst =
+            bSchedules[0];
+
+          if (
+            !aFirst &&
+            !bFirst
+          ) {
+            return 0;
+          }
+
+          if (!aFirst) {
+            return 1;
+          }
+
+          if (!bFirst) {
+            return -1;
+          }
+
+          const dayDifference =
+            getDayOrder(
+              aFirst.hari
+            ) -
+            getDayOrder(
+              bFirst.hari
+            );
+
+          if (
+            dayDifference !== 0
+          ) {
+            return dayDifference;
+          }
+
+          return (
+            getStartTimeMinutes(
+              aFirst.waktu
+            ) -
+            getStartTimeMinutes(
+              bFirst.waktu
+            )
+          );
+        }
+      );
+
       void period;
 
       return result;
@@ -485,7 +1063,14 @@ export default function JurnalKelas() {
       activeTab,
       searchQuery,
       period,
+      normalizedToday,
     ]);
+
+  /*
+   * ============================================================
+   * STATISTICS
+   * ============================================================
+   */
 
   const jumlahKelas =
     jurnalList.length;
@@ -515,10 +1100,34 @@ export default function JurnalKelas() {
         'menunggu'
     ).length;
 
+  /*
+   * ============================================================
+   * MULAI KELAS
+   * ============================================================
+   */
+
   const handleStartClass = async (
     item: JurnalItem
   ) => {
+    const todaySchedule =
+      getTodaySchedule(item);
+
+    if (!todaySchedule) {
+      setUnavailableWarningId(
+        item.id
+      );
+
+      return;
+    }
+
+    setUnavailableWarningId(null);
+
     setSelectedSchedule(item);
+
+    setSelectedScheduleId(
+      todaySchedule.id
+    );
+
     setShowStartModal(true);
 
     setLoadingDetail(true);
@@ -531,7 +1140,7 @@ export default function JurnalKelas() {
     try {
       const response =
         await api.get(
-          `/guru/jurnal/${item.id}`
+          `/guru/jurnal/${todaySchedule.id}`
         );
 
       const detail =
@@ -545,6 +1154,7 @@ export default function JurnalKelas() {
 
       setScheduleDetail({
         ...detail,
+
         students:
           (
             detail.students ??
@@ -554,9 +1164,14 @@ export default function JurnalKelas() {
               student: StudentItem
             ) => ({
               ...student,
+
               status:
                 student.status ??
                 'hadir',
+
+              notes:
+                student.notes ??
+                '',
             })
           ),
       });
@@ -580,13 +1195,25 @@ export default function JurnalKelas() {
     }
 
     setShowStartModal(false);
+
     setSelectedSchedule(null);
+
+    setSelectedScheduleId(null);
+
     setScheduleDetail(null);
 
     setTopic('');
+
     setDescription('');
+
     setModalError('');
   };
+
+  /*
+   * ============================================================
+   * ATTENDANCE
+   * ============================================================
+   */
 
   const changeAttendance = (
     studentId: number,
@@ -617,9 +1244,47 @@ export default function JurnalKelas() {
     );
   };
 
+  const changeAttendanceNotes = (
+    studentId: number,
+    notes: string
+  ) => {
+    setScheduleDetail(
+      (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+
+          students:
+            current.students.map(
+              (student) =>
+                student.id ===
+                studentId
+                  ? {
+                      ...student,
+                      notes,
+                    }
+                  : student
+            ),
+        };
+      }
+    );
+  };
+
+  /*
+   * ============================================================
+   * SIMPAN JURNAL
+   * ============================================================
+   */
+
   const handleSaveJournal =
     async () => {
-      if (!selectedSchedule) {
+      if (
+        !selectedSchedule ||
+        !selectedScheduleId
+      ) {
         return;
       }
 
@@ -627,6 +1292,7 @@ export default function JurnalKelas() {
         setModalError(
           'Tanggal pertemuan wajib diisi.'
         );
+
         return;
       }
 
@@ -634,6 +1300,7 @@ export default function JurnalKelas() {
         setModalError(
           'Materi atau topik pembelajaran wajib diisi.'
         );
+
         return;
       }
 
@@ -641,6 +1308,7 @@ export default function JurnalKelas() {
         setModalError(
           'Data siswa belum tersedia.'
         );
+
         return;
       }
 
@@ -651,6 +1319,7 @@ export default function JurnalKelas() {
         setModalError(
           'Kelas ini belum memiliki siswa.'
         );
+
         return;
       }
 
@@ -659,7 +1328,7 @@ export default function JurnalKelas() {
         setModalError('');
 
         await api.post(
-          `/guru/jurnal/${selectedSchedule.id}/mulai`,
+          `/guru/jurnal/${selectedScheduleId}/mulai`,
           {
             date: journalDate,
 
@@ -679,7 +1348,9 @@ export default function JurnalKelas() {
                   status:
                     student.status,
 
-                  notes: null,
+                  notes:
+                    student.notes.trim() ||
+                    null,
                 })
               ),
           }
@@ -707,14 +1378,39 @@ export default function JurnalKelas() {
       }
     };
 
+  /*
+   * ============================================================
+   * RIWAYAT JURNAL
+   * ============================================================
+   */
+
   const handleOpenHistory =
     async (
       item: JurnalItem
     ) => {
       setHistoryClass(item);
+
+      /*
+       * Saat modal baru dibuka,
+       * gunakan bulan dan tahun sekarang.
+       */
+      const currentDate =
+        new Date();
+
+      setHistoryMonth(
+        currentDate.getMonth() + 1
+      );
+
+      setHistoryYear(
+        currentDate.getFullYear()
+      );
+
+      setHistoryWeekPage(0);
+
       setShowHistoryModal(true);
 
       setLoadingHistory(true);
+
       setHistoryError('');
 
       try {
@@ -723,10 +1419,54 @@ export default function JurnalKelas() {
             `/guru/jurnal/riwayat/${item.id}`
           );
 
-        setHistoryItems(
+        const data =
           response.data?.data ??
-            []
+          [];
+
+        /*
+         * Urutkan dari jurnal
+         * paling baru ke paling lama.
+         */
+        const sortedHistory =
+          [...data].sort(
+            (
+              a: HistoryItem,
+              b: HistoryItem
+            ) =>
+              b.tanggal.localeCompare(
+                a.tanggal
+              )
+          );
+
+        setHistoryItems(
+          sortedHistory
         );
+
+        /*
+         * Jika bulan sekarang tidak mempunyai
+         * riwayat, otomatis pilih bulan
+         * paling baru yang mempunyai jurnal.
+         *
+         * Hal ini membuat modal lebih informatif
+         * ketika guru membuka riwayat kelas lama.
+         */
+        if (
+          sortedHistory.length > 0
+        ) {
+          const latest =
+            parseLocalDate(
+              sortedHistory[0]
+                .tanggal
+            );
+
+          setHistoryMonth(
+            latest.getMonth() + 1
+          );
+
+          setHistoryYear(
+            latest.getFullYear()
+          );
+        }
       } catch (err) {
         console.error(
           'Gagal mengambil riwayat jurnal:',
@@ -744,10 +1484,249 @@ export default function JurnalKelas() {
   const closeHistoryModal =
     () => {
       setShowHistoryModal(false);
+
       setHistoryClass(null);
+
       setHistoryItems([]);
+
       setHistoryError('');
+
+      setHistoryWeekPage(0);
     };
+
+  /*
+   * ============================================================
+   * DAFTAR TAHUN RIWAYAT
+   * ============================================================
+   *
+   * Tahun dibuat berdasarkan:
+   *
+   * 1. Tahun saat ini
+   * 2. Tahun dari data jurnal
+   *
+   * Jadi dropdown akan otomatis mengikuti
+   * data yang memang tersedia.
+   */
+  const historyYears =
+    useMemo(() => {
+      const years =
+        new Set<number>();
+
+      years.add(
+        new Date().getFullYear()
+      );
+
+      historyItems.forEach(
+        (item) => {
+          const date =
+            parseLocalDate(
+              item.tanggal
+            );
+
+          if (
+            !Number.isNaN(
+              date.getTime()
+            )
+          ) {
+            years.add(
+              date.getFullYear()
+            );
+          }
+        }
+      );
+
+      return Array.from(
+        years
+      ).sort(
+        (a, b) => b - a
+      );
+    }, [historyItems]);
+
+  /*
+   * ============================================================
+   * FILTER RIWAYAT BULAN + TAHUN
+   * ============================================================
+   */
+
+  const historyMonthItems =
+    useMemo(() => {
+      return historyItems
+        .filter(
+          (item) => {
+            const date =
+              parseLocalDate(
+                item.tanggal
+              );
+
+            return (
+              date.getFullYear() ===
+                historyYear &&
+              date.getMonth() + 1 ===
+                historyMonth
+            );
+          }
+        )
+        .sort(
+          (a, b) =>
+            b.tanggal.localeCompare(
+              a.tanggal
+            )
+        );
+    }, [
+      historyItems,
+      historyMonth,
+      historyYear,
+    ]);
+
+  /*
+   * ============================================================
+   * KELOMPOK MINGGU
+   * ============================================================
+   *
+   * Setiap page mewakili satu minggu.
+   */
+  const historyWeeks =
+    useMemo(() => {
+      const weeks =
+        getWeeksOfMonth(
+          historyYear,
+          historyMonth
+        );
+
+      weeks.forEach(
+        (week) => {
+          week.items =
+            historyMonthItems
+              .filter(
+                (item) => {
+                  return (
+                    item.tanggal >=
+                      week.startDate &&
+                    item.tanggal <=
+                      week.endDate
+                  );
+                }
+              )
+              .sort(
+                (a, b) =>
+                  b.tanggal.localeCompare(
+                    a.tanggal
+                  )
+              );
+        }
+      );
+
+      return weeks;
+    }, [
+      historyMonthItems,
+      historyMonth,
+      historyYear,
+    ]);
+
+  /*
+   * Minggu aktif.
+   */
+  const activeHistoryWeek =
+    historyWeeks[
+      historyWeekPage
+    ] ?? null;
+
+  /*
+   * Apakah halaman sebelumnya tersedia?
+   */
+  const canGoPreviousHistoryWeek =
+    historyWeekPage > 0;
+
+  /*
+   * Apakah halaman berikutnya tersedia?
+   */
+  const canGoNextHistoryWeek =
+    historyWeekPage <
+    historyWeeks.length - 1;
+
+  /*
+   * Ketika bulan/tahun berubah,
+   * kembali ke minggu pertama.
+   */
+  const handleHistoryMonthChange =
+    (
+      value: number
+    ) => {
+      setHistoryMonth(value);
+      setHistoryWeekPage(0);
+    };
+
+  const handleHistoryYearChange =
+    (
+      value: number
+    ) => {
+      setHistoryYear(value);
+      setHistoryWeekPage(0);
+    };
+
+  /*
+   * Format range minggu.
+   *
+   * Contoh:
+   *
+   * 1–6 September
+   * 7–13 September
+   */
+  const formatWeekRange = (
+    week: HistoryWeek
+  ): string => {
+    const start =
+      parseLocalDate(
+        week.startDate
+      );
+
+    const end =
+      parseLocalDate(
+        week.endDate
+      );
+
+    const startDay =
+      start.getDate();
+
+    const endDay =
+      end.getDate();
+
+    const monthName =
+      getMonthName(
+        historyMonth
+      );
+
+    if (
+      start.getMonth() ===
+      end.getMonth()
+    ) {
+      return `${startDay}–${endDay} ${monthName}`;
+    }
+
+    const startMonth =
+      start.toLocaleDateString(
+        'id-ID',
+        {
+          month: 'short',
+        }
+      );
+
+    const endMonth =
+      end.toLocaleDateString(
+        'id-ID',
+        {
+          month: 'short',
+        }
+      );
+
+    return `${startDay} ${startMonth}–${endDay} ${endMonth}`;
+  };
+
+  /*
+   * ============================================================
+   * RETURN
+   * ============================================================
+   */
 
   return (
     <JurnalMengajarLayout
@@ -756,14 +1735,17 @@ export default function JurnalKelas() {
       getInitials={getInitials}
     >
       <div className="mx-auto w-full max-w-[1500px]">
+
         {/* =====================================================
             HEADER
         ====================================================== */}
+
         <div className="mb-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#C49A5A]" />
+
                 <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8A806F]">
                   Semester Ganjil 2026/2027
                 </span>
@@ -780,8 +1762,13 @@ export default function JurnalKelas() {
           </div>
         </div>
 
+        {/* =====================================================
+            FILTER
+        ====================================================== */}
+
         <div className="my-[22px] flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex w-full overflow-x-auto rounded-[11px] border border-[#E3DACB] bg-[#FFFDF8] p-1 shadow-[0_1px_2px_rgba(30,25,15,0.04)] xl:w-auto">
+
             <button
               type="button"
               onClick={() =>
@@ -896,7 +1883,12 @@ export default function JurnalKelas() {
           </div>
         </div>
 
+        {/* =====================================================
+            STATISTICS
+        ====================================================== */}
+
         <div className="mb-[22px] flex flex-wrap gap-4 rounded-[14px] border border-[#E3DACB] bg-[#FFFDF8] px-5 py-4 shadow-[0_1px_2px_rgba(30,25,15,0.04),0_8px_24px_-12px_rgba(30,25,15,0.10)] md:gap-[22px]">
+
           <div className="flex items-center gap-[11px] border-[#E3DACB] pr-5 md:border-r">
             <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-[#E7ECF4] text-[#1E2A47]">
               <BookOpen
@@ -980,6 +1972,10 @@ export default function JurnalKelas() {
           </div>
         </div>
 
+        {/* =====================================================
+            ERROR
+        ====================================================== */}
+
         {error && (
           <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-[#E4BCA9] bg-[#F6E1D9] px-4 py-3 text-[13px] text-[#A8503B]">
             <div className="flex items-center gap-2">
@@ -999,6 +1995,10 @@ export default function JurnalKelas() {
             </button>
           </div>
         )}
+
+        {/* =====================================================
+            CONTENT
+        ====================================================== */}
 
         {loading ? (
           <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
@@ -1078,19 +2078,53 @@ export default function JurnalKelas() {
                   item.status ===
                   'menunggu';
 
-                const filled =
-                  item.jumlah_jurnal;
+                const isToday =
+                  isScheduleToday(
+                    item
+                  );
+
+                const showUnavailableWarning =
+                  unavailableWarningId ===
+                  item.id;
 
                 const totalMeetings =
                   Math.max(
-                    filled,
+                    Number(
+                      item.total_pertemuan ??
+                        item.jumlah_sesi ??
+                        item.jadwal?.length ??
+                        1
+                    ),
                     1
                   );
 
+                const filled =
+                  Math.min(
+                    Math.max(
+                      Number(
+                        item.jumlah_jurnal ??
+                          0
+                      ),
+                      0
+                    ),
+                    totalMeetings
+                  );
+
+                const remainingMeetings =
+                  Math.max(
+                    totalMeetings -
+                      filled,
+                    0
+                  );
+
                 const progress =
-                  isPending
-                    ? 0
-                    : 100;
+                  Math.min(
+                    (
+                      filled /
+                      totalMeetings
+                    ) * 100,
+                    100
+                  );
 
                 const latestDate =
                   item.jurnal_terakhir
@@ -1101,6 +2135,38 @@ export default function JurnalKelas() {
                       )
                     : null;
 
+                const sortedSchedules =
+                  [...(item.jadwal ?? [])].sort(
+                    (
+                      scheduleA,
+                      scheduleB
+                    ) => {
+                      const dayDifference =
+                        getDayOrder(
+                          scheduleA.hari
+                        ) -
+                        getDayOrder(
+                          scheduleB.hari
+                        );
+
+                      if (
+                        dayDifference !==
+                        0
+                      ) {
+                        return dayDifference;
+                      }
+
+                      return (
+                        getStartTimeMinutes(
+                          scheduleA.waktu
+                        ) -
+                        getStartTimeMinutes(
+                          scheduleB.waktu
+                        )
+                      );
+                    }
+                  );
+
                 return (
                   <div
                     key={item.id}
@@ -1110,6 +2176,9 @@ export default function JurnalKelas() {
                         : 'border-[#E3DACB]'
                     }`}
                   >
+
+                    {/* STATUS */}
+
                     <span
                       className={`absolute right-[18px] top-[18px] z-10 inline-flex items-center gap-[5px] rounded-full px-2.5 py-1 text-[10.5px] font-bold ${
                         isPending
@@ -1134,6 +2203,8 @@ export default function JurnalKelas() {
                         : 'Lengkap'}
                     </span>
 
+                    {/* CARD HEADER */}
+
                     <div className="border-b border-[#E3DACB] px-[22px] pb-4 pt-5 pr-[90px]">
                       <span
                         className={`mb-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${getSubjectTagClass(
@@ -1151,33 +2222,88 @@ export default function JurnalKelas() {
                           />
                         </span>
 
-                        {item.mata_pelajaran}
+                        {
+                          item.mata_pelajaran
+                        }
                       </span>
 
                       <div className="font-['Fraunces',serif] text-[21px] font-semibold tracking-[-0.01em] text-[#141C30]">
                         {item.kelas}
                       </div>
 
-                      <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[#6B7080]">
-                        <span>
-                          {item.hari}
-                        </span>
+                      <div className="mt-[7px] space-y-1.5">
+                        {sortedSchedules.length >
+                        0 ? (
+                          sortedSchedules.map(
+                            (
+                              schedule
+                            ) => {
+                              const scheduleIsToday =
+                                normalizeDay(
+                                  schedule.hari
+                                ) ===
+                                normalizedToday;
 
-                        <span>
-                          •
-                        </span>
+                              return (
+                                <div
+                                  key={
+                                    schedule.id
+                                  }
+                                  className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[#6B7080]"
+                                >
+                                  <span
+                                    className={
+                                      scheduleIsToday
+                                        ? 'font-bold text-[#4C7A5E]'
+                                        : ''
+                                    }
+                                  >
+                                    {
+                                      schedule.hari
+                                    }
+                                  </span>
 
-                        <span>
-                          {item.waktu}
-                        </span>
+                                  {scheduleIsToday && (
+                                    <span className="rounded-full bg-[#E7F0EA] px-2 py-0.5 text-[9.5px] font-bold text-[#4C7A5E]">
+                                      Hari ini
+                                    </span>
+                                  )}
+
+                                  <span>
+                                    •
+                                  </span>
+
+                                  <span>
+                                    {
+                                      schedule.waktu
+                                    }
+                                  </span>
+                                </div>
+                              );
+                            }
+                          )
+                        ) : (
+                          <div className="flex items-center gap-2 text-[12px] text-[#6B7080]">
+                            <CalendarDays
+                              size={13}
+                            />
+
+                            Jadwal belum tersedia
+                          </div>
+                        )}
                       </div>
                     </div>
 
+                    {/* STAT CARD */}
+
                     <div className="px-[22px] pb-1 pt-4">
                       <div className="mb-4 grid grid-cols-3 gap-2.5">
+
                         <div className="rounded-[10px] border border-[#E3DACB] bg-[#FBF9F3] px-3 py-2.5 text-left">
                           <div className="font-['Fraunces',serif] text-[18px] font-semibold leading-none text-[#141C30]">
-                            {totalMeetings}
+                            {
+                              totalMeetings
+                            }
                           </div>
 
                           <div className="mt-1 text-[10.5px] text-[#6B7080]">
@@ -1197,21 +2323,23 @@ export default function JurnalKelas() {
 
                         <div
                           className={`rounded-[10px] border px-3 py-2.5 text-left ${
-                            isPending
+                            remainingMeetings >
+                            0
                               ? 'border-[#E4BCA9] bg-[#F6E1D9]'
                               : 'border-[#E3DACB] bg-[#FBF9F3]'
                           }`}
                         >
                           <div
                             className={`font-['Fraunces',serif] text-[18px] font-semibold leading-none ${
-                              isPending
+                              remainingMeetings >
+                              0
                                 ? 'text-[#A8503B]'
                                 : 'text-[#141C30]'
                             }`}
                           >
-                            {isPending
-                              ? 1
-                              : 0}
+                            {
+                              remainingMeetings
+                            }
                           </div>
 
                           <div className="mt-1 text-[10.5px] text-[#6B7080]">
@@ -1219,6 +2347,8 @@ export default function JurnalKelas() {
                           </div>
                         </div>
                       </div>
+
+                      {/* PERTEMUAN TERAKHIR */}
 
                       <div
                         className={`mb-4 flex gap-[13px] rounded-[11px] border p-3.5 ${
@@ -1237,11 +2367,15 @@ export default function JurnalKelas() {
                           {latestDate ? (
                             <>
                               <div className="font-['Fraunces',serif] text-[16px] font-bold leading-none text-[#141C30]">
-                                {latestDate.day}
+                                {
+                                  latestDate.day
+                                }
                               </div>
 
                               <div className="mt-0.5 text-[9.5px] lowercase text-[#6B7080]">
-                                {latestDate.month}
+                                {
+                                  latestDate.month
+                                }
                               </div>
                             </>
                           ) : (
@@ -1271,7 +2405,10 @@ export default function JurnalKelas() {
                           {isPending ? (
                             <>
                               <div className="text-[13px] italic leading-[1.45] text-[#6B7080]">
-                                Materi dan presensi belum diisi untuk pertemuan ini.
+                                {filled >
+                                0
+                                  ? 'Masih terdapat sesi yang belum memiliki jurnal pada minggu ini.'
+                                  : 'Materi dan presensi belum diisi untuk pertemuan ini.'}
                               </div>
 
                               <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#A8503B]">
@@ -1279,7 +2416,10 @@ export default function JurnalKelas() {
                                   size={12}
                                 />
 
-                                Menunggu diisi
+                                {
+                                  remainingMeetings
+                                }{' '}
+                                sesi belum diisi
                               </div>
                             </>
                           ) : (
@@ -1381,6 +2521,8 @@ export default function JurnalKelas() {
                       </div>
                     </div>
 
+                    {/* PROGRESS */}
+
                     <div className="px-[22px] pb-1">
                       <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-[#6B7080]">
                         <span>
@@ -1408,6 +2550,60 @@ export default function JurnalKelas() {
                       </div>
                     </div>
 
+                    {/* WARNING */}
+
+                    {showUnavailableWarning && (
+                      <div className="mx-[22px] mt-[14px] flex items-start gap-2.5 rounded-[10px] border border-[#E3DACB] bg-[#F3F0E8] px-3.5 py-3 text-[11.5px] leading-5 text-[#6B7080]">
+                        <TriangleAlert
+                          size={15}
+                          className="mt-0.5 shrink-0 text-[#A8503B]"
+                        />
+
+                        <div>
+                          <div className="font-bold text-[#A8503B]">
+                            Kelas belum dapat dimulai
+                          </div>
+
+                          <div className="mt-0.5">
+                            Tombol mulai kelas hanya dapat digunakan pada hari sesuai jadwal mengajar, yaitu{' '}
+                            <span className="font-bold text-[#23283A]">
+                              {(
+                                item.jadwal ??
+                                []
+                              )
+                                .map(
+                                  (
+                                    schedule
+                                  ) =>
+                                    schedule.hari
+                                )
+                                .join(
+                                  ' dan '
+                                )}
+                            </span>
+                            .
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUnavailableWarningId(
+                              null
+                            )
+                          }
+                          className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#6B7080] transition hover:bg-white hover:text-[#23283A]"
+                          aria-label="Tutup peringatan"
+                        >
+                          <X
+                            size={13}
+                          />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* BUTTONS */}
+
                     <div className="mt-auto flex gap-2 px-[22px] pb-5 pt-[18px]">
                       <button
                         type="button"
@@ -1433,10 +2629,15 @@ export default function JurnalKelas() {
                             item
                           )
                         }
-                        className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] border px-2 py-2.5 text-[12.5px] font-bold text-white transition ${
-                          isPending
-                            ? 'border-[#A8503B] bg-[#A8503B] hover:bg-[#8F4331]'
-                            : 'border-[#1E2A47] bg-[#1E2A47] hover:bg-[#141C30]'
+                        aria-disabled={
+                          !isToday
+                        }
+                        className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] border px-2 py-2.5 text-[12.5px] font-bold transition ${
+                          !isToday
+                            ? 'cursor-not-allowed border-[#D5D1C8] bg-[#D5D1C8] text-[#8A8E9A]'
+                            : isPending
+                              ? 'border-[#A8503B] bg-[#A8503B] text-white hover:bg-[#8F4331]'
+                              : 'border-[#1E2A47] bg-[#1E2A47] text-white hover:bg-[#141C30]'
                         }`}
                       >
                         <Play
@@ -1445,9 +2646,11 @@ export default function JurnalKelas() {
                           fill="currentColor"
                         />
 
-                        {isPending
-                          ? 'Mulai kelas sekarang'
-                          : 'Mulai kelas'}
+                        {!isToday
+                          ? 'Belum waktunya'
+                          : isPending
+                            ? 'Mulai kelas sekarang'
+                            : 'Mulai kelas'}
                       </button>
                     </div>
                   </div>
@@ -1457,6 +2660,10 @@ export default function JurnalKelas() {
           </div>
         )}
       </div>
+
+      {/* =========================================================
+          MODAL MULAI KELAS
+      ========================================================== */}
 
       {showStartModal && (
         <div
@@ -1473,6 +2680,9 @@ export default function JurnalKelas() {
           }}
         >
           <div className="flex max-h-[92vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[16px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_20px_60px_rgba(20,28,48,0.20)]">
+
+            {/* HEADER */}
+
             <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4 md:px-6">
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#6B7080]">
@@ -1483,7 +2693,43 @@ export default function JurnalKelas() {
                   Mulai kelas
                 </h2>
 
-                {selectedSchedule && (
+                {scheduleDetail?.schedule ? (
+                  <div className="mt-1 text-[12.5px] text-[#6B7080]">
+                    <span className="font-semibold text-[#23283A]">
+                      {
+                        scheduleDetail
+                          .schedule
+                          .mata_pelajaran
+                      }
+                    </span>
+
+                    <span className="mx-1.5">
+                      •
+                    </span>
+
+                    {
+                      scheduleDetail
+                        .schedule
+                        .kelas
+                    }
+
+                    <span className="mx-1.5">
+                      •
+                    </span>
+
+                    {
+                      scheduleDetail
+                        .schedule
+                        .hari
+                    }
+                    ,{' '}
+                    {
+                      scheduleDetail
+                        .schedule
+                        .waktu
+                    }
+                  </div>
+                ) : selectedSchedule ? (
                   <div className="mt-1 text-[12.5px] text-[#6B7080]">
                     <span className="font-semibold text-[#23283A]">
                       {
@@ -1498,20 +2744,8 @@ export default function JurnalKelas() {
                     {
                       selectedSchedule.kelas
                     }
-
-                    <span className="mx-1.5">
-                      •
-                    </span>
-
-                    {
-                      selectedSchedule.hari
-                    }
-                    ,{' '}
-                    {
-                      selectedSchedule.waktu
-                    }
                   </div>
-                )}
+                ) : null}
               </div>
 
               <button
@@ -1525,6 +2759,8 @@ export default function JurnalKelas() {
                 <X size={18} />
               </button>
             </div>
+
+            {/* BODY */}
 
             <div className="overflow-y-auto px-5 py-5 md:px-6">
               {modalError && (
@@ -1552,6 +2788,9 @@ export default function JurnalKelas() {
                 </div>
               ) : (
                 <div className="space-y-5">
+
+                  {/* TANGGAL */}
+
                   <div>
                     <label className="mb-1.5 block text-[12px] font-bold text-[#23283A]">
                       Tanggal pertemuan
@@ -1583,6 +2822,8 @@ export default function JurnalKelas() {
                     </div>
                   </div>
 
+                  {/* TOPIK */}
+
                   <div>
                     <label className="mb-1.5 block text-[12px] font-bold text-[#23283A]">
                       Materi / Topik pembelajaran
@@ -1609,6 +2850,8 @@ export default function JurnalKelas() {
                     />
                   </div>
 
+                  {/* DESKRIPSI */}
+
                   <div>
                     <label className="mb-1.5 block text-[12px] font-bold text-[#23283A]">
                       Deskripsi kegiatan
@@ -1634,6 +2877,8 @@ export default function JurnalKelas() {
                     />
                   </div>
 
+                  {/* PRESENSI */}
+
                   <div>
                     <div className="mb-2.5 flex items-center justify-between">
                       <div>
@@ -1642,7 +2887,7 @@ export default function JurnalKelas() {
                         </div>
 
                         <div className="mt-0.5 text-[11.5px] text-[#6B7080]">
-                          Tentukan status kehadiran setiap siswa.
+                          Tentukan status kehadiran setiap siswa dan tambahkan keterangan bila diperlukan.
                         </div>
                       </div>
 
@@ -1683,8 +2928,8 @@ export default function JurnalKelas() {
                                   : ''
                               }`}
                             >
-                              <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-                                <div className="flex min-w-0 items-center gap-2.5">
+                              <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="flex min-w-0 items-center gap-2.5 xl:min-w-[180px]">
                                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#E7ECF4] text-[10px] font-bold text-[#1E2A47]">
                                     {getInitials(
                                       student.nama
@@ -1706,81 +2951,109 @@ export default function JurnalKelas() {
                                   </div>
                                 </div>
 
-                                <div className="grid grid-cols-5 gap-1">
-                                  {(
-                                    [
-                                      'hadir',
-                                      'izin',
-                                      'sakit',
-                                      'dispen',
-                                      'alpa',
-                                    ] as AttendanceStatus[]
-                                  ).map(
-                                    (
-                                      status
-                                    ) => {
-                                      const active =
-                                        student.status ===
-                                        status;
+                                <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                                  <div className="grid shrink-0 grid-cols-5 gap-1">
+                                    {(
+                                      [
+                                        'hadir',
+                                        'izin',
+                                        'sakit',
+                                        'dispen',
+                                        'alpa',
+                                      ] as AttendanceStatus[]
+                                    ).map(
+                                      (
+                                        status
+                                      ) => {
+                                        const active =
+                                          student.status ===
+                                          status;
 
-                                      const labels: Record<
-                                        AttendanceStatus,
-                                        string
-                                      > = {
-                                        hadir:
-                                          'Hadir',
-                                        izin:
-                                          'Izin',
-                                        sakit:
-                                          'Sakit',
-                                        dispen:
-                                          'Dispen',
-                                        alpa:
-                                          'Alpa',
-                                      };
+                                        const labels: Record<
+                                          AttendanceStatus,
+                                          string
+                                        > = {
+                                          hadir:
+                                            'Hadir',
+                                          izin:
+                                            'Izin',
+                                          sakit:
+                                            'Sakit',
+                                          dispen:
+                                            'Dispen',
+                                          alpa:
+                                            'Alpa',
+                                        };
 
-                                      return (
-                                        <button
-                                          key={
-                                            status
-                                          }
-                                          type="button"
-                                          disabled={
-                                            saving
-                                          }
-                                          onClick={() =>
-                                            changeAttendance(
-                                              student.id,
+                                        return (
+                                          <button
+                                            key={
                                               status
-                                            )
-                                          }
-                                          className={`rounded-full border px-2 py-1.5 text-[10px] font-bold transition ${
-                                            active
-                                              ? status ===
-                                                'hadir'
-                                                ? 'border-[#4C7A5E] bg-[#E7F0EA] text-[#4C7A5E]'
-                                                : status ===
-                                                  'izin'
-                                                  ? 'border-[#3E6BAE] bg-[#E5ECF5] text-[#3E6BAE]'
+                                            }
+                                            type="button"
+                                            disabled={
+                                              saving
+                                            }
+                                            onClick={() =>
+                                              changeAttendance(
+                                                student.id,
+                                                status
+                                              )
+                                            }
+                                            className={`rounded-full border px-2 py-1.5 text-[10px] font-bold transition ${
+                                              active
+                                                ? status ===
+                                                  'hadir'
+                                                  ? 'border-[#4C7A5E] bg-[#E7F0EA] text-[#4C7A5E]'
                                                   : status ===
-                                                    'sakit'
-                                                    ? 'border-[#B98A3E] bg-[#E7D3A8] text-[#7A5A20]'
+                                                    'izin'
+                                                    ? 'border-[#3E6BAE] bg-[#E5ECF5] text-[#3E6BAE]'
                                                     : status ===
-                                                      'dispen'
-                                                      ? 'border-[#7A4C6E] bg-[#EFE2EC] text-[#7A4C6E]'
-                                                      : 'border-[#A8503B] bg-[#F6E1D9] text-[#A8503B]'
-                                              : 'border-[#E3DACB] bg-[#FFFDF8] text-[#6B7080] hover:bg-[#F0EBDB]'
-                                          }`}
-                                        >
-                                          {
-                                            labels[
-                                              status
-                                            ]
-                                          }
-                                        </button>
-                                      );
+                                                      'sakit'
+                                                      ? 'border-[#B98A3E] bg-[#E7D3A8] text-[#7A5A20]'
+                                                      : status ===
+                                                        'dispen'
+                                                        ? 'border-[#7A4C6E] bg-[#EFE2EC] text-[#7A4C6E]'
+                                                        : 'border-[#A8503B] bg-[#F6E1D9] text-[#A8503B]'
+                                                : 'border-[#E3DACB] bg-[#FFFDF8] text-[#6B7080] hover:bg-[#F0EBDB]'
+                                            }`}
+                                          >
+                                            {
+                                              labels[
+                                                status
+                                              ]
+                                            }
+                                          </button>
+                                        );
+                                      }
+                                    )}
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    value={
+                                      student.notes
                                     }
-                                  )}
+                                    onChange={(
+                                      event
+                                    ) =>
+                                      changeAttendanceNotes(
+                                        student.id,
+                                        event
+                                          .target
+                                          .value
+                                      )
+                                    }
+                                    disabled={
+                                      saving
+                                    }
+                                    maxLength={
+                                      255
+                                    }
+                                    placeholder="Masukkan keterangan..."
+                                    aria-label={`Keterangan ${student.nama}`}
+                                    className="h-[32px] min-w-0 flex-1 rounded-full border border-[#E3DACB] bg-[#FFFDF8] px-3 text-[10.5px] text-[#23283A] outline-none transition placeholder:text-[#9A9DA7] focus:border-[#B98A3E] sm:max-w-[190px]"
+                                  />
                                 </div>
                               </div>
                             </div>
@@ -1796,6 +3069,8 @@ export default function JurnalKelas() {
                 </div>
               )}
             </div>
+
+            {/* FOOTER */}
 
             <div className="flex flex-col-reverse gap-2 border-t border-[#E3DACB] bg-[#FBF9F3] px-5 py-4 sm:flex-row sm:justify-end md:px-6">
               <button
@@ -1824,6 +3099,7 @@ export default function JurnalKelas() {
                 {saving ? (
                   <>
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+
                     Menyimpan...
                   </>
                 ) : (
@@ -1831,6 +3107,7 @@ export default function JurnalKelas() {
                     <Check
                       size={14}
                     />
+
                     Simpan pertemuan
                   </>
                 )}
@@ -1839,6 +3116,10 @@ export default function JurnalKelas() {
           </div>
         </div>
       )}
+
+      {/* =========================================================
+          MODAL RIWAYAT JURNAL
+      ========================================================== */}
 
       {showHistoryModal && (
         <div
@@ -1855,47 +3136,215 @@ export default function JurnalKelas() {
           }}
         >
           <div className="flex max-h-[88vh] w-full max-w-[680px] flex-col overflow-hidden rounded-[16px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_20px_60px_rgba(20,28,48,0.20)]">
-            <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4 md:px-6">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#6B7080]">
-                  Riwayat pembelajaran
+
+            {/* =====================================================
+                HISTORY HEADER
+            ====================================================== */}
+
+            <div className="border-b border-[#E3DACB] px-5 py-4 md:px-6">
+
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#6B7080]">
+                    Riwayat pembelajaran
+                  </div>
+
+                  <h2 className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
+                    Riwayat jurnal
+                  </h2>
+
+                  {historyClass && (
+                    <div className="mt-1 text-[12.5px] text-[#6B7080]">
+                      <span className="font-semibold text-[#23283A]">
+                        {
+                          historyClass.mata_pelajaran
+                        }
+                      </span>
+
+                      <span className="mx-1.5">
+                        •
+                      </span>
+
+                      {
+                        historyClass.kelas
+                      }
+                    </div>
+                  )}
                 </div>
 
-                <h2 className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
-                  Riwayat jurnal
-                </h2>
-
-                {historyClass && (
-                  <div className="mt-1 text-[12.5px] text-[#6B7080]">
-                    <span className="font-semibold text-[#23283A]">
-                      {
-                        historyClass.mata_pelajaran
-                      }
-                    </span>
-
-                    <span className="mx-1.5">
-                      •
-                    </span>
-
-                    {
-                      historyClass.kelas
-                    }
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={
+                    closeHistoryModal
+                  }
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A]"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={
-                  closeHistoryModal
-                }
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A]"
-              >
-                <X size={18} />
-              </button>
+              {/* =================================================
+                  MONTH & YEAR FILTER
+              ================================================== */}
+
+              {!loadingHistory &&
+                !historyError && (
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+
+                    {/* BULAN */}
+
+                    <div className="relative flex-1">
+                      <CalendarDays
+                        size={15}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7080]"
+                      />
+
+                      <select
+                        value={
+                          historyMonth
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          handleHistoryMonthChange(
+                            Number(
+                              event
+                                .target
+                                .value
+                            )
+                          )
+                        }
+                        className="h-[40px] w-full appearance-none rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] py-2 pl-9 pr-9 text-[12.5px] font-semibold text-[#23283A] outline-none transition focus:border-[#B98A3E]"
+                      >
+                        {Array.from(
+                          {
+                            length: 12,
+                          },
+                          (
+                            _,
+                            index
+                          ) => {
+                            const month =
+                              index +
+                              1;
+
+                            return (
+                              <option
+                                key={
+                                  month
+                                }
+                                value={
+                                  month
+                                }
+                              >
+                                {getMonthName(
+                                  month
+                                )}
+                              </option>
+                            );
+                          }
+                        )}
+                      </select>
+
+                      <ChevronDown
+                        size={14}
+                        strokeWidth={1.9}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7080]"
+                      />
+                    </div>
+
+                    {/* TAHUN */}
+
+                    <div className="relative flex-1">
+                      <select
+                        value={
+                          historyYear
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          handleHistoryYearChange(
+                            Number(
+                              event
+                                .target
+                                .value
+                            )
+                          )
+                        }
+                        className="h-[40px] w-full appearance-none rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] py-2 pl-3 pr-9 text-[12.5px] font-semibold text-[#23283A] outline-none transition focus:border-[#B98A3E]"
+                      >
+                        {historyYears.map(
+                          (
+                            year
+                          ) => (
+                            <option
+                              key={
+                                year
+                              }
+                              value={
+                                year
+                              }
+                            >
+                              {year}
+                            </option>
+                          )
+                        )}
+                      </select>
+
+                      <ChevronDown
+                        size={14}
+                        strokeWidth={1.9}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7080]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+              {/* =================================================
+                  WEEK NAVIGATION HEADER
+              ================================================== */}
+
+              {!loadingHistory &&
+                !historyError &&
+                historyWeeks.length >
+                  0 && (
+                  <div className="mt-4 flex items-center justify-between rounded-[10px] border border-[#E3DACB] bg-[#FBF9F3] px-3.5 py-2.5">
+
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#6B7080]">
+                        Minggu{' '}
+                        {Math.min(
+                          historyWeekPage +
+                            1,
+                          historyWeeks.length
+                        )}
+                      </div>
+
+                      {activeHistoryWeek && (
+                        <div className="mt-0.5 text-[12px] font-semibold text-[#23283A]">
+                          {formatWeekRange(
+                            activeHistoryWeek
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-full bg-[#E7ECF4] px-2.5 py-1 text-[10.5px] font-bold text-[#1E2A47]">
+                      {getMonthName(
+                        historyMonth
+                      )}{' '}
+                      {historyYear}
+                    </div>
+                  </div>
+                )}
             </div>
 
+            {/* =====================================================
+                HISTORY BODY
+            ====================================================== */}
+
             <div className="overflow-y-auto px-5 py-5 md:px-6">
+
               {loadingHistory ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(
@@ -1913,9 +3362,10 @@ export default function JurnalKelas() {
                     historyError
                   }
                 </div>
-              ) : historyItems.length ===
+              ) : historyMonthItems.length ===
                 0 ? (
                 <div className="py-12 text-center">
+
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E7ECF4] text-[#1E2A47]">
                     <History
                       size={22}
@@ -1926,13 +3376,46 @@ export default function JurnalKelas() {
                     Belum ada riwayat
                   </h3>
 
-                  <p className="mt-1.5 text-[12px] text-[#6B7080]">
-                    Belum terdapat jurnal pembelajaran untuk kelas ini.
+                  <p className="mx-auto mt-1.5 max-w-[380px] text-[12px] leading-5 text-[#6B7080]">
+                    Tidak terdapat jurnal pembelajaran pada{' '}
+                    <span className="font-semibold text-[#23283A]">
+                      {getMonthName(
+                        historyMonth
+                      )}{' '}
+                      {historyYear}
+                    </span>
+                    .
                   </p>
                 </div>
-              ) : (
+              ) : activeHistoryWeek &&
+                activeHistoryWeek.items
+                  .length === 0 ? (
+                <div className="py-12 text-center">
+
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E7ECF4] text-[#1E2A47]">
+                    <CalendarDays
+                      size={22}
+                    />
+                  </div>
+
+                  <h3 className="mt-3 font-['Fraunces',serif] text-[18px] font-semibold text-[#141C30]">
+                    Belum ada jurnal minggu ini
+                  </h3>
+
+                  <p className="mx-auto mt-1.5 max-w-[380px] text-[12px] leading-5 text-[#6B7080]">
+                    Tidak terdapat jurnal pada{' '}
+                    <span className="font-semibold text-[#23283A]">
+                      {formatWeekRange(
+                        activeHistoryWeek
+                      )}
+                    </span>
+                    .
+                  </p>
+                </div>
+              ) : activeHistoryWeek ? (
                 <div className="space-y-3">
-                  {historyItems.map(
+
+                  {activeHistoryWeek.items.map(
                     (history) => {
                       const date =
                         formatDate(
@@ -1944,9 +3427,22 @@ export default function JurnalKelas() {
                           key={
                             history.id
                           }
-                          className="flex gap-3 rounded-xl border border-[#E3DACB] bg-[#FBF9F3] p-3.5"
+                          className={`flex gap-3 rounded-xl border p-3.5 ${
+                            history.is_holiday
+                              ? 'border-[#E6C96A] bg-[#FFF4C7]'
+                              : 'border-[#E3DACB] bg-[#FBF9F3]'
+                          }`}
                         >
-                          <div className="w-11 shrink-0 self-start rounded-[9px] border border-[#E3DACB] bg-white px-0 py-[7px] text-center">
+
+                          {/* DATE */}
+
+                          <div
+                            className={`w-11 shrink-0 self-start rounded-[9px] border px-0 py-[7px] text-center ${
+                              history.is_holiday
+                                ? 'border-[#E6C96A] bg-[#FFF9E6]'
+                                : 'border-[#E3DACB] bg-white'
+                            }`}
+                          >
                             <div className="font-['Fraunces',serif] text-[16px] font-bold leading-none text-[#141C30]">
                               {
                                 date.day
@@ -1960,24 +3456,47 @@ export default function JurnalKelas() {
                             </div>
                           </div>
 
+                          {/* CONTENT */}
+
                           <div className="min-w-0 flex-1">
-                            <div className="text-[10.5px] font-bold uppercase tracking-[0.03em] text-[#6B7080]">
+
+                            <div
+                              className={`text-[10.5px] font-bold uppercase tracking-[0.03em] ${
+                                history.is_holiday
+                                  ? 'text-[#9A7414]'
+                                  : 'text-[#6B7080]'
+                              }`}
+                            >
                               {formatLongDate(
                                 history.tanggal
                               )}
                             </div>
 
+                            {history.is_holiday && (
+                              <div className="mt-1.5 inline-flex items-center rounded-full border border-[#E6C96A] bg-[#FFF9E6] px-2 py-0.5 text-[9.5px] font-bold text-[#9A7414]">
+                                Hari Libur Nasional
+                              </div>
+                            )}
+
                             <div className="mt-1 text-[13px] font-semibold leading-5 text-[#23283A]">
-                              {
-                                history.topic
-                              }
+                              {history.is_holiday
+                                ? 'Hari Libur Nasional'
+                                : history.topic}
                             </div>
 
-                            {history.description && (
-                              <div className="mt-1.5 text-[11.5px] leading-5 text-[#6B7080]">
-                                {
-                                  history.description
-                                }
+                            {(history.is_holiday
+                              ? history.holiday_name || history.description
+                              : history.description) && (
+                              <div
+                                className={`mt-1.5 text-[11.5px] leading-5 ${
+                                  history.is_holiday
+                                    ? 'font-medium text-[#7A6118]'
+                                    : 'text-[#6B7080]'
+                                }`}
+                              >
+                                {history.is_holiday
+                                  ? history.holiday_name || history.description
+                                  : history.description}
                               </div>
                             )}
                           </div>
@@ -1986,19 +3505,112 @@ export default function JurnalKelas() {
                     }
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
 
-            <div className="flex justify-end border-t border-[#E3DACB] bg-[#FBF9F3] px-5 py-4 md:px-6">
-              <button
-                type="button"
-                onClick={
-                  closeHistoryModal
-                }
-                className="rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[12.5px] font-bold text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB]"
-              >
-                Tutup
-              </button>
+            {/* =====================================================
+                HISTORY FOOTER
+            ====================================================== */}
+
+            <div className="border-t border-[#E3DACB] bg-[#FBF9F3] px-5 py-4 md:px-6">
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+                {/* PAGINATION */}
+
+                {!loadingHistory &&
+                !historyError &&
+                historyWeeks.length >
+                  0 ? (
+                  <div className="flex items-center gap-2">
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHistoryWeekPage(
+                          (
+                            current
+                          ) =>
+                            Math.max(
+                              current -
+                                1,
+                              0
+                            )
+                        )
+                      }
+                      disabled={
+                        !canGoPreviousHistoryWeek
+                      }
+                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Minggu sebelumnya"
+                    >
+                      <ChevronLeft
+                        size={16}
+                        strokeWidth={2}
+                      />
+                    </button>
+
+                    <div className="min-w-[120px] text-center">
+                      <div className="text-[11px] font-bold text-[#6B7080]">
+                        Minggu{' '}
+                        {Math.min(
+                          historyWeekPage +
+                            1,
+                          historyWeeks.length
+                        )}
+                      </div>
+
+                      <div className="mt-0.5 text-[10px] text-[#8A8E9A]">
+                        dari{' '}
+                        {
+                          historyWeeks.length
+                        }
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHistoryWeekPage(
+                          (
+                            current
+                          ) =>
+                            Math.min(
+                              current +
+                                1,
+                              historyWeeks.length -
+                                1
+                            )
+                        )
+                      }
+                      disabled={
+                        !canGoNextHistoryWeek
+                      }
+                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Minggu berikutnya"
+                    >
+                      <ChevronRight
+                        size={16}
+                        strokeWidth={2}
+                      />
+                    </button>
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                {/* CLOSE */}
+
+                <button
+                  type="button"
+                  onClick={
+                    closeHistoryModal
+                  }
+                  className="rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[12.5px] font-bold text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB]"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>
