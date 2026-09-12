@@ -10,6 +10,7 @@ use App\Http\Controllers\API\SubjectController;
 use App\Http\Controllers\API\DashboardController;
 use App\Http\Controllers\API\TeacherSubjectController;
 use App\Http\Controllers\API\JournalController;
+use App\Http\Controllers\API\StudentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -258,6 +259,27 @@ Route::middleware('auth:sanctum')->group(
         Route::post(
             '/guru/jurnal/{schedule}/mulai',
             [JournalController::class, 'store']
+        );
+
+        /*
+        * ======================================================
+        * GURU - DAFTAR SISWA
+        * ======================================================
+        */
+
+        Route::get(
+            '/guru/siswa',
+            [StudentController::class, 'index']
+        );
+
+        Route::get(
+            '/guru/siswa/{student}',
+            [StudentController::class, 'show']
+        );
+
+        Route::put(
+            '/guru/siswa/{student}/presensi/{attendance}',
+            [StudentController::class, 'updateAttendance']
         );
     }
 );

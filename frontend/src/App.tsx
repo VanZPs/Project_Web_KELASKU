@@ -24,6 +24,8 @@ import EditProfile from './pages/Guru/EditProfile';
 
 import JurnalKelas from './pages/Guru/JurnalKelas';
 
+import DaftarSiswa from './pages/Guru/DaftarSiswa';
+
 
 /*
 |--------------------------------------------------------------------------
@@ -330,6 +332,20 @@ export default function App() {
               allowedRole="guru"
             >
               <TambahKelas />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* Daftar Siswa */}
+
+        <Route
+          path="/guru/siswa"
+          element={
+            <ProtectedRoute
+              allowedRole="guru"
+            >
+              <DaftarSiswa />
             </ProtectedRoute>
           }
         />

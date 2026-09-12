@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('student_id')->constrained('users')->cascadeOnDelete();
             
             $table->date('date');
-            $table->enum('status', ['hadir', 'sakit', 'izin', 'alpa']);
+            $table->enum('status', ['hadir', 'sakit', 'izin', 'dispen','alpa']);
             $table->string('notes')->nullable(); // Catatan tambahan guru untuk absensi ini
             
             $table->timestamps();
