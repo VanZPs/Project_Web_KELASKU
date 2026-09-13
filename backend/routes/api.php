@@ -11,6 +11,9 @@ use App\Http\Controllers\API\DashboardController;
 use App\Http\Controllers\API\TeacherSubjectController;
 use App\Http\Controllers\API\JournalController;
 use App\Http\Controllers\API\StudentController;
+use App\Http\Controllers\API\AssignmentController;
+use App\Http\Controllers\API\SubmissionController;
+use App\Http\Controllers\API\FileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -280,6 +283,112 @@ Route::middleware('auth:sanctum')->group(
         Route::put(
             '/guru/siswa/{student}/presensi/{attendance}',
             [StudentController::class, 'updateAttendance']
+        );
+
+        /*
+         * ======================================================
+         * GURU - TUGAS
+         * ======================================================
+         */
+        Route::get(
+            '/guru/tugas', 
+            [AssignmentController::class, 'index']
+            );
+            
+        Route::post(
+            '/guru/tugas', 
+            [AssignmentController::class, 'store']
+            );
+
+        Route::get(
+            '/guru/tugas/{assignment}', 
+            [AssignmentController::class, 'show']
+            );
+
+        Route::put(
+            '/guru/tugas/{assignment}', 
+            [AssignmentController::class, 'update']
+            );
+
+        Route::delete(
+            '/guru/tugas/{assignment}', 
+            [AssignmentController::class, 'destroy']
+            );
+
+
+        /*Submission Tugas untuk Siswa*/    
+        Route::get('/siswa/tugas', [SubmissionController::class, 'index']);
+        
+        Route::get('/siswa/tugas/{assignment}', [SubmissionController::class, 'show']);
+
+        Route::post(
+            '/siswa/tugas/{assignment}/submit',
+            [SubmissionController::class, 'submit']
+        );
+
+        Route::get(
+            '/siswa/tugas/{assignment}/submission',
+            [SubmissionController::class, 'submission']
+        );
+
+        Route::put(
+            '/siswa/tugas/{assignment}/submission',
+            [SubmissionController::class, 'update']
+        );
+
+        Route::delete(
+            '/siswa/tugas/{assignment}/submission',
+            [SubmissionController::class, 'destroy']
+        );
+        
+        /*
+        |--------------------------------------------------------------------------
+        | File Tugas
+        |--------------------------------------------------------------------------
+        */
+
+        // Guru - file tugas
+        Route::get(
+            '/guru/tugas/{assignment}/file/{file}',
+            [FileController::class, 'teacherAssignmentFile']
+        );
+
+        // Siswa - file tugas
+        Route::get(
+            '/siswa/tugas/{assignment}/file/{file}',
+            [FileController::class, 'studentAssignmentFile']
+        );
+
+        Route::get(
+            '/siswa/tugas/{assignment}/file/{file}/preview',
+            [FileController::class, 'studentAssignmentPreview']
+        );
+
+        // Siswa - file submission sendiri
+        Route::get(
+            '/siswa/tugas/{assignment}/submission/file/{file}',
+            [FileController::class, 'studentSubmissionFile']
+        );
+
+        Route::get(
+            '/siswa/tugas/{assignment}/submission/file/{file}/preview',
+            [FileController::class, 'studentSubmissionPreview']
+        );
+
+        // Guru - file submission siswa
+        Route::get(
+            '/guru/tugas/{assignment}/submission/file/{file}',
+            [FileController::class, 'teacherSubmissionFile']
+        );
+
+        Route::get(
+            '/guru/tugas/{assignment}/submission/file/{file}/preview',
+            [FileController::class, 'teacherSubmissionPreview']
+        );
+
+        Route::delete(
+            '/siswa/tugas/{assignment}/submission/file/{file}',
+            [SubmissionController::class, 'destroyFile']
         );
     }
 );
