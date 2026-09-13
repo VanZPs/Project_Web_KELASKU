@@ -13,17 +13,31 @@ return new class extends Migration
     {
         Schema::create('submissions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('assignment_id')->constrained()->cascadeOnDelete();
-            
-            // Menunjuk ke id siswa di tabel users
-            $table->foreignId('student_id')->constrained('users')->cascadeOnDelete();
-            
-            $table->string('file_path')->nullable(); // Path file tugas (PDF/Word/Gambar) yang diunggah
-            $table->text('student_note')->nullable(); // Pesan tambahan dari siswa saat mengumpulkan
-            
-            $table->integer('grade')->nullable(); // Nilai dari guru (bisa null jika belum dinilai)
-            $table->text('teacher_feedback')->nullable(); // Catatan atau revisi dari guru untuk siswa
-            
+
+            // Menunjukkan tugas yang dikumpulkan.
+            $table->foreignId('assignment_id')
+                ->constrained()
+                ->cascadeOnDelete();
+
+            // Menunjukkan siswa yang mengumpulkan tugas.
+            $table->foreignId('student_id')
+                ->constrained('users')
+                ->cascadeOnDelete();
+
+            // Dipertahankan untuk kompatibilitas dengan struktur lama.
+            // File baru nantinya akan menggunakan tabel submission_files
+            // dan disimpan di MinIO.
+            $table->string('file_path')->nullable();
+
+            // Catatan tambahan dari siswa ketika mengumpulkan tugas.
+            $table->text('student_note')->nullable();
+
+            // Nilai yang diberikan guru.
+            $table->integer('grade')->nullable();
+
+            // Feedback, catatan, atau revisi dari guru.
+            $table->text('teacher_feedback')->nullable();
+
             $table->timestamps();
         });
     }

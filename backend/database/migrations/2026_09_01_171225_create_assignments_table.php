@@ -13,14 +13,21 @@ return new class extends Migration
     {
         Schema::create('assignments', function (Blueprint $table) {
             $table->id();
-            
-            // Tugas terikat pada jadwal tertentu (mewakili kelas, mapel, dan guru)
-            $table->foreignId('schedule_id')->constrained()->cascadeOnDelete();
-            
+
+            // Tugas terikat pada jadwal tertentu
+            // yang mewakili kelas, mata pelajaran, dan guru.
+            $table->foreignId('schedule_id')
+                ->constrained()
+                ->cascadeOnDelete();
+
             $table->string('title');
-            $table->text('description'); // Deskripsi tugas atau instruksi pengerjaan
-            $table->dateTime('due_date'); // Batas akhir pengumpulan (tenggat waktu)
-            
+
+            // Deskripsi tugas atau instruksi pengerjaan.
+            $table->text('description');
+
+            // Batas akhir pengumpulan tugas.
+            $table->dateTime('due_date');
+
             $table->timestamps();
         });
     }
