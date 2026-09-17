@@ -15,28 +15,58 @@ class Assignment extends Model
         'schedule_id',
         'title',
         'description',
+        'start_date',
         'due_date',
     ];
 
     protected function casts(): array
     {
         return [
+            'start_date' => 'datetime',
             'due_date' => 'datetime',
         ];
     }
 
+    /**
+     * Assignment -> Schedule
+     *
+     * Satu tugas dibuat berdasarkan satu jadwal
+     * yang mewakili guru, kelas, dan mata pelajaran.
+     */
     public function schedule(): BelongsTo
     {
         return $this->belongsTo(Schedule::class);
     }
 
+    /**
+     * Assignment -> Submission
+     *
+     * Satu tugas dapat memiliki banyak submission
+     * dari siswa.
+     */
     public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class);
     }
 
+    /**
+     * Assignment -> AssignmentFile
+     *
+     * Satu tugas dapat memiliki banyak file materi/lampiran.
+     */
     public function files(): HasMany
     {
         return $this->hasMany(AssignmentFile::class);
+    }
+
+    /**
+     * Assignment -> AssignmentQuestion
+     *
+     * Satu tugas dapat memiliki banyak pertanyaan.
+     */
+    public function questions(): HasMany
+    {
+        return $this->hasMany(AssignmentQuestion::class)
+            ->orderBy('order');
     }
 }
