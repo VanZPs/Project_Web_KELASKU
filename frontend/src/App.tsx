@@ -17,14 +17,11 @@ import {
 } from './pages/Guru/Dashboard';
 
 import KelasSaya from './pages/Guru/KelasSaya';
-
 import TambahKelas from './pages/Guru/TambahKelas';
-
 import EditProfile from './pages/Guru/EditProfile';
-
 import JurnalKelas from './pages/Guru/JurnalKelas';
-
 import DaftarSiswa from './pages/Guru/DaftarSiswa';
+import Tugas from './pages/Guru/Tugas';
 
 
 /*
@@ -32,7 +29,6 @@ import DaftarSiswa from './pages/Guru/DaftarSiswa';
 | TYPES
 |--------------------------------------------------------------------------
 */
-
 interface GuardProps {
   children: ReactNode;
 }
@@ -50,7 +46,6 @@ interface ProtectedProps
 | GET STORED USER
 |--------------------------------------------------------------------------
 */
-
 const getStoredUser = () => {
 
   const userData =
@@ -63,17 +58,14 @@ const getStoredUser = () => {
   }
 
   try {
-
     return JSON.parse(
       userData
     );
 
   } catch {
-
     localStorage.removeItem(
       'user'
     );
-
     return null;
   }
 };
@@ -84,13 +76,10 @@ const getStoredUser = () => {
 | CLEAR AUTH
 |--------------------------------------------------------------------------
 */
-
 const clearAuth = () => {
-
   localStorage.removeItem(
     'token'
   );
-
   localStorage.removeItem(
     'user'
   );
@@ -102,7 +91,6 @@ const clearAuth = () => {
 | GUEST ROUTE
 |--------------------------------------------------------------------------
 */
-
 const GuestRoute = ({
   children,
 }: GuardProps) => {
@@ -115,15 +103,10 @@ const GuestRoute = ({
   const user =
     getStoredUser();
 
-  /*
-   * Jika sudah login,
-   * arahkan sesuai role.
-   */
   if (
     token &&
     user
   ) {
-
     return (
       <Navigate
         to={
@@ -135,7 +118,6 @@ const GuestRoute = ({
       />
     );
   }
-
   return (
     <>
       {children}
@@ -149,7 +131,6 @@ const GuestRoute = ({
 | PROTECTED ROUTE
 |--------------------------------------------------------------------------
 */
-
 const ProtectedRoute = ({
   children,
   allowedRole,
@@ -170,9 +151,7 @@ const ProtectedRoute = ({
     !token ||
     !user
   ) {
-
     clearAuth();
-
     return (
       <Navigate
         to="/login"
@@ -188,9 +167,7 @@ const ProtectedRoute = ({
     user.role !== 'guru' &&
     user.role !== 'siswa'
   ) {
-
     clearAuth();
-
     return (
       <Navigate
         to="/login"
@@ -205,7 +182,6 @@ const ProtectedRoute = ({
   if (
     user.role !== allowedRole
   ) {
-
     return (
       <Navigate
         to={
@@ -217,7 +193,6 @@ const ProtectedRoute = ({
       />
     );
   }
-
   return (
     <>
       {children}
@@ -231,18 +206,14 @@ const ProtectedRoute = ({
 | APP
 |--------------------------------------------------------------------------
 */
-
 export default function App() {
 
   return (
     <Router>
-
       <Routes>
-
         {/* ==================================================
             ROOT
             ================================================== */}
-
         <Route
           path="/"
           element={
@@ -257,7 +228,6 @@ export default function App() {
         {/* ==================================================
             AUTHENTICATION
             ================================================== */}
-
         <Route
           path="/login"
           element={
@@ -276,13 +246,10 @@ export default function App() {
           }
         />
 
-
         {/* ==================================================
             GURU
             ================================================== */}
-
         {/* Dashboard Guru */}
-
         <Route
           path="/guru"
           element={
@@ -294,9 +261,7 @@ export default function App() {
           }
         />
 
-
         {/* Dashboard Guru - URL alternatif */}
-
         <Route
           path="/guru/dashboard"
           element={
@@ -308,9 +273,7 @@ export default function App() {
           }
         />
 
-
         {/* Kelas Saya */}
-
         <Route
           path="/guru/kelas-saya"
           element={
@@ -322,9 +285,7 @@ export default function App() {
           }
         />
 
-
         {/* Tambah Kelas */}
-
         <Route
           path="/guru/kelas-saya/tambah"
           element={
@@ -336,9 +297,7 @@ export default function App() {
           }
         />
 
-
         {/* Daftar Siswa */}
-
         <Route
           path="/guru/siswa"
           element={
@@ -350,9 +309,7 @@ export default function App() {
           }
         />
 
-
         {/* Jurnal Mengajar */}
-
         <Route
           path="/guru/jurnal"
           element={
@@ -364,9 +321,19 @@ export default function App() {
           }
         />
 
+        {/* Tugas */}
+        <Route
+          path="/guru/tugas"
+          element={
+            <ProtectedRoute
+              allowedRole="guru"
+            >
+              <Tugas />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Edit Profile */}
-
         <Route
           path="/guru/profil"
           element={
@@ -382,16 +349,13 @@ export default function App() {
         {/* ==================================================
             SISWA
             ================================================== */}
-
         <Route
           path="/siswa/*"
           element={
             <ProtectedRoute
               allowedRole="siswa"
             >
-
               <div className="p-8">
-
                 <h1 className="text-2xl font-bold text-indigo-600">
                   Dashboard Siswa - KELASKU
                 </h1>
@@ -399,9 +363,7 @@ export default function App() {
                 <p className="mt-2 text-gray-600">
                   SMA Kesatrian 1 Semarang
                 </p>
-
               </div>
-
             </ProtectedRoute>
           }
         />
@@ -410,7 +372,6 @@ export default function App() {
         {/* ==================================================
             404
             ================================================== */}
-
         <Route
           path="*"
           element={
@@ -419,9 +380,7 @@ export default function App() {
             </div>
           }
         />
-
       </Routes>
-
     </Router>
   );
 }
