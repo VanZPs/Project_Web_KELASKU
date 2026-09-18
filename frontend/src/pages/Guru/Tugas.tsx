@@ -424,6 +424,12 @@ export default function Tugas() {
   const [questions, setQuestions] =
     useState<QuestionDraft[]>([]);
 
+  const [taskFiles, setTaskFiles] =
+    useState<File[]>([]);
+
+  const taskFileInputRef =
+    useRef<HTMLInputElement | null>(null);
+
   const [saving, setSaving] =
     useState(false);
 
@@ -1006,6 +1012,12 @@ export default function Tugas() {
       dueDate: '',
     });
     setQuestions([]);
+    setTaskFiles([]);
+
+    if (taskFileInputRef.current) {
+      taskFileInputRef.current.value = '';
+    }
+
     setTypeMenuOpen(false);
     setModalStep(
       'detail',
@@ -1467,6 +1479,119 @@ export default function Tugas() {
 
   /*
   |--------------------------------------------------------------------------
+  | TASK MATERIAL FILES
+  |--------------------------------------------------------------------------
+  */
+  function handleTaskFilesSelect(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    if (taskForm.type !== 'info') {
+      return;
+    }
+
+    const selectedFiles =
+      Array.from(
+        event.target.files ?? [],
+      );
+
+    if (
+      selectedFiles.length === 0
+    ) {
+      return;
+    }
+
+    const availableSlots =
+      10 - taskFiles.length;
+
+    if (availableSlots <= 0) {
+      setToast({
+        type: 'error',
+        message:
+          'Maksimal 10 file materi dapat dilampirkan.',
+      });
+
+      if (taskFileInputRef.current) {
+        taskFileInputRef.current.value = '';
+      }
+
+      return;
+    }
+
+    const filesToAdd =
+      selectedFiles.slice(
+        0,
+        availableSlots,
+      );
+
+    if (
+      selectedFiles.length >
+      availableSlots
+    ) {
+      setToast({
+        type: 'error',
+        message:
+          `Hanya ${availableSlots} file yang dapat ditambahkan. Maksimal 10 file.`,
+      });
+    }
+
+    setTaskFiles(
+      (current) => [
+        ...current,
+        ...filesToAdd,
+      ],
+    );
+
+    if (taskFileInputRef.current) {
+      taskFileInputRef.current.value = '';
+    }
+  }
+
+  function removeTaskFile(
+    fileIndex: number,
+  ) {
+    setTaskFiles(
+      (current) =>
+        current.filter(
+          (_, index) =>
+            index !== fileIndex,
+        ),
+    );
+  }
+
+  function formatFileSize(
+    bytes: number,
+  ) {
+    if (bytes === 0) {
+      return '0 B';
+    }
+
+    const units = [
+      'B',
+      'KB',
+      'MB',
+      'GB',
+    ];
+
+    const unitIndex = Math.floor(
+      Math.log(bytes) /
+        Math.log(1024),
+    );
+
+    const size =
+      bytes /
+      Math.pow(
+        1024,
+        unitIndex,
+      );
+
+    return `${size.toFixed(
+      unitIndex === 0 ? 0 : 1,
+    )} ${units[unitIndex]}`;
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
   | VALIDATE QUESTIONS
   |--------------------------------------------------------------------------
   */
@@ -1611,86 +1736,134 @@ export default function Tugas() {
     try {
       setSaving(true);
 
-      const payload = {
-        schedule_id:
+      const formData =
+        new FormData();
+
+      formData.append(
+        'schedule_id',
+        String(
           Number(
             taskForm.scheduleId,
           ),
+        ),
+      );
 
-        title:
-          taskForm.title.trim(),
+      formData.append(
+        'title',
+        taskForm.title.trim(),
+      );
 
-        description:
-          taskForm.description
-            .trim() || null,
+      formData.append(
+        'description',
+        taskForm.description.trim(),
+      );
 
-        start_date:
-          taskForm.type ===
-          'info'
-            ? null
-            : taskForm.startDate ||
-              null,
+      if (
+        taskForm.type !== 'info'
+      ) {
+        if (taskForm.startDate) {
+          formData.append(
+            'start_date',
+            taskForm.startDate,
+          );
+        }
 
-        due_date:
-          taskForm.type ===
-          'info'
-            ? null
-            : taskForm.dueDate ||
-              null,
+        if (taskForm.dueDate) {
+          formData.append(
+            'due_date',
+            taskForm.dueDate,
+          );
+        }
+      }
 
-        questions:
-          questions.map(
-            (
-              question,
-              index,
-            ) => ({
-              type:
-                question.type,
+      questions.forEach(
+        (
+          question,
+          index,
+        ) => {
+          formData.append(
+            `questions[${index}][type]`,
+            question.type,
+          );
 
-              question:
-                question.question.trim(),
+          formData.append(
+            `questions[${index}][question]`,
+            question.question.trim(),
+          );
 
-              order:
-                index + 1,
+          formData.append(
+            `questions[${index}][order]`,
+            String(index + 1),
+          );
 
-              is_required:
-                question.is_required,
+          formData.append(
+            `questions[${index}][is_required]`,
+            question.is_required
+              ? '1'
+              : '0',
+          );
 
-              options:
-                question.type ===
-                  'multiple' ||
-                question.type ===
-                  'checkbox'
-                  ? question.options.map(
-                      (
-                        option,
-                        optionIndex,
-                      ) => ({
-                        option_text:
-                          option.option_text.trim(),
+          if (
+            question.type ===
+              'multiple' ||
+            question.type ===
+              'checkbox'
+          ) {
+            question.options.forEach(
+              (
+                option,
+                optionIndex,
+              ) => {
+                formData.append(
+                  `questions[${index}][options][${optionIndex}][option_text]`,
+                  option.option_text.trim(),
+                );
 
-                        order:
-                          optionIndex +
-                          1,
+                formData.append(
+                  `questions[${index}][options][${optionIndex}][order]`,
+                  String(
+                    optionIndex + 1,
+                  ),
+                );
 
-                        is_correct:
-                          option.is_correct,
-                      }),
-                    )
-                  : [],
-            }),
-          ),
-      };
+                formData.append(
+                  `questions[${index}][options][${optionIndex}][is_correct]`,
+                  option.is_correct
+                    ? '1'
+                    : '0',
+                );
+              },
+            );
+          }
+        },
+      );
+
+      if (
+        taskForm.type === 'info'
+      ) {
+        taskFiles.forEach(
+          (file) => {
+            formData.append(
+              'files[]',
+              file,
+            );
+          },
+        );
+      }
 
       await api.post(
         '/guru/tugas',
-        payload,
+        formData,
       );
 
       setToast({
         type: 'success',
         message:
-          'Tugas berhasil dibuat.',
+          taskForm.type === 'info'
+            ? taskFiles.length > 0
+              ? 'Catatan informasi dan materi berhasil dikirim.'
+              : 'Catatan informasi berhasil dikirim.'
+            : 'Tugas berhasil dibuat.',
       });
 
       setModalOpen(false);
@@ -2276,7 +2449,7 @@ export default function Tugas() {
           </div>
 
           <div
-            className="mb-3.5 rounded-[10px] border"
+            className="mb-4 rounded-[10px] border"
             style={{
               borderColor:
                 '#E3DACB',
@@ -2312,6 +2485,178 @@ export default function Tugas() {
             />
           </div>
 
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <div
+                className="text-[11px] font-bold uppercase tracking-[0.03em]"
+                style={{
+                  color:
+                    '#6B7080',
+                }}
+              >
+                Materi
+                pembelajaran
+                <span
+                  className="ml-1 normal-case font-normal tracking-normal"
+                  style={{
+                    color:
+                      '#8A806F',
+                  }}
+                >
+                  (opsional)
+                </span>
+              </div>
+
+              <div
+                className="mt-1 text-[11.5px] leading-[1.5]"
+                style={{
+                  color:
+                    '#8A806F',
+                }}
+              >
+                Lampirkan materi
+                pembelajaran jika
+                diperlukan. Siswa
+                dapat melihat dan
+                mengunduh file yang
+                Anda lampirkan.
+              </div>
+            </div>
+
+            <span
+              className="shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold"
+              style={{
+                backgroundColor:
+                  '#F5F1E7',
+                color:
+                  '#6B7080',
+              }}
+            >
+              {taskFiles.length}/10
+              {' '}file
+            </span>
+          </div>
+
+          <input
+            ref={taskFileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={
+              handleTaskFilesSelect
+            }
+          />
+
+          <button
+            type="button"
+            onClick={() =>
+              taskFileInputRef.current?.click()
+            }
+            disabled={
+              taskFiles.length >= 10 ||
+              saving
+            }
+            className="mb-3.5 flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed px-4 py-3 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              borderColor:
+                '#D5CBB8',
+              backgroundColor:
+                '#FBF9F3',
+              color:
+                '#7A5A20',
+            }}
+          >
+            <UploadCloud
+              size={16}
+              strokeWidth={1.8}
+            />
+            Tambahkan materi
+          </button>
+
+          {taskFiles.length > 0 && (
+            <div className="mb-3.5 flex flex-col gap-2">
+              {taskFiles.map(
+                (
+                  file,
+                  index,
+                ) => (
+                  <div
+                    key={`${file.name}-${file.size}-${index}`}
+                    className="flex items-center gap-3 rounded-[10px] border px-3 py-2.5"
+                    style={{
+                      borderColor:
+                        '#E3DACB',
+                      backgroundColor:
+                        '#FFFDF8',
+                    }}
+                  >
+                    <div
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]"
+                      style={{
+                        backgroundColor:
+                          '#E5ECF5',
+                        color:
+                          '#3E6BAE',
+                      }}
+                    >
+                      <FileText
+                        size={17}
+                        strokeWidth={1.8}
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className="truncate text-[12px] font-semibold"
+                        style={{
+                          color:
+                            '#23283A',
+                        }}
+                        title={
+                          file.name
+                        }
+                      >
+                        {file.name}
+                      </div>
+
+                      <div
+                        className="mt-0.5 text-[10.5px]"
+                        style={{
+                          color:
+                            '#8A806F',
+                        }}
+                      >
+                        {formatFileSize(
+                          file.size,
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removeTaskFile(
+                          index,
+                        )
+                      }
+                      disabled={saving}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] border-0 bg-transparent transition disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{
+                        color:
+                          '#6B7080',
+                      }}
+                      title="Hapus materi"
+                    >
+                      <X
+                        size={14}
+                      />
+                    </button>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+
           <div
             className="flex items-start gap-[9px] rounded-[10px] border px-[13px] py-[11px] text-[12px] leading-[1.5]"
             style={{
@@ -2332,18 +2677,19 @@ export default function Tugas() {
 
             <span>
               Catatan ini hanya
-              akan tampil
-              sebagai informasi
-              di dashboard
-              siswa. Tidak ada
-              pengumpulan tugas
-              untuk jenis ini.
+              digunakan untuk
+              memberikan informasi
+              kepada siswa. Siswa
+              tidak perlu mengirimkan
+              submission. File materi
+              yang dilampirkan dapat
+              dilihat dan diunduh oleh
+              siswa.
             </span>
           </div>
         </div>
       );
     }
-
 
     /*
     | UPLOAD
