@@ -136,6 +136,7 @@ interface QuestionDraft {
     order: number;
     is_correct: boolean;
   }[];
+  correct_answer: string;
 }
 
 interface TaskForm {
@@ -318,6 +319,7 @@ function buildInitialQuestion(
           is_correct: false,
         },
       ],
+      correct_answer: '',
     };
   }
 
@@ -327,6 +329,7 @@ function buildInitialQuestion(
     order: index,
     is_required: type !== 'info',
     options: [],
+    correct_answer: '',
   };
 }
 
@@ -1125,6 +1128,7 @@ export default function Tugas() {
           order: 1,
           is_required: true,
           options: [],
+          correct_answer: '',
         },
       ];
     } else if (
@@ -1138,6 +1142,7 @@ export default function Tugas() {
           order: 1,
           is_required: false,
           options: [],
+          correct_answer: '',
         },
       ];
 
@@ -1644,6 +1649,12 @@ export default function Tugas() {
         } belum diisi.`;
       }
 
+      if (question.type === 'short') {
+        if (!question.correct_answer.trim()) {
+          return `Kunci jawaban soal ${index + 1} belum diisi.`;
+        }
+      }
+
       if (
         question.type ===
           'multiple' ||
@@ -1801,6 +1812,13 @@ export default function Tugas() {
             question.is_required
               ? '1'
               : '0',
+          );
+
+          formData.append(
+            `questions[${index}][correct_answer]`,
+            question.type === 'short'
+              ? question.correct_answer.trim()
+              : '',
           );
 
           if (
@@ -2203,19 +2221,28 @@ export default function Tugas() {
 
         {question.type ===
           'short' && (
-          <div
-            className="rounded-[9px] border border-dashed px-[14px] py-3 text-[12.5px] italic"
-            style={{
-              borderColor:
-                '#E3DACB',
-              backgroundColor:
-                '#FBF9F3',
-              color:
-                '#6B7080',
-            }}
-          >
-            Kolom jawaban
-            singkat siswa
+          <div className="mt-3 rounded-[10px] border px-3.5 py-3" style={{ borderColor: '#E3DACB', backgroundColor: '#FBF9F3' }}>
+            <label className="mb-2 block text-[11.5px] font-bold uppercase tracking-[0.03em]" style={{ color: '#6B7080' }}>
+              Kunci jawaban
+            </label>
+            <input
+              type="text"
+              value={question.correct_answer}
+              onChange={(event) =>
+                updateQuestion(index, {
+                  correct_answer: event.target.value,
+                })
+              }
+              placeholder="Masukkan jawaban yang benar..."
+              className="w-full rounded-[8px] border bg-[#FFFDF8] px-3 py-2.5 text-[13px] outline-none"
+              style={{
+                borderColor: '#E3DACB',
+                color: '#23283A',
+              }}
+            />
+            <div className="mt-1.5 text-[10.5px]" style={{ color: '#8A806F' }}>
+              Jawaban ini akan digunakan sebagai kunci untuk penilaian otomatis.
+            </div>
           </div>
         )}
 
@@ -4095,7 +4122,7 @@ export default function Tugas() {
                             }),
                           )
                         }
-                        placeholder="Contoh: Latihan Turunan Fungsi Aljabar"
+                        placeholder="Masukkan judul tugas"
                         className="w-full border-none bg-transparent py-[11px] text-[13.5px] outline-none"
                         style={{
                           color:
