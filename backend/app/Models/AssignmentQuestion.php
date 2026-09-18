@@ -15,6 +15,7 @@ class AssignmentQuestion extends Model
         'assignment_id',
         'type',
         'question',
+        'correct_answer',
         'order',
         'is_required',
     ];

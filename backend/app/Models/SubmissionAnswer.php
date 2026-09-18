@@ -15,7 +15,17 @@ class SubmissionAnswer extends Model
         'submission_id',
         'assignment_question_id',
         'answer_text',
+        'is_correct',
+        'points',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_correct' => 'boolean',
+            'points' => 'decimal:2',
+        ];
+    }
 
     /**
      * SubmissionAnswer -> Submission

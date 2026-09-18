@@ -9,6 +9,7 @@ use App\Models\Submission;
 use App\Models\SubmissionAnswer;
 use App\Models\SubmissionAnswerOption;
 use App\Models\SubmissionFile;
+use App\Services\AutoGradingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +17,9 @@ use Illuminate\Support\Str;
 
 class SubmissionController extends Controller
 {
+    /**
+     * Memastikan user yang login adalah siswa.
+     */
     private function ensureStudent(Request $request)
     {
         $user = $request->user();
@@ -29,6 +33,9 @@ class SubmissionController extends Controller
         return $user;
     }
 
+    /**
+     * Memastikan siswa memiliki akses ke assignment.
+     */
     private function getAuthorizedAssignment(
         Request $request,
         Assignment $assignment
@@ -74,8 +81,7 @@ class SubmissionController extends Controller
      * Memastikan assignment memang dapat menerima submission siswa.
      *
      * Assignment bertipe info hanya digunakan guru untuk
-     * memberikan informasi atau pengumuman kepada siswa.
-     * Assignment tersebut tidak memerlukan submission.
+     * memberikan informasi atau materi kepada siswa.
      */
     private function ensureSubmissionAllowed(
         Assignment $assignment
@@ -128,6 +134,11 @@ class SubmissionController extends Controller
         }
     }
 
+    /**
+     * Menentukan apakah submission dikumpulkan terlambat.
+     *
+     * Submission yang dibuat setelah due_date dianggap terlambat.
+     */
     private function isLate(
         Submission $submission,
         Assignment $assignment
@@ -139,9 +150,108 @@ class SubmissionController extends Controller
             );
     }
 
-    private function formatSubmission(
+    /**
+     * Menentukan apakah assignment memiliki soal yang dapat
+     * dinilai secara otomatis.
+     */
+    private function hasAutoGradableQuestions(
+        Assignment $assignment
+    ): bool {
+        return $assignment->questions->contains(
+            function ($question) {
+                return in_array(
+                    $question->type,
+                    [
+                        'short',
+                        'multiple',
+                        'checkbox',
+                    ],
+                    true
+                );
+            }
+        );
+    }
+
+    /**
+     * Mengambil nilai tertinggi dari seluruh submission siswa
+     * pada sebuah assignment.
+     *
+     * Jika belum ada nilai, return null.
+     */
+    private function getHighestGrade(
+        Assignment $assignment,
+        int $studentId
+    ): ?float {
+        $highestGrade = Submission::where(
+            'assignment_id',
+            $assignment->id
+        )
+            ->where(
+                'student_id',
+                $studentId
+            )
+            ->whereNotNull('grade')
+            ->max('grade');
+
+        if ($highestGrade === null) {
+            return null;
+        }
+
+        return round(
+            (float) $highestGrade,
+            2
+        );
+    }
+
+    /**
+     * Menilai submission menggunakan AutoGradingService.
+     *
+     * Hanya assignment yang memiliki soal:
+     * - short
+     * - multiple
+     * - checkbox
+     *
+     * yang akan diproses secara otomatis.
+     *
+     * Untuk assignment paragraph/upload, nilai tidak
+     * diubah karena membutuhkan penilaian guru.
+     */
+    private function autoGradeSubmission(
         Submission $submission,
         Assignment $assignment
+    ): void {
+        if (!$this->hasAutoGradableQuestions($assignment)) {
+            return;
+        }
+
+        $autoGradingService = app(
+            AutoGradingService::class
+        );
+
+        $grade = $autoGradingService->grade(
+            $submission,
+            $assignment
+        );
+
+        $submission->update([
+            'grade' => $grade,
+        ]);
+    }
+
+    /**
+     * Format submission untuk response siswa.
+     *
+     * Field sensitif seperti:
+     * - correct_answer
+     * - is_correct pada option
+     * - points
+     *
+     * tidak dikirim ke siswa.
+     */
+    private function formatSubmission(
+        Submission $submission,
+        Assignment $assignment,
+        ?float $highestGrade = null
     ): array {
         $answers = $submission->answers
             ->map(function ($answer) {
@@ -213,14 +323,43 @@ class SubmissionController extends Controller
             ->values()
             ->all();
 
+        $isHighestGrade = false;
+
+        if (
+            $highestGrade !== null
+            && $submission->grade !== null
+        ) {
+            $isHighestGrade =
+                round(
+                    (float) $submission->grade,
+                    2
+                ) === round(
+                    $highestGrade,
+                    2
+                );
+        }
+
         return [
             'id' => $submission->id,
             'assignment_id' => $submission->assignment_id,
             'student_id' => $submission->student_id,
             'file_path' => $submission->file_path,
             'student_note' => $submission->student_note,
+
+            /*
+             * Nilai submission ini.
+             */
             'grade' => $submission->grade,
-            'teacher_feedback' => $submission->teacher_feedback,
+
+            /*
+             * Menandai apakah submission ini memiliki
+             * nilai tertinggi dari seluruh attempt.
+             */
+            'is_highest_grade' => $isHighestGrade,
+
+            'teacher_feedback' =>
+                $submission->teacher_feedback,
+
             'created_at' => $submission->created_at,
             'updated_at' => $submission->updated_at,
 
@@ -258,7 +397,8 @@ class SubmissionController extends Controller
     /**
      * Format satu question untuk response siswa.
      *
-     * Field is_correct dari option sengaja tidak disertakan.
+     * Field correct_answer sengaja tidak disertakan.
+     * Field is_correct dari option juga tidak disertakan.
      */
     private function formatStudentQuestion($question): array
     {
@@ -286,22 +426,38 @@ class SubmissionController extends Controller
     /**
      * Format assignment untuk response siswa.
      *
-     * Dibuat secara eksplisit agar field sensitif seperti
-     * is_correct tidak pernah ikut dikirim.
+     * Field sensitif seperti correct_answer dan
+     * is_correct tidak pernah dikirim.
      */
     private function formatStudentAssignment(
         Assignment $assignment,
-        array $formattedSubmissions
+        array $formattedSubmissions,
+        ?float $highestGrade = null
     ): array {
         return [
             'id' => $assignment->id,
             'schedule_id' => $assignment->schedule_id,
             'title' => $assignment->title,
             'description' => $assignment->description,
+
+            /*
+             * Mode pengumpulan:
+             *
+             * once     = satu kali pengumpulan
+             * multiple = dapat mengumpulkan berkali-kali
+             */
+            'submission_mode' =>
+                $assignment->submission_mode ?? 'once',
+
             'due_date' => $assignment->due_date,
             'created_at' => $assignment->created_at,
             'updated_at' => $assignment->updated_at,
             'start_date' => $assignment->start_date,
+
+            /*
+             * Nilai tertinggi dari seluruh submission siswa.
+             */
+            'final_grade' => $highestGrade,
 
             'submissions' => $formattedSubmissions,
 
@@ -323,6 +479,9 @@ class SubmissionController extends Controller
         ];
     }
 
+    /**
+     * Validasi jawaban siswa.
+     */
     private function validateAnswers(
         array $answers,
         Assignment $assignment
@@ -585,8 +744,6 @@ class SubmissionController extends Controller
      * Validasi file submission untuk tugas bertipe upload.
      *
      * Tugas upload hanya memiliki satu pertanyaan upload.
-     * Jika pertanyaan upload bersifat wajib, minimal harus
-     * terdapat satu file pada submission.
      */
     private function validateSubmissionFiles(
         Assignment $assignment,
@@ -613,6 +770,9 @@ class SubmissionController extends Controller
         }
     }
 
+    /**
+     * Menyimpan jawaban siswa ke submission tertentu.
+     */
     private function saveAnswers(
         Submission $submission,
         array $answers
@@ -636,6 +796,13 @@ class SubmissionController extends Controller
                 ],
                 [
                     'answer_text' => $answerData['answer_text'],
+
+                    /*
+                     * Reset hasil grading sebelum proses
+                     * auto-grading dijalankan.
+                     */
+                    'is_correct' => null,
+                    'points' => 0,
                 ]
             );
 
@@ -654,6 +821,161 @@ class SubmissionController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Sinkronisasi jawaban siswa saat melakukan edit submission.
+     *
+     * Jawaban lama yang tidak lagi dikirim oleh frontend akan
+     * dihapus dari database.
+     *
+     * Hal ini penting untuk soal opsional.
+     *
+     * Contoh:
+     *
+     * Sebelumnya:
+     * - Q31 = Jakarta
+     * - Q32 = PHP
+     *
+     * Saat edit siswa hanya mengirim:
+     * - Q31 = Jakarta
+     *
+     * Maka:
+     * - Q31 tetap tersimpan
+     * - Q32 dihapus
+     *
+     * Dengan demikian Q32 tidak lagi ikut dalam proses
+     * auto-grading.
+     */
+    private function syncAnswers(
+        Submission $submission,
+        array $answers
+    ): void {
+        $submittedQuestionIds = collect($answers)
+            ->map(function ($answerData) {
+                return (int) $answerData['question']->id;
+            })
+            ->values()
+            ->all();
+
+        /*
+         * Ambil seluruh jawaban lama dari submission.
+         */
+        $existingAnswers = SubmissionAnswer::where(
+            'submission_id',
+            $submission->id
+        )->get();
+
+        /*
+         * Hapus jawaban lama yang sudah tidak dikirim
+         * pada request terbaru.
+         */
+        foreach ($existingAnswers as $existingAnswer) {
+            if (
+                !in_array(
+                    (int) $existingAnswer->assignment_question_id,
+                    $submittedQuestionIds,
+                    true
+                )
+            ) {
+                /*
+                 * Hapus selected options terlebih dahulu
+                 * agar tidak meninggalkan data relasi.
+                 */
+                SubmissionAnswerOption::where(
+                    'submission_answer_id',
+                    $existingAnswer->id
+                )->delete();
+
+                $existingAnswer->delete();
+            }
+        }
+
+        /*
+         * Simpan atau update jawaban yang masih dikirim.
+         */
+        $this->saveAnswers(
+            $submission,
+            $answers
+        );
+    }
+
+    /**
+     * Membuat submission baru beserta file yang diunggah.
+     */
+    private function uploadSubmissionFiles(
+        Request $request,
+        Submission $submission,
+        array &$uploadedObjects
+    ): void {
+        if (!$request->hasFile('files')) {
+            return;
+        }
+
+        foreach (
+            $request->file('files')
+            as $file
+        ) {
+            $extension = strtolower(
+                $file->getClientOriginalExtension()
+            );
+
+            $filename = (string) Str::uuid();
+
+            if ($extension !== '') {
+                $filename .= '.' . $extension;
+            }
+
+            $objectKey =
+                "submissions/{$submission->id}/{$filename}";
+
+            Storage::disk('s3')->putFileAs(
+                "submissions/{$submission->id}",
+                $file,
+                $filename
+            );
+
+            $uploadedObjects[] = $objectKey;
+
+            SubmissionFile::create([
+                'submission_id' => $submission->id,
+                'original_name' =>
+                    $file->getClientOriginalName(),
+                'object_key' => $objectKey,
+                'mime_type' =>
+                    $file->getClientMimeType(),
+                'size' => $file->getSize(),
+            ]);
+        }
+    }
+
+    /**
+     * Mengambil seluruh submission milik siswa pada assignment.
+     */
+    private function getStudentSubmissions(
+        Assignment $assignment,
+        int $studentId
+    ) {
+        return Submission::where(
+            'assignment_id',
+            $assignment->id
+        )
+            ->where(
+                'student_id',
+                $studentId
+            )
+            ->with([
+                'files',
+                'answers.question',
+                'answers.selectedOptions.option',
+                'assignment.schedule.classroom',
+                'assignment.schedule.subject',
+            ])
+            ->orderBy(
+                'created_at',
+                'asc'
+            )
+            ->get();
     }
 
     /**
@@ -679,7 +1001,10 @@ class SubmissionController extends Controller
                     'files',
                     'answers.question',
                     'answers.selectedOptions.option',
-                ]);
+                ])->orderBy(
+                    'created_at',
+                    'asc'
+                );
             },
         ])
             ->whereHas(
@@ -695,13 +1020,22 @@ class SubmissionController extends Controller
             ->get();
 
         $data = $assignments
-            ->map(function ($assignment) {
+            ->map(function ($assignment) use ($user) {
+                $highestGrade = $this->getHighestGrade(
+                    $assignment,
+                    $user->id
+                );
+
                 $formattedSubmissions =
                     $assignment->submissions
-                        ->map(function ($submission) use ($assignment) {
+                        ->map(function ($submission) use (
+                            $assignment,
+                            $highestGrade
+                        ) {
                             return $this->formatSubmission(
                                 $submission,
-                                $assignment
+                                $assignment,
+                                $highestGrade
                             );
                         })
                         ->values()
@@ -709,7 +1043,8 @@ class SubmissionController extends Controller
 
                 return $this->formatStudentAssignment(
                     $assignment,
-                    $formattedSubmissions
+                    $formattedSubmissions,
+                    $highestGrade
                 );
             })
             ->values()
@@ -748,16 +1083,28 @@ class SubmissionController extends Controller
                     'files',
                     'answers.question',
                     'answers.selectedOptions.option',
-                ]);
+                ])->orderBy(
+                    'created_at',
+                    'asc'
+                );
             },
         ]);
 
+        $highestGrade = $this->getHighestGrade(
+            $assignment,
+            $user->id
+        );
+
         $formattedSubmissions =
             $assignment->submissions
-                ->map(function ($submission) use ($assignment) {
+                ->map(function ($submission) use (
+                    $assignment,
+                    $highestGrade
+                ) {
                     return $this->formatSubmission(
                         $submission,
-                        $assignment
+                        $assignment,
+                        $highestGrade
                     );
                 })
                 ->values()
@@ -765,7 +1112,8 @@ class SubmissionController extends Controller
 
         $data = $this->formatStudentAssignment(
             $assignment,
-            $formattedSubmissions
+            $formattedSubmissions,
+            $highestGrade
         );
 
         return response()->json([
@@ -775,7 +1123,15 @@ class SubmissionController extends Controller
     }
 
     /**
-     * Membuat atau memperbarui submission siswa.
+     * Membuat submission baru atau memperbarui submission
+     * berdasarkan submission_mode.
+     *
+     * Mode once:
+     * - Hanya satu submission diperbolehkan.
+     *
+     * Mode multiple:
+     * - Setiap pemanggilan submit membuat attempt baru.
+     * - Nilai tertinggi dari seluruh attempt menjadi final grade.
      */
     public function submit(
         Request $request,
@@ -801,30 +1157,37 @@ class SubmissionController extends Controller
                 'nullable',
                 'string',
             ],
+
             'answers' => [
                 'nullable',
                 'array',
             ],
+
             'answers.*.assignment_question_id' => [
                 'required',
                 'integer',
             ],
+
             'answers.*.answer_text' => [
                 'nullable',
                 'string',
             ],
+
             'answers.*.selected_option_ids' => [
                 'nullable',
                 'array',
             ],
+
             'answers.*.selected_option_ids.*' => [
                 'integer',
             ],
+
             'files' => [
                 'nullable',
                 'array',
                 'max:10',
             ],
+
             'files.*' => [
                 'file',
                 'max:512000',
@@ -836,19 +1199,51 @@ class SubmissionController extends Controller
             $assignment
         );
 
-        $existingSubmission = Submission::where(
-            'assignment_id',
-            $assignment->id
-        )
-            ->where(
-                'student_id',
-                $user->id
-            )
-            ->first();
+        $submissionMode =
+            $assignment->submission_mode ?? 'once';
 
-        $existingFileCount = $existingSubmission
-            ? $existingSubmission->files()->count()
-            : 0;
+        /*
+         * Ambil seluruh submission siswa.
+         */
+        $existingSubmissions =
+            $this->getStudentSubmissions(
+                $assignment,
+                $user->id
+            );
+
+        /*
+         * Mode once:
+         *
+         * Jika sudah pernah mengumpulkan, endpoint submit
+         * tidak boleh membuat submission kedua.
+         *
+         * Siswa harus menggunakan endpoint update.
+         */
+        if (
+            $submissionMode === 'once'
+            && $existingSubmissions->isNotEmpty()
+        ) {
+            abort(
+                422,
+                'Tugas ini hanya dapat dikumpulkan satu kali. Gunakan fitur edit submission untuk memperbarui jawaban.'
+            );
+        }
+
+        /*
+         * Mode multiple:
+         *
+         * Setiap submit selalu membuat submission baru.
+         *
+         * Hal ini penting agar riwayat attempt tidak
+         * tertimpa oleh submission berikutnya.
+         */
+        $submission = null;
+
+        /*
+         * Karena submission baru belum memiliki file,
+         * existingFileCount selalu 0.
+         */
+        $existingFileCount = 0;
 
         $newFileCount = $request->hasFile('files')
             ? count($request->file('files'))
@@ -860,73 +1255,55 @@ class SubmissionController extends Controller
             $newFileCount
         );
 
-        $submission = $existingSubmission;
-
         DB::beginTransaction();
 
         $uploadedObjects = [];
 
         try {
-            if (!$submission) {
-                $submission = Submission::create([
-                    'assignment_id' => $assignment->id,
-                    'student_id' => $user->id,
-                    'file_path' => null,
-                    'student_note' =>
-                        $validated['student_note'] ?? null,
-                ]);
-            } else {
-                $submission->update([
-                    'student_note' =>
-                        $validated['student_note'] ?? null,
-                ]);
-            }
+            /*
+             * Selalu membuat submission baru pada endpoint
+             * submit.
+             */
+            $submission = Submission::create([
+                'assignment_id' => $assignment->id,
+                'student_id' => $user->id,
+                'file_path' => null,
+                'student_note' =>
+                    $validated['student_note'] ?? null,
+                'grade' => null,
+            ]);
 
+            /*
+             * Simpan jawaban siswa.
+             */
             $this->saveAnswers(
                 $submission,
                 $normalizedAnswers
             );
 
-            if ($request->hasFile('files')) {
-                foreach (
-                    $request->file('files')
-                    as $file
-                ) {
-                    $extension = strtolower(
-                        $file->getClientOriginalExtension()
-                    );
+            /*
+             * Upload file submission.
+             */
+            $this->uploadSubmissionFiles(
+                $request,
+                $submission,
+                $uploadedObjects
+            );
 
-                    $filename = (string) Str::uuid();
-
-                    if ($extension !== '') {
-                        $filename .= '.' . $extension;
-                    }
-
-                    $objectKey =
-                        "submissions/{$submission->id}/{$filename}";
-
-                    Storage::disk('s3')->putFileAs(
-                        "submissions/{$submission->id}",
-                        $file,
-                        $filename
-                    );
-
-                    $uploadedObjects[] = $objectKey;
-
-                    SubmissionFile::create([
-                        'submission_id' => $submission->id,
-                        'original_name' =>
-                            $file->getClientOriginalName(),
-                        'object_key' => $objectKey,
-                        'mime_type' =>
-                            $file->getClientMimeType(),
-                        'size' => $file->getSize(),
-                    ]);
-                }
-            }
+            /*
+             * Auto-grading dilakukan setelah semua jawaban
+             * berhasil disimpan.
+             */
+            $this->autoGradeSubmission(
+                $submission,
+                $assignment
+            );
 
             DB::commit();
 
+            /*
+             * Reload seluruh relasi setelah transaction selesai.
+             */
             $submission->load([
                 'assignment.schedule.classroom',
                 'assignment.schedule.subject',
@@ -935,13 +1312,9 @@ class SubmissionController extends Controller
                 'answers.selectedOptions.option',
             ]);
 
-            $submission->answers->each(
-                function ($answer) {
-                    $answer->load([
-                        'question',
-                        'selectedOptions.option',
-                    ]);
-                }
+            $highestGrade = $this->getHighestGrade(
+                $assignment,
+                $user->id
             );
 
             $isLate = $this->isLate(
@@ -953,10 +1326,26 @@ class SubmissionController extends Controller
                 'message' => $isLate
                     ? 'Tugas berhasil dikumpulkan, tetapi terlambat.'
                     : 'Tugas berhasil dikumpulkan.',
-                'data' => $this->formatSubmission(
-                    $submission,
-                    $assignment
-                ),
+
+                'data' => [
+                    'submission' => $this->formatSubmission(
+                        $submission,
+                        $assignment,
+                        $highestGrade
+                    ),
+
+                    /*
+                     * Nilai akhir siswa selalu mengambil
+                     * nilai tertinggi.
+                     */
+                    'final_grade' => $highestGrade,
+
+                    'submission_mode' =>
+                        $submissionMode,
+
+                    'submission_count' =>
+                        $existingSubmissions->count() + 1,
+                ],
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -977,6 +1366,10 @@ class SubmissionController extends Controller
 
     /**
      * Mengambil submission siswa.
+     *
+     * Response sekarang mengembalikan:
+     * - seluruh riwayat submission
+     * - final_grade / nilai tertinggi
      */
     public function submission(
         Request $request,
@@ -993,51 +1386,73 @@ class SubmissionController extends Controller
             $assignment
         );
 
-        $submission = Submission::with([
-            'files',
-            'answers.question',
-            'answers.selectedOptions.option',
-            'assignment.schedule.classroom',
-            'assignment.schedule.subject',
-        ])
-            ->where(
-                'assignment_id',
-                $assignment->id
-            )
-            ->where(
-                'student_id',
+        $submissions =
+            $this->getStudentSubmissions(
+                $assignment,
                 $user->id
-            )
-            ->first();
+            );
 
-        if (!$submission) {
+        if ($submissions->isEmpty()) {
             return response()->json([
                 'message' => 'Siswa belum mengumpulkan tugas.',
                 'data' => null,
             ]);
         }
 
-        $submission->answers->each(
-            function ($answer) {
-                $answer->load([
-                    'question',
-                    'selectedOptions.option',
-                ]);
-            }
+        $highestGrade = $this->getHighestGrade(
+            $assignment,
+            $user->id
         );
+
+        $formattedSubmissions =
+            $submissions
+                ->map(function ($submission) use (
+                    $assignment,
+                    $highestGrade
+                ) {
+                    return $this->formatSubmission(
+                        $submission,
+                        $assignment,
+                        $highestGrade
+                    );
+                })
+                ->values()
+                ->all();
 
         return response()->json([
             'message' =>
                 'Pengumpulan tugas berhasil diambil.',
-            'data' => $this->formatSubmission(
-                $submission,
-                $assignment
-            ),
+
+            'data' => [
+                'submission_mode' =>
+                    $assignment->submission_mode ?? 'once',
+
+                'final_grade' =>
+                    $highestGrade,
+
+                'submission_count' =>
+                    $submissions->count(),
+
+                'submissions' =>
+                    $formattedSubmissions,
+            ],
         ]);
     }
 
     /**
      * Memperbarui submission siswa.
+     *
+     * Endpoint ini digunakan untuk mengedit submission
+     * yang sudah ada.
+     *
+     * Pada mode:
+     *
+     * once:
+     * - submission pertama dapat diperbarui.
+     *
+     * multiple:
+     * - submission terakhir dapat diperbarui.
+     * - attempt sebelumnya tetap tersimpan.
      */
     public function update(
         Request $request,
@@ -1058,6 +1473,9 @@ class SubmissionController extends Controller
             $assignment
         );
 
+        /*
+         * Ambil submission terbaru milik siswa.
+         */
         $submission = Submission::where(
             'assignment_id',
             $assignment->id
@@ -1066,37 +1484,52 @@ class SubmissionController extends Controller
                 'student_id',
                 $user->id
             )
-            ->firstOrFail();
+            ->latest('created_at')
+            ->first();
+
+        if (!$submission) {
+            abort(
+                404,
+                'Submission belum ditemukan. Silakan kumpulkan tugas terlebih dahulu.'
+            );
+        }
 
         $validated = $request->validate([
             'student_note' => [
                 'nullable',
                 'string',
             ],
+
             'answers' => [
                 'nullable',
                 'array',
             ],
+
             'answers.*.assignment_question_id' => [
                 'required',
                 'integer',
             ],
+
             'answers.*.answer_text' => [
                 'nullable',
                 'string',
             ],
+
             'answers.*.selected_option_ids' => [
                 'nullable',
                 'array',
             ],
+
             'answers.*.selected_option_ids.*' => [
                 'integer',
             ],
+
             'files' => [
                 'nullable',
                 'array',
                 'max:10',
             ],
+
             'files.*' => [
                 'file',
                 'max:512000',
@@ -1136,6 +1569,9 @@ class SubmissionController extends Controller
         $uploadedObjects = [];
 
         try {
+            /*
+             * Update catatan siswa jika dikirim.
+             */
             if (
                 array_key_exists(
                     'student_note',
@@ -1148,54 +1584,52 @@ class SubmissionController extends Controller
                 ]);
             }
 
+            /*
+             * Sinkronisasi jawaban jika dikirim.
+             *
+             * Berbeda dengan saveAnswers(), method
+             * syncAnswers() juga menghapus jawaban lama
+             * yang sudah tidak dikirim oleh frontend.
+             *
+             * Ini diperlukan agar jawaban soal opsional
+             * yang dihapus siswa tidak tetap tersimpan
+             * dan ikut dalam auto-grading.
+             */
             if (
                 array_key_exists(
                     'answers',
                     $validated
                 )
             ) {
-                $this->saveAnswers(
+                $this->syncAnswers(
                     $submission,
                     $normalizedAnswers
                 );
             }
 
-            if ($request->hasFile('files')) {
-                foreach (
-                    $request->file('files')
-                    as $file
-                ) {
-                    $extension = strtolower(
-                        $file->getClientOriginalExtension()
-                    );
+            /*
+             * Tambahkan file baru jika ada.
+             */
+            $this->uploadSubmissionFiles(
+                $request,
+                $submission,
+                $uploadedObjects
+            );
 
-                    $filename = (string) Str::uuid();
-
-                    if ($extension !== '') {
-                        $filename .= '.' . $extension;
-                    }
-
-                    $objectKey =
-                        "submissions/{$submission->id}/{$filename}";
-
-                    Storage::disk('s3')->putFileAs(
-                        "submissions/{$submission->id}",
-                        $file,
-                        $filename
-                    );
-
-                    $uploadedObjects[] = $objectKey;
-
-                    SubmissionFile::create([
-                        'submission_id' => $submission->id,
-                        'original_name' =>
-                            $file->getClientOriginalName(),
-                        'object_key' => $objectKey,
-                        'mime_type' =>
-                            $file->getClientMimeType(),
-                        'size' => $file->getSize(),
-                    ]);
-                }
+            /*
+             * Jika assignment auto-gradable, nilai submission
+             * dihitung ulang setelah jawaban diperbarui.
+             */
+            if (
+                array_key_exists(
+                    'answers',
+                    $validated
+                )
+            ) {
+                $this->autoGradeSubmission(
+                    $submission,
+                    $assignment
+                );
             }
 
             DB::commit();
@@ -1208,13 +1642,9 @@ class SubmissionController extends Controller
                 'assignment.schedule.subject',
             ]);
 
-            $submission->answers->each(
-                function ($answer) {
-                    $answer->load([
-                        'question',
-                        'selectedOptions.option',
-                    ]);
-                }
+            $highestGrade = $this->getHighestGrade(
+                $assignment,
+                $user->id
             );
 
             $isLate = $this->isLate(
@@ -1226,10 +1656,20 @@ class SubmissionController extends Controller
                 'message' => $isLate
                     ? 'Pengumpulan tugas berhasil diperbarui. Submission tetap tercatat sebagai terlambat.'
                     : 'Pengumpulan tugas berhasil diperbarui.',
-                'data' => $this->formatSubmission(
-                    $submission,
-                    $assignment
-                ),
+
+                'data' => [
+                    'submission' => $this->formatSubmission(
+                        $submission,
+                        $assignment,
+                        $highestGrade
+                    ),
+
+                    'final_grade' =>
+                        $highestGrade,
+
+                    'submission_mode' =>
+                        $assignment->submission_mode ?? 'once',
+                ],
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -1250,6 +1690,9 @@ class SubmissionController extends Controller
 
     /**
      * Menghapus file dari submission siswa.
+     *
+     * File hanya dapat dihapus selama assignment masih
+     * terbuka.
      */
     public function destroyFile(
         Request $request,
@@ -1264,6 +1707,10 @@ class SubmissionController extends Controller
         );
 
         $this->ensureSubmissionAllowed(
+            $assignment
+        );
+
+        $this->ensureAssignmentIsOpen(
             $assignment
         );
 
@@ -1341,12 +1788,21 @@ class SubmissionController extends Controller
 
     /**
      * Menghapus seluruh submission siswa.
+     *
+     * Submission tidak boleh dihapus karena dapat digunakan
+     * untuk mengakali:
+     *
+     * - mode once
+     * - riwayat attempt
+     * - perhitungan nilai tertinggi
+     *
+     * Untuk memperbaiki jawaban, gunakan endpoint update.
      */
     public function destroy(
         Request $request,
         Assignment $assignment
     ) {
-        $user = $this->ensureStudent($request);
+        $this->ensureStudent($request);
 
         $assignment = $this->getAuthorizedAssignment(
             $request,
@@ -1357,53 +1813,9 @@ class SubmissionController extends Controller
             $assignment
         );
 
-        $submission = Submission::with('files')
-            ->where(
-                'assignment_id',
-                $assignment->id
-            )
-            ->where(
-                'student_id',
-                $user->id
-            )
-            ->firstOrFail();
-
-        /*
-         * Submission tetap boleh dihapus secara keseluruhan.
-         *
-         * Setelah submission dihapus, siswa dapat membuat
-         * submission baru. Jika tugas merupakan upload wajib,
-         * submission baru tetap harus memiliki minimal satu file.
-         */
-
-        DB::beginTransaction();
-
-        try {
-            foreach ($submission->files as $file) {
-                if (
-                    $file->object_key
-                    && Storage::disk('s3')->exists(
-                        $file->object_key
-                    )
-                ) {
-                    Storage::disk('s3')->delete(
-                        $file->object_key
-                    );
-                }
-            }
-
-            $submission->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'message' =>
-                    'Pengumpulan tugas berhasil dihapus.',
-            ]);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-
-            throw $e;
-        }
+        abort(
+            422,
+            'Submission tidak dapat dihapus. Gunakan fitur edit submission untuk memperbarui jawaban.'
+        );
     }
 }

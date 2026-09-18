@@ -85,6 +85,7 @@ class AssignmentController extends Controller
      * description
      * start_date
      * due_date
+     * submission_mode
      * questions[]
      * files[]
      */
@@ -120,6 +121,18 @@ class AssignmentController extends Controller
                 'date',
             ],
 
+            /*
+             * Mode pengumpulan tugas:
+             *
+             * once     = siswa hanya dapat mengumpulkan satu kali
+             * multiple = siswa dapat mengumpulkan berkali-kali
+             */
+            'submission_mode' => [
+                'nullable',
+                'string',
+                'in:once,multiple',
+            ],
+
             'questions' => [
                 'nullable',
                 'array',
@@ -133,6 +146,17 @@ class AssignmentController extends Controller
 
             'questions.*.question' => [
                 'required_with:questions',
+                'string',
+            ],
+
+            /*
+             * Jawaban benar untuk soal Jawaban Singkat.
+             *
+             * Validasi khusus berdasarkan tipe soal
+             * dilakukan pada validator->after().
+             */
+            'questions.*.correct_answer' => [
+                'nullable',
                 'string',
             ],
 
@@ -274,12 +298,56 @@ class AssignmentController extends Controller
             }
 
             /*
-             * Multiple dan checkbox harus memiliki options.
+             * Validasi khusus Jawaban Singkat.
+             *
+             * Setiap soal short wajib memiliki jawaban benar
+             * karena jawaban tersebut digunakan oleh
+             * AutoGradingService.
+             */
+            if ($type === 'short') {
+                foreach ($questions as $index => $question) {
+                    $correctAnswer = $question['correct_answer'] ?? null;
+
+                    if (
+                        $correctAnswer === null ||
+                        trim((string) $correctAnswer) === ''
+                    ) {
+                        $validator->errors()->add(
+                            "questions.$index.correct_answer",
+                            'Jawaban benar wajib diisi untuk soal Jawaban Singkat.'
+                        );
+                    }
+                }
+            }
+
+            /*
+             * Tipe selain short tidak boleh memiliki
+             * correct_answer.
+             *
+             * Multiple dan checkbox menggunakan
+             * assignment_options.is_correct sebagai
+             * sumber jawaban benar.
              */
             foreach ($questions as $index => $question) {
                 $questionType = $question['type'] ?? null;
                 $options = $question['options'] ?? [];
 
+                $correctAnswer = $question['correct_answer'] ?? null;
+
+                if (
+                    $questionType !== 'short' &&
+                    $correctAnswer !== null &&
+                    trim((string) $correctAnswer) !== ''
+                ) {
+                    $validator->errors()->add(
+                        "questions.$index.correct_answer",
+                        'Jawaban benar hanya dapat digunakan untuk soal Jawaban Singkat.'
+                    );
+                }
+
+                /*
+                 * Multiple dan checkbox harus memiliki options.
+                 */
                 if (
                     in_array(
                         $questionType,
@@ -359,6 +427,9 @@ class AssignmentController extends Controller
         try {
             /*
              * Buat assignment.
+             *
+             * Jika submission_mode tidak dikirim,
+             * gunakan "once" sebagai default.
              */
             $assignment = Assignment::create([
                 'schedule_id' => $schedule->id,
@@ -366,6 +437,8 @@ class AssignmentController extends Controller
                 'description' => $validated['description'] ?? '',
                 'start_date' => $validated['start_date'] ?? null,
                 'due_date' => $validated['due_date'] ?? null,
+                'submission_mode' => $validated['submission_mode']
+                    ?? 'once',
             ]);
 
             /*
@@ -376,10 +449,27 @@ class AssignmentController extends Controller
                     array_values($validated['questions'])
                     as $questionIndex => $questionData
                 ) {
+                    /*
+                     * correct_answer hanya disimpan untuk
+                     * jenis soal short.
+                     *
+                     * Jenis soal lain akan mendapatkan null.
+                     */
+                    $correctAnswer = null;
+
+                    if ($questionData['type'] === 'short') {
+                        $correctAnswer = trim(
+                            (string) (
+                                $questionData['correct_answer'] ?? ''
+                            )
+                        );
+                    }
+
                     $question = AssignmentQuestion::create([
                         'assignment_id' => $assignment->id,
                         'type' => $questionData['type'],
                         'question' => $questionData['question'],
+                        'correct_answer' => $correctAnswer,
                         'order' => $questionData['order']
                             ?? ($questionIndex + 1),
                         'is_required' => $questionData['is_required']
@@ -388,6 +478,9 @@ class AssignmentController extends Controller
 
                     /*
                      * Simpan pilihan jawaban.
+                     *
+                     * Hanya multiple dan checkbox
+                     * yang memiliki options.
                      */
                     if (
                         !empty($questionData['options']) &&
@@ -537,9 +630,11 @@ class AssignmentController extends Controller
     /**
      * Mengubah data tugas.
      *
-     * Untuk saat ini update hanya menangani informasi utama
-     * tugas. Pengelolaan soal akan dibuat pada tahap berikutnya
-     * agar tidak mencampur proses edit tugas dengan proses
+     * Untuk saat ini update menangani informasi utama
+     * tugas dan submission_mode.
+     *
+     * Pengelolaan soal tetap belum diubah pada tahap ini
+     * agar tidak mencampur proses edit tugas dengan
      * pengelolaan jawaban siswa.
      */
     public function update(
@@ -582,11 +677,34 @@ class AssignmentController extends Controller
                 'nullable',
                 'date',
             ],
+
+            /*
+             * Mode pengumpulan tugas.
+             */
+            'submission_mode' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'in:once,multiple',
+            ],
         ]);
 
-        $validator->after(function ($validator) use ($request) {
-            $startDate = $request->input('start_date');
-            $dueDate = $request->input('due_date');
+        $validator->after(function ($validator) use (
+            $request,
+            $assignment
+        ) {
+            /*
+             * Jika salah satu tanggal tidak dikirim
+             * pada request update, gunakan nilai yang
+             * sudah tersimpan pada assignment.
+             */
+            $startDate = $request->has('start_date')
+                ? $request->input('start_date')
+                : $assignment->start_date;
+
+            $dueDate = $request->has('due_date')
+                ? $request->input('due_date')
+                : $assignment->due_date;
 
             if ($startDate && $dueDate) {
                 try {
@@ -603,9 +721,51 @@ class AssignmentController extends Controller
                     // Rule date menangani format tanggal.
                 }
             }
+
+            /*
+             * Tugas jenis info tidak boleh memiliki
+             * tanggal mulai maupun tenggat.
+             */
+            $assignmentType = $assignment->questions()
+                ->value('type');
+
+            if ($assignmentType === 'info') {
+                if ($startDate || $dueDate) {
+                    $validator->errors()->add(
+                        'start_date',
+                        'Tugas jenis informasi tidak memerlukan tanggal mulai atau tenggat.'
+                    );
+                }
+            }
         });
 
         $validated = $validator->validate();
+
+        /*
+         * Jangan mengubah submission_mode menjadi null
+         * jika field tidak dikirim.
+         *
+         * Jika field dikirim null, gunakan mode lama
+         * agar assignment selalu memiliki mode yang valid.
+         */
+        if (
+            array_key_exists('submission_mode', $validated) &&
+            $validated['submission_mode'] === null
+        ) {
+            $validated['submission_mode'] =
+                $assignment->submission_mode ?? 'once';
+        }
+
+        /*
+         * Jika assignment lama belum memiliki nilai
+         * submission_mode, gunakan "once".
+         */
+        if (
+            !array_key_exists('submission_mode', $validated) &&
+            empty($assignment->submission_mode)
+        ) {
+            $validated['submission_mode'] = 'once';
+        }
 
         $assignment->update($validated);
 
