@@ -1057,8 +1057,78 @@ export default function Tugas() {
       const subjectId =
         selectedSubjectId;
 
+      /*
+       * Urutan kelas yang ditampilkan pada dropdown:
+       *
+       * X-1, X-2, ..., X-n
+       * XI-1, XI-2, ..., XI-n
+       * XII-1, XII-2, ..., XII-n
+       *
+       * Nama kelas dapat menggunakan format seperti:
+       * "X - 1", "X-1", "XI - 2", dan sebagainya.
+       */
+      const sortClassrooms = (
+        classrooms: Classroom[],
+      ) => {
+        const gradeOrder: Record<string, number> = {
+          X: 1,
+          XI: 2,
+          XII: 3,
+        };
+
+        return [...classrooms].sort((a, b) => {
+          const parseClassroom = (
+            name: string,
+          ) => {
+            const normalized = name
+              .trim()
+              .toUpperCase();
+
+            const match = normalized.match(
+              /^(XII|XI|X)\s*-\s*(\d+)/,
+            );
+
+            if (!match) {
+              return {
+                grade: 99,
+                number: Number.MAX_SAFE_INTEGER,
+                name: normalized,
+              };
+            }
+
+            return {
+              grade:
+                gradeOrder[match[1]] ?? 99,
+              number: Number(match[2]),
+              name: normalized,
+            };
+          };
+
+          const classA = parseClassroom(a.name);
+          const classB = parseClassroom(b.name);
+
+          if (classA.grade !== classB.grade) {
+            return classA.grade - classB.grade;
+          }
+
+          if (classA.number !== classB.number) {
+            return classA.number - classB.number;
+          }
+
+          return classA.name.localeCompare(
+            classB.name,
+            'id',
+            {
+              numeric: true,
+            },
+          );
+        });
+      };
+
       if (subjectId == null) {
-        return uniqueClassrooms;
+        return sortClassrooms(
+          uniqueClassrooms,
+        );
       }
 
       const classroomIds = new Set(
@@ -1077,9 +1147,11 @@ export default function Tugas() {
           ),
       );
 
-      return uniqueClassrooms.filter(
-        (classroom) =>
-          classroomIds.has(classroom.id),
+      return sortClassrooms(
+        uniqueClassrooms.filter(
+          (classroom) =>
+            classroomIds.has(classroom.id),
+        ),
       );
     }, [
       schedules,
@@ -4009,9 +4081,6 @@ export default function Tugas() {
                                         ),
                                     );
 
-                                  const firstSchedule =
-                                    classroomSchedules[0];
-
                                   return (
                                     <button
                                       key={classroom.id}
@@ -4101,49 +4170,69 @@ export default function Tugas() {
                                             color: '#6B7080',
                                           }}
                                         >
-                                          {firstSchedule?.subject?.name ??
+                                          {classroomSchedules[0]?.subject?.name ??
                                             selectedSubjectName ??
                                             'Mata pelajaran'}
                                         </span>
 
-                                        <span
-                                          className="mt-1 flex items-center gap-1.5 text-[10.5px]"
+                                        <div
+                                          className="mt-1.5 space-y-1"
                                           style={{
                                             color: '#8A806F',
                                           }}
                                         >
-                                          <Calendar
-                                            size={11}
-                                            strokeWidth={1.9}
-                                          />
-                                          <span>
-                                            {classroomSchedules.length > 0
-                                              ? `${classroomSchedules.length} jadwal`
-                                              : 'Jadwal tersedia'}
-                                          </span>
+                                          {classroomSchedules.length > 0 ? (
+                                            classroomSchedules.map((schedule) => (
+                                              <div
+                                                key={schedule.id}
+                                                className="flex items-center gap-1.5 text-[10.5px]"
+                                              >
+                                                <Calendar
+                                                  size={11}
+                                                  strokeWidth={1.9}
+                                                />
 
-                                          {firstSchedule?.start_time && (
-                                            <>
-                                              <span
-                                                className="h-1 w-1 rounded-full"
-                                                style={{
-                                                  backgroundColor:
-                                                    '#C7C0AC',
-                                                }}
-                                              />
-                                              <Clock3
+                                                <span className="shrink-0">
+                                                  {schedule.day ?? 'Hari belum tersedia'}
+                                                </span>
+
+                                                <span
+                                                  className="h-1 w-1 shrink-0 rounded-full"
+                                                  style={{
+                                                    backgroundColor: '#C7C0AC',
+                                                  }}
+                                                />
+
+                                                <Clock3
+                                                  size={11}
+                                                  strokeWidth={1.9}
+                                                />
+
+                                                <span className="shrink-0">
+                                                  {schedule.start_time
+                                                    ? schedule.start_time
+                                                        .slice(0, 5)
+                                                        .replace(':', '.')
+                                                    : '--.--'}
+                                                  {' – '}
+                                                  {schedule.end_time
+                                                    ? schedule.end_time
+                                                        .slice(0, 5)
+                                                        .replace(':', '.')
+                                                    : '--.--'}
+                                                </span>
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <div className="flex items-center gap-1.5 text-[10.5px]">
+                                              <Calendar
                                                 size={11}
                                                 strokeWidth={1.9}
                                               />
-                                              <span>
-                                                {firstSchedule.start_time.slice(
-                                                  0,
-                                                  5,
-                                                )}
-                                              </span>
-                                            </>
+                                              <span>Jadwal belum tersedia</span>
+                                            </div>
                                           )}
-                                        </span>
+                                        </div>
                                       </span>
 
                                       <span
