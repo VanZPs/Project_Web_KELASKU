@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Assignment extends Model
@@ -12,7 +12,6 @@ class Assignment extends Model
     use HasFactory;
 
     protected $fillable = [
-        'schedule_id',
         'title',
         'description',
         'start_date',
@@ -31,12 +30,15 @@ class Assignment extends Model
     /**
      * Assignment -> Schedule
      *
-     * Satu tugas dibuat berdasarkan satu jadwal
+     * Satu tugas dapat diberikan kepada banyak jadwal
      * yang mewakili guru, kelas, dan mata pelajaran.
      */
-    public function schedule(): BelongsTo
+    public function schedules(): BelongsToMany
     {
-        return $this->belongsTo(Schedule::class);
+        return $this->belongsToMany(
+            Schedule::class,
+            'assignment_schedules'
+        )->withTimestamps();
     }
 
     /**

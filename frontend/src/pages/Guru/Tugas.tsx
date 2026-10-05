@@ -47,6 +47,10 @@ type FilterTab =
   | 'all'
   | 'grading';
 
+type SubmissionMode =
+  | 'once'
+  | 'multiple';
+
 interface UserData {
   id?: number;
   name?: string;
@@ -115,12 +119,14 @@ interface Submission {
 
 interface Assignment {
   id: number;
-  schedule_id: number;
+  schedule_id?: number;
   title: string;
   description?: string | null;
   start_date?: string | null;
   due_date?: string | null;
+  submission_mode?: SubmissionMode;
   schedule?: Schedule;
+  schedules?: Schedule[];
   questions?: AssignmentQuestion[];
   submissions?: Submission[];
   files?: unknown[];
@@ -140,13 +146,14 @@ interface QuestionDraft {
 }
 
 interface TaskForm {
-  scheduleId: string;
+  classroomIds: number[];
   title: string;
   description: string;
   type: AssignmentType | null;
   questionCount: string;
   startDate: string;
   dueDate: string;
+  submissionMode: SubmissionMode;
 }
 
 
@@ -283,6 +290,23 @@ function getClassKey(
   );
 }
 
+function getAssignmentSchedules(
+  assignment: Assignment,
+): Schedule[] {
+  if (
+    Array.isArray(assignment.schedules) &&
+    assignment.schedules.length > 0
+  ) {
+    return assignment.schedules;
+  }
+
+  if (assignment.schedule) {
+    return [assignment.schedule];
+  }
+
+  return [];
+}
+
 function getErrorMessage(
   error: any,
 ) {
@@ -410,18 +434,25 @@ export default function Tugas() {
   const [classMenuOpen, setClassMenuOpen] =
     useState(false);
 
+  const [attemptMenuOpen, setAttemptMenuOpen] =
+    useState(false);
+
   const classDropdownRef =
+    useRef<HTMLDivElement | null>(null);
+
+  const attemptDropdownRef =
     useRef<HTMLDivElement | null>(null);
 
   const [taskForm, setTaskForm] =
     useState<TaskForm>({
-      scheduleId: '',
+      classroomIds: [],
       title: '',
       description: '',
       type: null,
       questionCount: '',
       startDate: '',
       dueDate: '',
+      submissionMode: 'once',
     });
 
   const [questions, setQuestions] =
@@ -491,11 +522,21 @@ export default function Tugas() {
       ) {
         setClassMenuOpen(false);
       }
+
+      if (
+        attemptDropdownRef.current &&
+        !attemptDropdownRef.current.contains(
+          event.target as Node,
+        )
+      ) {
+        setAttemptMenuOpen(false);
+      }
     }
 
     function handleDocumentKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setClassMenuOpen(false);
+        setAttemptMenuOpen(false);
       }
     }
 
@@ -747,18 +788,18 @@ export default function Tugas() {
 
       assignments.forEach(
         (assignment) => {
-          if (
-            assignment.schedule
-              ?.classroom
-          ) {
-            map.set(
-              assignment.schedule
-                .classroom.id,
-              assignment.schedule
-                .classroom,
-            );
-          }
-
+          getAssignmentSchedules(
+            assignment,
+          ).forEach(
+            (schedule) => {
+              if (schedule.classroom) {
+                map.set(
+                  schedule.classroom.id,
+                  schedule.classroom,
+                );
+              }
+            },
+          );
         },
       );
       return [
@@ -813,26 +854,28 @@ export default function Tugas() {
       return assignments.filter(
         (assignment) => {
 
-          const schedule =
-            assignment.schedule;
+          const assignmentSchedules =
+            getAssignmentSchedules(
+              assignment,
+            );
+
+          const matchesScheduleSearch =
+            assignmentSchedules.some(
+              (schedule) =>
+                schedule.classroom?.name
+                  ?.toLowerCase()
+                  .includes(keyword) ||
+                schedule.subject?.name
+                  ?.toLowerCase()
+                  .includes(keyword),
+            );
 
           const matchesSearch =
             !keyword ||
             assignment.title
               .toLowerCase()
-              .includes(
-                keyword,
-              ) ||
-            schedule?.classroom?.name
-              ?.toLowerCase()
-              .includes(
-                keyword,
-              ) ||
-            schedule?.subject?.name
-              ?.toLowerCase()
-              .includes(
-                keyword,
-              );
+              .includes(keyword) ||
+            matchesScheduleSearch;
 
           const matchesFilter =
             activeFilter ===
@@ -861,7 +904,6 @@ export default function Tugas() {
   */
   const groupedCards =
     useMemo(() => {
-
       const groups =
         new Map<
           string,
@@ -874,35 +916,61 @@ export default function Tugas() {
 
       filteredAssignments.forEach(
         (assignment) => {
-          const schedule =
-            assignment.schedule;
-
-          const key =
-            getClassKey(
-              schedule,
-              assignment.schedule_id,
+          const assignmentSchedules =
+            getAssignmentSchedules(
+              assignment,
             );
 
           if (
-            !groups.has(key)
+            assignmentSchedules.length === 0
           ) {
-            groups.set(
-              key,
-              {
-                key,
-                schedule,
-                assignments: [],
-              },
+            const key = getClassKey(
+              assignment.schedule,
+              assignment.schedule_id,
             );
+
+            if (!groups.has(key)) {
+              groups.set(key, {
+                key,
+                schedule:
+                  assignment.schedule,
+                assignments: [],
+              });
+            }
+
+            groups
+              .get(key)!
+              .assignments.push(
+                assignment,
+              );
+            return;
           }
 
-          groups
-            .get(key)!
-            .assignments.push(
-              assignment,
-            );
+          assignmentSchedules.forEach(
+            (schedule) => {
+              const key = getClassKey(
+                schedule,
+                schedule.id,
+              );
+
+              if (!groups.has(key)) {
+                groups.set(key, {
+                  key,
+                  schedule,
+                  assignments: [],
+                });
+              }
+
+              groups
+                .get(key)!
+                .assignments.push(
+                  assignment,
+                );
+            },
+          );
         },
       );
+
       return [
         ...groups.values(),
       ];
@@ -910,26 +978,122 @@ export default function Tugas() {
       filteredAssignments,
     ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | SELECTED SCHEDULE
   |--------------------------------------------------------------------------
   */
-  const selectedSchedule =
+  const selectedSubjectId =
     useMemo(() => {
+      if (
+        taskForm.classroomIds.length === 0
+      ) {
+        return null;
+      }
 
-      return schedules.find(
-        (schedule) =>
-          String(
-            schedule.id,
-          ) ===
-          taskForm.scheduleId,
+      const firstClassroomId =
+        taskForm.classroomIds[0];
+
+      return (
+        schedules.find(
+          (schedule) =>
+            Number(schedule.classroom_id ?? schedule.classroom?.id) ===
+              firstClassroomId &&
+            schedule.subject_id != null,
+        )?.subject_id ?? null
       );
     }, [
       schedules,
-      taskForm.scheduleId,
+      taskForm.classroomIds,
     ]);
+
+  const selectedClassrooms =
+    useMemo(() => {
+      const ids = new Set(
+        taskForm.classroomIds,
+      );
+
+      return uniqueClassrooms.filter(
+        (classroom) =>
+          ids.has(classroom.id),
+      );
+    }, [
+      uniqueClassrooms,
+      taskForm.classroomIds,
+    ]);
+
+  const selectedSchedules =
+    useMemo(() => {
+      if (
+        taskForm.classroomIds.length === 0 ||
+        selectedSubjectId == null
+      ) {
+        return [];
+      }
+
+      const classroomIds = new Set(
+        taskForm.classroomIds,
+      );
+
+      return schedules.filter(
+        (schedule) =>
+          classroomIds.has(
+            Number(
+              schedule.classroom_id ??
+                schedule.classroom?.id,
+            ),
+          ) &&
+          Number(schedule.subject_id) ===
+            Number(selectedSubjectId),
+      );
+    }, [
+      schedules,
+      taskForm.classroomIds,
+      selectedSubjectId,
+    ]);
+
+  const availableClassrooms =
+    useMemo(() => {
+      const subjectId =
+        selectedSubjectId;
+
+      if (subjectId == null) {
+        return uniqueClassrooms;
+      }
+
+      const classroomIds = new Set(
+        schedules
+          .filter(
+            (schedule) =>
+              Number(schedule.subject_id) ===
+              Number(subjectId),
+          )
+          .map(
+            (schedule) =>
+              Number(
+                schedule.classroom_id ??
+                  schedule.classroom?.id,
+              ),
+          ),
+      );
+
+      return uniqueClassrooms.filter(
+        (classroom) =>
+          classroomIds.has(classroom.id),
+      );
+    }, [
+      schedules,
+      uniqueClassrooms,
+      selectedSubjectId,
+    ]);
+
+  const selectedSubjectName =
+    selectedSchedules[0]?.subject?.name ??
+    schedules.find(
+      (schedule) =>
+        Number(schedule.subject_id) ===
+        Number(selectedSubjectId),
+    )?.subject?.name ?? '';
 
 
   /*
@@ -959,7 +1123,8 @@ export default function Tugas() {
   const detailReady =
     useMemo(() => {
       if (
-        !taskForm.scheduleId ||
+        taskForm.classroomIds.length === 0 ||
+        selectedSchedules.length === 0 ||
         !taskForm.title.trim() ||
         !taskForm.type
       ) {
@@ -1006,13 +1171,14 @@ export default function Tugas() {
   */
   function resetTaskForm() {
     setTaskForm({
-      scheduleId: '',
+      classroomIds: [],
       title: '',
       description: '',
       type: null,
       questionCount: '',
       startDate: '',
       dueDate: '',
+      submissionMode: 'once',
     });
     setQuestions([]);
     setTaskFiles([]);
@@ -1022,6 +1188,8 @@ export default function Tugas() {
     }
 
     setTypeMenuOpen(false);
+    setClassMenuOpen(false);
+    setAttemptMenuOpen(false);
     setModalStep(
       'detail',
     );
@@ -1738,9 +1906,15 @@ export default function Tugas() {
     }
 
     if (
-      !taskForm.scheduleId ||
+      taskForm.classroomIds.length === 0 ||
+      selectedSchedules.length === 0 ||
       !taskForm.type
     ) {
+      setToast({
+        type: 'error',
+        message:
+          'Pilih minimal satu kelas yang akan menerima tugas.',
+      });
       return;
     }
 
@@ -1750,14 +1924,23 @@ export default function Tugas() {
       const formData =
         new FormData();
 
-      formData.append(
-        'schedule_id',
-        String(
-          Number(
-            taskForm.scheduleId,
-          ),
-        ),
+      selectedSchedules.forEach(
+        (schedule) => {
+          formData.append(
+            'schedule_ids[]',
+            String(schedule.id),
+          );
+        },
       );
+
+      if (
+        taskForm.type !== 'info'
+      ) {
+        formData.append(
+          'submission_mode',
+          taskForm.submissionMode,
+        );
+      }
 
       formData.append(
         'title',
@@ -3611,15 +3794,13 @@ export default function Tugas() {
                     <label
                       className="mb-2 block text-[13px] font-bold"
                       style={{
-                        color:
-                          '#141C30',
+                        color: '#141C30',
                       }}
                     >
                       Kelas{' '}
                       <span
                         style={{
-                          color:
-                            '#A8503B',
+                          color: '#A8503B',
                         }}
                       >
                         *
@@ -3630,7 +3811,6 @@ export default function Tugas() {
                       ref={classDropdownRef}
                       className="relative"
                     >
-
                       <button
                         type="button"
                         disabled={scheduleLoading}
@@ -3657,16 +3837,15 @@ export default function Tugas() {
                           classMenuOpen
                         }
                       >
-
                         <span
                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition-colors duration-150"
                           style={{
                             backgroundColor:
-                              taskForm.scheduleId
+                              taskForm.classroomIds.length > 0
                                 ? '#E7ECF4'
                                 : '#F5F1E7',
                             color:
-                              taskForm.scheduleId
+                              taskForm.classroomIds.length > 0
                                 ? '#1E2A47'
                                 : '#8A806F',
                           }}
@@ -3678,32 +3857,27 @@ export default function Tugas() {
                         </span>
 
                         <span className="min-w-0 flex-1">
-                          {selectedSchedule ? (
+                          {selectedClassrooms.length > 0 ? (
                             <>
                               <span
                                 className="block truncate text-[13px] font-bold"
                                 style={{
-                                  color:
-                                    '#141C30',
+                                  color: '#141C30',
                                 }}
                               >
-                                {selectedSchedule
-                                  .classroom
-                                  ?.name ??
-                                  'Kelas'}
+                                {selectedClassrooms.length === 1
+                                  ? selectedClassrooms[0].name
+                                  : `${selectedClassrooms.length} kelas dipilih`}
                               </span>
 
                               <span
                                 className="mt-0.5 flex items-center gap-1.5 truncate text-[11px]"
                                 style={{
-                                  color:
-                                    '#6B7080',
+                                  color: '#6B7080',
                                 }}
                               >
                                 <span className="truncate">
-                                  {selectedSchedule
-                                    .subject
-                                    ?.name ??
+                                  {selectedSubjectName ||
                                     'Mata pelajaran'}
                                 </span>
 
@@ -3716,11 +3890,9 @@ export default function Tugas() {
                                 />
 
                                 <span className="shrink-0">
-                                  {selectedSchedule.day ??
-                                    'Jadwal'}
-                                  {selectedSchedule.start_time
-                                    ? ` · ${selectedSchedule.start_time.slice(0, 5)}`
-                                    : ''}
+                                  {selectedClassrooms.length === 1
+                                    ? '1 kelas penerima'
+                                    : `${selectedClassrooms.length} kelas penerima`}
                                 </span>
                               </span>
                             </>
@@ -3728,8 +3900,7 @@ export default function Tugas() {
                             <span
                               className="block text-[13.5px] font-semibold"
                               style={{
-                                color:
-                                  '#B3AE9C',
+                                color: '#B3AE9C',
                               }}
                             >
                               {scheduleLoading
@@ -3742,8 +3913,7 @@ export default function Tugas() {
                         <ChevronDown
                           size={16}
                           style={{
-                            color:
-                              '#6B7080',
+                            color: '#6B7080',
                             transform:
                               classMenuOpen
                                 ? 'rotate(180deg)'
@@ -3752,42 +3922,34 @@ export default function Tugas() {
                               'transform 0.18s ease',
                           }}
                         />
-
                       </button>
-
 
                       {classMenuOpen && (
                         <div
                           className="absolute left-0 top-[calc(100%+7px)] z-[40] w-full overflow-hidden rounded-[15px] border"
                           style={{
-                            backgroundColor:
-                              '#FFFDF8',
-                            borderColor:
-                              '#E3DACB',
+                            backgroundColor: '#FFFDF8',
+                            borderColor: '#E3DACB',
                             boxShadow:
                               '0 20px 45px -18px rgba(20,28,48,0.32), 0 6px 18px -10px rgba(20,28,48,0.16)',
                           }}
                           role="listbox"
                           aria-label="Pilih kelas"
+                          aria-multiselectable="true"
                         >
-
                           <div
                             className="border-b px-3.5 py-3"
                             style={{
-                              backgroundColor:
-                                '#FBF9F3',
-                              borderColor:
-                                '#E3DACB',
+                              backgroundColor: '#FBF9F3',
+                              borderColor: '#E3DACB',
                             }}
                           >
                             <div className="flex items-center gap-2.5">
                               <span
                                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]"
                                 style={{
-                                  backgroundColor:
-                                    '#E7D3A8',
-                                  color:
-                                    '#7A5A20',
+                                  backgroundColor: '#E7D3A8',
+                                  color: '#7A5A20',
                                 }}
                               >
                                 <BookOpen
@@ -3800,8 +3962,7 @@ export default function Tugas() {
                                 <div
                                   className="text-[11px] font-bold uppercase tracking-[0.08em]"
                                   style={{
-                                    color:
-                                      '#8A806F',
+                                    color: '#8A806F',
                                   }}
                                 >
                                   Pilih kelas
@@ -3810,52 +3971,79 @@ export default function Tugas() {
                                 <div
                                   className="mt-0.5 text-[12px]"
                                   style={{
-                                    color:
-                                      '#6B7080',
+                                    color: '#6B7080',
                                   }}
                                 >
-                                  Pilih jadwal mengajar yang akan diberi tugas.
+                                  {selectedSubjectName
+                                    ? `Pilih kelas ${selectedSubjectName} yang akan menerima tugas.`
+                                    : 'Pilih kelas pertama untuk menentukan mata pelajaran.'}
                                 </div>
                               </div>
                             </div>
                           </div>
 
                           <div className="max-h-[255px] overflow-y-auto p-1.5">
-                            {schedules.length > 0 ? (
-                              schedules.map(
-                                (
-                                  schedule,
-                                ) => {
+                            {availableClassrooms.length > 0 ? (
+                              availableClassrooms.map(
+                                (classroom) => {
                                   const isSelected =
-                                    String(
-                                      schedule.id,
-                                    ) ===
-                                    taskForm.scheduleId;
+                                    taskForm.classroomIds.includes(
+                                      classroom.id,
+                                    );
+
+                                  const classroomSchedules =
+                                    schedules.filter(
+                                      (schedule) =>
+                                        Number(
+                                          schedule.classroom_id ??
+                                            schedule.classroom?.id,
+                                        ) === classroom.id &&
+                                        (
+                                          selectedSubjectId == null ||
+                                          Number(
+                                            schedule.subject_id,
+                                          ) ===
+                                            Number(
+                                              selectedSubjectId,
+                                            )
+                                        ),
+                                    );
+
+                                  const firstSchedule =
+                                    classroomSchedules[0];
 
                                   return (
                                     <button
-                                      key={
-                                        schedule.id
-                                      }
+                                      key={classroom.id}
                                       type="button"
                                       role="option"
-                                      aria-selected={
-                                        isSelected
-                                      }
+                                      aria-selected={isSelected}
                                       onClick={() => {
                                         setTaskForm(
-                                          (
-                                            current,
-                                          ) => ({
-                                            ...current,
-                                            scheduleId:
-                                              String(
-                                                schedule.id,
-                                              ),
-                                          }),
-                                        );
-                                        setClassMenuOpen(
-                                          false,
+                                          (current) => {
+                                            const exists =
+                                              current.classroomIds.includes(
+                                                classroom.id,
+                                              );
+
+                                            const nextIds =
+                                              exists
+                                                ? current.classroomIds.filter(
+                                                    (id) =>
+                                                      id !==
+                                                      classroom.id,
+                                                  )
+                                                : [
+                                                    ...current.classroomIds,
+                                                    classroom.id,
+                                                  ];
+
+                                            return {
+                                              ...current,
+                                              classroomIds:
+                                                nextIds,
+                                            };
+                                          },
                                         );
                                       }}
                                       className="group mb-1 flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 text-left transition-all duration-150 last:mb-0"
@@ -3865,24 +4053,19 @@ export default function Tugas() {
                                             ? '#EAF0F7'
                                             : 'transparent',
                                       }}
-                                      onMouseEnter={(
-                                        event,
-                                      ) => {
+                                      onMouseEnter={(event) => {
                                         if (!isSelected) {
                                           event.currentTarget.style.backgroundColor =
                                             '#F5F1E7';
                                         }
                                       }}
-                                      onMouseLeave={(
-                                        event,
-                                      ) => {
+                                      onMouseLeave={(event) => {
                                         if (!isSelected) {
                                           event.currentTarget.style.backgroundColor =
                                             'transparent';
                                         }
                                       }}
                                     >
-
                                       <span
                                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-[10.5px] font-bold"
                                         style={{
@@ -3896,46 +4079,37 @@ export default function Tugas() {
                                               : '#6B7080',
                                         }}
                                       >
-                                        {schedule.classroom?.name
-                                          ? schedule.classroom.name
-                                              .replace(/\s+/g, '')
-                                              .slice(0, 4)
-                                              .toUpperCase()
-                                          : 'KLS'}
+                                        {classroom.name
+                                          .replace(/\s+/g, '')
+                                          .slice(0, 4)
+                                          .toUpperCase()}
                                       </span>
 
                                       <span className="min-w-0 flex-1">
                                         <span
                                           className="block truncate text-[13px] font-bold"
                                           style={{
-                                            color:
-                                              '#141C30',
+                                            color: '#141C30',
                                           }}
                                         >
-                                          {schedule
-                                            .classroom
-                                            ?.name ??
-                                            'Kelas'}
+                                          {classroom.name}
                                         </span>
 
                                         <span
                                           className="mt-0.5 block truncate text-[11.5px]"
                                           style={{
-                                            color:
-                                              '#6B7080',
+                                            color: '#6B7080',
                                           }}
                                         >
-                                          {schedule
-                                            .subject
-                                            ?.name ??
+                                          {firstSchedule?.subject?.name ??
+                                            selectedSubjectName ??
                                             'Mata pelajaran'}
                                         </span>
 
                                         <span
                                           className="mt-1 flex items-center gap-1.5 text-[10.5px]"
                                           style={{
-                                            color:
-                                              '#8A806F',
+                                            color: '#8A806F',
                                           }}
                                         >
                                           <Calendar
@@ -3943,31 +4117,32 @@ export default function Tugas() {
                                             strokeWidth={1.9}
                                           />
                                           <span>
-                                            {schedule.day ??
-                                              'Jadwal'}
+                                            {classroomSchedules.length > 0
+                                              ? `${classroomSchedules.length} jadwal`
+                                              : 'Jadwal tersedia'}
                                           </span>
 
-                                          <span
-                                            className="h-1 w-1 rounded-full"
-                                            style={{
-                                              backgroundColor:
-                                                '#C7C0AC',
-                                            }}
-                                          />
-
-                                          <Clock3
-                                            size={11}
-                                            strokeWidth={1.9}
-                                          />
-                                          <span>
-                                            {schedule.start_time
-                                              ? schedule.start_time.slice(0, 5)
-                                              : '--:--'}
-                                            {' – '}
-                                            {schedule.end_time
-                                              ? schedule.end_time.slice(0, 5)
-                                              : '--:--'}
-                                          </span>
+                                          {firstSchedule?.start_time && (
+                                            <>
+                                              <span
+                                                className="h-1 w-1 rounded-full"
+                                                style={{
+                                                  backgroundColor:
+                                                    '#C7C0AC',
+                                                }}
+                                              />
+                                              <Clock3
+                                                size={11}
+                                                strokeWidth={1.9}
+                                              />
+                                              <span>
+                                                {firstSchedule.start_time.slice(
+                                                  0,
+                                                  5,
+                                                )}
+                                              </span>
+                                            </>
+                                          )}
                                         </span>
                                       </span>
 
@@ -3989,7 +4164,6 @@ export default function Tugas() {
                                           strokeWidth={2.6}
                                         />
                                       </span>
-
                                     </button>
                                   );
                                 },
@@ -3999,32 +4173,26 @@ export default function Tugas() {
                                 <span
                                   className="mx-auto flex h-10 w-10 items-center justify-center rounded-[10px]"
                                   style={{
-                                    backgroundColor:
-                                      '#F6E1D9',
-                                    color:
-                                      '#A8503B',
+                                    backgroundColor: '#F6E1D9',
+                                    color: '#A8503B',
                                   }}
                                 >
-                                  <Calendar
-                                    size={17}
-                                  />
+                                  <Calendar size={17} />
                                 </span>
 
                                 <div
                                   className="mt-2 text-[12.5px] font-semibold"
                                   style={{
-                                    color:
-                                      '#141C30',
+                                    color: '#141C30',
                                   }}
                                 >
-                                  Belum ada jadwal mengajar
+                                  Belum ada kelas yang tersedia
                                 </div>
 
                                 <div
                                   className="mt-1 text-[11px] leading-[1.5]"
                                   style={{
-                                    color:
-                                      '#6B7080',
+                                    color: '#6B7080',
                                   }}
                                 >
                                   Jadwal kelas Anda belum tersedia untuk dipilih.
@@ -4032,34 +4200,69 @@ export default function Tugas() {
                               </div>
                             )}
                           </div>
+
+                          {selectedClassrooms.length > 0 && (
+                            <div
+                              className="flex items-center justify-between gap-3 border-t px-3.5 py-2.5"
+                              style={{
+                                backgroundColor: '#FBF9F3',
+                                borderColor: '#E3DACB',
+                              }}
+                            >
+                              <div
+                                className="min-w-0 truncate text-[11.5px]"
+                                style={{
+                                  color: '#6B7080',
+                                }}
+                              >
+                                {selectedClassrooms
+                                  .map(
+                                    (classroom) =>
+                                      classroom.name,
+                                  )
+                                  .join(', ')}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setClassMenuOpen(false)
+                                }
+                                className="shrink-0 rounded-[8px] px-2.5 py-1.5 text-[11px] font-bold"
+                                style={{
+                                  backgroundColor: '#1E2A47',
+                                  color: '#fff',
+                                }}
+                              >
+                                Selesai
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {scheduleLoading && (
-                      <div
-                        className="mt-1.5 flex items-center gap-1.5 text-[11.5px]"
-                        style={{
-                          color:
-                            '#6B7080',
-                        }}
-                      >
-                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#D9BE86] border-t-transparent" />
-                        Memuat daftar kelas...
-                      </div>
-                    )}
-
                     {!scheduleLoading &&
-                      schedules.length ===
-                        0 && (
+                      schedules.length === 0 && (
                         <div
                           className="mt-1.5 text-[11.5px]"
                           style={{
-                            color:
-                              '#A8503B',
+                            color: '#A8503B',
                           }}
                         >
                           Belum ada jadwal mengajar yang tersedia.
+                        </div>
+                      )}
+
+                    {selectedClassrooms.length > 0 &&
+                      selectedSchedules.length === 0 && (
+                        <div
+                          className="mt-1.5 text-[11.5px]"
+                          style={{
+                            color: '#A8503B',
+                          }}
+                        >
+                          Jadwal untuk kelas yang dipilih belum tersedia pada mata pelajaran ini.
                         </div>
                       )}
                   </div>
@@ -4390,6 +4593,208 @@ export default function Tugas() {
                     </div>
                   </div>
 
+                  {/* MODE PENGERJAAN */}
+                  {taskForm.type &&
+                    taskForm.type !== 'info' && (
+                      <div className="mb-[18px]">
+                        <label
+                          className="mb-2 block text-[13px] font-bold"
+                          style={{
+                            color: '#141C30',
+                          }}
+                        >
+                          Mode pengerjaan{' '}
+                          <span
+                            style={{
+                              color: '#A8503B',
+                            }}
+                          >
+                            *
+                          </span>
+                        </label>
+
+                        <div
+                          ref={attemptDropdownRef}
+                          className="relative"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttemptMenuOpen(
+                                (current) =>
+                                  !current,
+                              )
+                            }
+                            className="flex w-full items-center gap-2.5 rounded-[10px] border px-[13px] py-[11px] text-left text-[13.5px]"
+                            style={{
+                              borderColor:
+                                attemptMenuOpen
+                                  ? '#2C3B5E'
+                                  : '#E3DACB',
+                              backgroundColor:
+                                '#FFFDF8',
+                              boxShadow:
+                                attemptMenuOpen
+                                  ? '0 0 0 3px rgba(44,59,94,0.12)'
+                                  : undefined,
+                            }}
+                          >
+                            <span
+                              className="flex h-5 w-5 shrink-0 items-center justify-center"
+                              style={{
+                                color: '#6B7080',
+                              }}
+                            >
+                              {taskForm.submissionMode ===
+                              'multiple' ? (
+                                <GraduationCap
+                                  size={18}
+                                  strokeWidth={1.8}
+                                />
+                              ) : (
+                                <CheckCircle2
+                                  size={18}
+                                  strokeWidth={1.8}
+                                />
+                              )}
+                            </span>
+
+                            <span
+                              className="flex-1"
+                              style={{
+                                color: '#141C30',
+                              }}
+                            >
+                              <span className="block font-semibold">
+                                {taskForm.submissionMode ===
+                                'multiple'
+                                  ? 'Berulang (Highest Grade)'
+                                  : 'Sekali (Once)'}
+                              </span>
+                              <span
+                                className="mt-0.5 block text-[11px]"
+                                style={{
+                                  color: '#8A806F',
+                                }}
+                              >
+                                {taskForm.submissionMode ===
+                                'multiple'
+                                  ? 'Siswa dapat mengirim ulang dan nilai tertinggi menjadi nilai akhir.'
+                                  : 'Siswa hanya dapat mengirim satu kali.'}
+                              </span>
+                            </span>
+
+                            <ChevronDown
+                              size={13}
+                              style={{
+                                color: '#6B7080',
+                                transform:
+                                  attemptMenuOpen
+                                    ? 'rotate(180deg)'
+                                    : undefined,
+                                transition:
+                                  'transform 0.15s ease',
+                              }}
+                            />
+                          </button>
+
+                          {attemptMenuOpen && (
+                            <div
+                              className="absolute left-0 top-[calc(100%+6px)] z-[30] w-full rounded-[12px] border p-1.5"
+                              style={{
+                                backgroundColor: '#FFFDF8',
+                                borderColor: '#E3DACB',
+                                boxShadow:
+                                  '0 14px 34px -10px rgba(20,17,10,0.25)',
+                              }}
+                            >
+                              {[
+                                {
+                                  value: 'once' as SubmissionMode,
+                                  icon: CheckCircle2,
+                                  title: 'Sekali (Once)',
+                                  description:
+                                    'Siswa hanya dapat mengirim satu kali.',
+                                },
+                                {
+                                  value: 'multiple' as SubmissionMode,
+                                  icon: GraduationCap,
+                                  title:
+                                    'Berulang (Highest Grade)',
+                                  description:
+                                    'Siswa dapat mengirim ulang dan nilai tertinggi menjadi nilai akhir.',
+                                },
+                              ].map(
+                                ({
+                                  value,
+                                  icon: Icon,
+                                  title,
+                                  description,
+                                }) => (
+                                  <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => {
+                                      setTaskForm(
+                                        (current) => ({
+                                          ...current,
+                                          submissionMode:
+                                            value,
+                                        }),
+                                      );
+                                      setAttemptMenuOpen(
+                                        false,
+                                      );
+                                    }}
+                                    className="flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-left text-[13px]"
+                                    style={{
+                                      backgroundColor:
+                                        taskForm.submissionMode ===
+                                        value
+                                          ? '#E5ECF5'
+                                          : 'transparent',
+                                      color:
+                                        '#23283A',
+                                    }}
+                                  >
+                                    <Icon
+                                      size={18}
+                                      strokeWidth={1.8}
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block font-semibold">
+                                        {title}
+                                      </span>
+                                      <span
+                                        className="mt-0.5 block text-[11px]"
+                                        style={{
+                                          color:
+                                            '#8A806F',
+                                        }}
+                                      >
+                                        {description}
+                                      </span>
+                                    </span>
+                                    {taskForm.submissionMode ===
+                                      value && (
+                                      <Check
+                                        size={15}
+                                        strokeWidth={2.5}
+                                        style={{
+                                          color:
+                                            '#1E2A47',
+                                        }}
+                                      />
+                                    )}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                   {/* JUMLAH SOAL */}
                   {taskForm.type &&
                     taskForm.type !==
@@ -4663,8 +5068,8 @@ export default function Tugas() {
                       </>
                     )}
 
-                  {/* SELECTED SCHEDULE */}
-                  {selectedSchedule && (
+                  {/* SELECTED CLASSES */}
+                  {selectedClassrooms.length > 0 && (
                     <div
                       className="mb-[18px] rounded-[10px] border px-[13px] py-[11px] text-[12px]"
                       style={{
@@ -4676,18 +5081,17 @@ export default function Tugas() {
                           '#3E6BAE',
                       }}
                     >
-
                       <b>
-                        {selectedSchedule
-                          .subject
-                          ?.name ??
+                        {selectedSubjectName ||
                           'Mata pelajaran'}
                       </b>{' '}
                       ·{' '}
-                      {selectedSchedule
-                        .classroom
-                        ?.name ??
-                        'Kelas'}
+                      {selectedClassrooms
+                        .map(
+                          (classroom) =>
+                            classroom.name,
+                        )
+                        .join(', ')}
                     </div>
                   )}
                 </div>
@@ -4827,16 +5231,8 @@ export default function Tugas() {
                           'upload' ||
                         taskForm.type ===
                           'info'
-                          ? selectedSchedule
-                              ?.classroom
-                              ?.name ??
-                            'Kelas'
-                          : `${questions.length} soal · ${
-                              selectedSchedule
-                                ?.classroom
-                                ?.name ??
-                              'Kelas'
-                            }`}
+                          ? `${selectedClassrooms.length} kelas`
+                          : `${questions.length} soal · ${selectedClassrooms.length} kelas`}
                       </p>
                     </div>
                   </div>

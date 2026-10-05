@@ -33,21 +33,35 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Memastikan schedule merupakan milik guru yang sedang login.
+     * Memastikan seluruh schedule merupakan milik guru yang sedang login.
+     *
+     * Digunakan ketika membuat tugas dengan beberapa schedule sekaligus.
      */
-    private function getTeacherSchedule(
+    private function getTeacherSchedules(
         Request $request,
-        int $scheduleId
-    ): Schedule {
+        array $scheduleIds
+    ) {
         $user = $this->ensureTeacher($request);
 
-        return Schedule::with([
+        $scheduleIds = array_values(array_unique(
+            array_map('intval', $scheduleIds)
+        ));
+
+        $schedules = Schedule::with([
             'classroom',
             'subject',
         ])
-            ->where('id', $scheduleId)
+            ->whereIn('id', $scheduleIds)
             ->where('teacher_id', $user->id)
-            ->firstOrFail();
+            ->get();
+
+        abort_unless(
+            $schedules->count() === count($scheduleIds),
+            403,
+            'Satu atau lebih jadwal bukan milik Anda atau tidak ditemukan.'
+        );
+
+        return $schedules;
     }
 
     /**
@@ -58,12 +72,12 @@ class AssignmentController extends Controller
         $user = $this->ensureTeacher($request);
 
         $assignments = Assignment::with([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'questions.options',
             'files',
         ])
-            ->whereHas('schedule', function ($query) use ($user) {
+            ->whereHas('schedules', function ($query) use ($user) {
                 $query->where('teacher_id', $user->id);
             })
             ->latest()
@@ -80,7 +94,7 @@ class AssignmentController extends Controller
      *
      * Struktur request:
      *
-     * schedule_id
+     * schedule_ids[]
      * title
      * description
      * start_date
@@ -94,9 +108,16 @@ class AssignmentController extends Controller
         $this->ensureTeacher($request);
 
         $validator = Validator::make($request->all(), [
-            'schedule_id' => [
+            'schedule_ids' => [
+                'required',
+                'array',
+                'min:1',
+            ],
+
+            'schedule_ids.*' => [
                 'required',
                 'integer',
+                'distinct',
                 'exists:schedules,id',
             ],
 
@@ -121,7 +142,7 @@ class AssignmentController extends Controller
                 'date',
             ],
 
-            /*
+            /**
              * Mode pengumpulan tugas:
              *
              * once     = siswa hanya dapat mengumpulkan satu kali
@@ -149,7 +170,7 @@ class AssignmentController extends Controller
                 'string',
             ],
 
-            /*
+            /**
              * Jawaban benar untuk soal Jawaban Singkat.
              *
              * Validasi khusus berdasarkan tipe soal
@@ -204,7 +225,7 @@ class AssignmentController extends Controller
             ],
         ]);
 
-        /*
+        /**
          * Validasi tambahan setelah validasi dasar.
          */
         $validator->after(function ($validator) use ($request) {
@@ -212,7 +233,7 @@ class AssignmentController extends Controller
             $dueDate = $request->input('due_date');
             $questions = $request->input('questions', []);
 
-            /*
+            /**
              * start_date tidak boleh lebih besar dari due_date.
              */
             if ($startDate && $dueDate) {
@@ -232,7 +253,7 @@ class AssignmentController extends Controller
                 }
             }
 
-            /*
+            /**
              * Jika tidak ada questions, tidak perlu validasi
              * struktur soal.
              */
@@ -240,7 +261,7 @@ class AssignmentController extends Controller
                 return;
             }
 
-            /*
+            /**
              * Semua questions dalam satu assignment
              * harus memiliki tipe yang sama.
              */
@@ -261,7 +282,7 @@ class AssignmentController extends Controller
 
             $type = $types->first();
 
-            /*
+            /**
              * Info tidak membutuhkan tanggal mulai
              * maupun tenggat.
              */
@@ -274,7 +295,7 @@ class AssignmentController extends Controller
                 }
             }
 
-            /*
+            /**
              * Upload hanya membutuhkan satu pertanyaan/instruksi.
              */
             if ($type === 'upload' && count($questions) !== 1) {
@@ -284,7 +305,7 @@ class AssignmentController extends Controller
                 );
             }
 
-            /*
+            /**
              * Validasi tipe short dan paragraph.
              */
             if (
@@ -297,7 +318,7 @@ class AssignmentController extends Controller
                 );
             }
 
-            /*
+            /**
              * Validasi khusus Jawaban Singkat.
              *
              * Setiap soal short wajib memiliki jawaban benar
@@ -320,7 +341,7 @@ class AssignmentController extends Controller
                 }
             }
 
-            /*
+            /**
              * Tipe selain short tidak boleh memiliki
              * correct_answer.
              *
@@ -331,7 +352,6 @@ class AssignmentController extends Controller
             foreach ($questions as $index => $question) {
                 $questionType = $question['type'] ?? null;
                 $options = $question['options'] ?? [];
-
                 $correctAnswer = $question['correct_answer'] ?? null;
 
                 if (
@@ -345,7 +365,7 @@ class AssignmentController extends Controller
                     );
                 }
 
-                /*
+                /**
                  * Multiple dan checkbox harus memiliki options.
                  */
                 if (
@@ -390,7 +410,7 @@ class AssignmentController extends Controller
                     }
                 }
 
-                /*
+                /**
                  * Tipe selain multiple/checkbox tidak boleh
                  * memiliki pilihan jawaban.
                  */
@@ -412,12 +432,12 @@ class AssignmentController extends Controller
 
         $validated = $validator->validate();
 
-        /*
-         * Pastikan schedule memang milik guru yang sedang login.
+        /**
+         * Pastikan seluruh schedule memang milik guru yang sedang login.
          */
-        $schedule = $this->getTeacherSchedule(
+        $schedules = $this->getTeacherSchedules(
             $request,
-            (int) $validated['schedule_id']
+            $validated['schedule_ids']
         );
 
         DB::beginTransaction();
@@ -425,14 +445,13 @@ class AssignmentController extends Controller
         $uploadedObjects = [];
 
         try {
-            /*
+            /**
              * Buat assignment.
              *
              * Jika submission_mode tidak dikirim,
              * gunakan "once" sebagai default.
              */
             $assignment = Assignment::create([
-                'schedule_id' => $schedule->id,
                 'title' => $validated['title'],
                 'description' => $validated['description'] ?? '',
                 'start_date' => $validated['start_date'] ?? null,
@@ -441,7 +460,15 @@ class AssignmentController extends Controller
                     ?? 'once',
             ]);
 
-            /*
+            /**
+             * Hubungkan satu assignment dengan seluruh schedule
+             * yang dipilih guru melalui tabel pivot assignment_schedules.
+             */
+            $assignment->schedules()->attach(
+                $schedules->pluck('id')->all()
+            );
+
+            /**
              * Simpan questions dan options.
              */
             if (!empty($validated['questions'])) {
@@ -449,7 +476,7 @@ class AssignmentController extends Controller
                     array_values($validated['questions'])
                     as $questionIndex => $questionData
                 ) {
-                    /*
+                    /**
                      * correct_answer hanya disimpan untuk
                      * jenis soal short.
                      *
@@ -476,7 +503,7 @@ class AssignmentController extends Controller
                             ?? true,
                     ]);
 
-                    /*
+                    /**
                      * Simpan pilihan jawaban.
                      *
                      * Hanya multiple dan checkbox
@@ -507,7 +534,7 @@ class AssignmentController extends Controller
                 }
             }
 
-            /*
+            /**
              * Upload file tugas ke MinIO.
              */
             if ($request->hasFile('files')) {
@@ -546,12 +573,12 @@ class AssignmentController extends Controller
 
             DB::commit();
 
-            /*
+            /**
              * Load seluruh relationship untuk response.
              */
             $assignment->load([
-                'schedule.classroom',
-                'schedule.subject',
+                'schedules.classroom',
+                'schedules.subject',
                 'questions.options',
                 'files',
             ]);
@@ -563,7 +590,7 @@ class AssignmentController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            /*
+            /**
              * Jika database gagal setelah file berhasil
              * di-upload, hapus kembali object dari MinIO.
              */
@@ -589,34 +616,36 @@ class AssignmentController extends Controller
         $user = $this->ensureTeacher($request);
 
         $assignment->load([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'questions.options',
 
-            /*
+            /**
              * Data siswa yang mengumpulkan tugas.
              */
             'submissions.student.user',
 
-            /*
+            /**
              * File yang dikumpulkan oleh siswa.
              */
             'submissions.files',
 
-            /*
+            /**
              * Jawaban siswa beserta pilihan yang dipilih.
              */
             'submissions.answers.selectedOptions.option',
 
-            /*
+            /**
              * File yang dilampirkan guru pada tugas.
              */
             'files',
         ]);
 
         abort_unless(
-            $assignment->schedule &&
-            $assignment->schedule->teacher_id === $user->id,
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
             403,
             'Anda tidak memiliki akses ke tugas ini.'
         );
@@ -643,11 +672,13 @@ class AssignmentController extends Controller
     ) {
         $user = $this->ensureTeacher($request);
 
-        $assignment->load('schedule');
+        $assignment->load('schedules');
 
         abort_unless(
-            $assignment->schedule &&
-            $assignment->schedule->teacher_id === $user->id,
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
             403,
             'Anda tidak memiliki akses ke tugas ini.'
         );
@@ -678,7 +709,7 @@ class AssignmentController extends Controller
                 'date',
             ],
 
-            /*
+            /**
              * Mode pengumpulan tugas.
              */
             'submission_mode' => [
@@ -693,7 +724,7 @@ class AssignmentController extends Controller
             $request,
             $assignment
         ) {
-            /*
+            /**
              * Jika salah satu tanggal tidak dikirim
              * pada request update, gunakan nilai yang
              * sudah tersimpan pada assignment.
@@ -722,7 +753,7 @@ class AssignmentController extends Controller
                 }
             }
 
-            /*
+            /**
              * Tugas jenis info tidak boleh memiliki
              * tanggal mulai maupun tenggat.
              */
@@ -741,7 +772,7 @@ class AssignmentController extends Controller
 
         $validated = $validator->validate();
 
-        /*
+        /**
          * Jangan mengubah submission_mode menjadi null
          * jika field tidak dikirim.
          *
@@ -756,7 +787,7 @@ class AssignmentController extends Controller
                 $assignment->submission_mode ?? 'once';
         }
 
-        /*
+        /**
          * Jika assignment lama belum memiliki nilai
          * submission_mode, gunakan "once".
          */
@@ -770,8 +801,8 @@ class AssignmentController extends Controller
         $assignment->update($validated);
 
         $assignment->load([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'questions.options',
             'files',
         ]);
@@ -792,13 +823,15 @@ class AssignmentController extends Controller
         $user = $this->ensureTeacher($request);
 
         $assignment->load([
-            'schedule',
+            'schedules',
             'files',
         ]);
 
         abort_unless(
-            $assignment->schedule &&
-            $assignment->schedule->teacher_id === $user->id,
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
             403,
             'Anda tidak memiliki akses ke tugas ini.'
         );

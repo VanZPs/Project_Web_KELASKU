@@ -306,13 +306,17 @@ class DashboardController extends Controller
          * 1. Berasal dari jadwal guru ini.
          * 2. Memiliki submission.
          * 3. Submission tersebut belum memiliki nilai.
+         *
+         * CATATAN:
+         * Assignment sekarang dapat memiliki banyak schedule
+         * melalui relasi assignment_schedules.
          */
         $tugasMenunggu = Assignment::with([
-            'schedule.classroom',
+            'schedules.classroom',
             'submissions',
         ])
             ->whereHas(
-                'schedule',
+                'schedules',
                 function ($query) use ($teacherUserId) {
                     $query->where(
                         'teacher_id',
@@ -336,16 +340,22 @@ class DashboardController extends Controller
                             ->whereNull('grade')
                             ->count();
 
+                    /*
+                     * Ambil seluruh kelas yang menerima
+                     * assignment ini.
+                     */
+                    $kelas = $assignment->schedules
+                        ->pluck('classroom.name')
+                        ->filter()
+                        ->unique()
+                        ->implode(', ');
+
                     return [
                         'id' => $assignment->id,
 
                         'judul' => $assignment->title,
 
-                        'kelas' => $assignment
-                            ->schedule
-                            ?->classroom
-                            ?->name
-                            ?? '-',
+                        'kelas' => $kelas ?: '-',
 
                         'terkumpul' =>
                             $submissionBelumDinilai,
@@ -411,13 +421,28 @@ class DashboardController extends Controller
          * ==========================================================
          * RATA-RATA NILAI PER KELAS
          * ==========================================================
+         *
+         * Assignment sekarang dapat diberikan ke beberapa kelas.
+         *
+         * Oleh karena itu:
+         *
+         * Submission
+         *      ↓
+         * Assignment
+         *      ↓
+         * Schedules
+         *      ↓
+         * Classrooms
+         *
+         * Satu nilai submission akan dimasukkan ke setiap
+         * kelas yang menerima assignment tersebut.
          */
         $rataRataKelas = Submission::with([
-            'assignment.schedule.classroom',
+            'assignment.schedules.classroom',
         ])
             ->whereNotNull('grade')
             ->whereHas(
-                'assignment.schedule',
+                'assignment.schedules',
                 function ($query) use ($teacherUserId) {
                     $query->where(
                         'teacher_id',
@@ -426,25 +451,44 @@ class DashboardController extends Controller
                 }
             )
             ->get()
-            ->groupBy(
-                function ($submission) {
-                    return $submission
-                        ->assignment
-                        ?->schedule
-                        ?->classroom
-                        ?->name
-                        ?? '-';
+            ->flatMap(
+                function ($submission) use ($teacherUserId) {
+                    $assignment = $submission->assignment;
+
+                    if (!$assignment) {
+                        return collect();
+                    }
+
+                    return $assignment->schedules
+                        ->filter(
+                            function ($schedule) use ($teacherUserId) {
+                                return $schedule->teacher_id === $teacherUserId;
+                            }
+                        )
+                        ->map(
+                            function ($schedule) use ($submission) {
+                                return [
+                                    'kelas' =>
+                                        $schedule
+                                            ->classroom
+                                            ?->name
+                                            ?? '-',
+
+                                    'nilai' =>
+                                        (float) $submission->grade,
+                                ];
+                            }
+                        );
                 }
             )
+            ->groupBy('kelas')
             ->map(
-                function ($submissions, $kelas) {
+                function ($items, $kelas) {
                     return [
                         'kelas' => $kelas,
 
                         'nilai' => round(
-                            $submissions->avg(
-                                'grade'
-                            ),
+                            $items->avg('nilai'),
                             2
                         ),
                     ];
