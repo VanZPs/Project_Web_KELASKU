@@ -72,4 +72,17 @@ class Assignment extends Model
         return $this->hasMany(AssignmentQuestion::class)
             ->orderBy('order');
     }
+
+    /**
+     * Assignment -> TaskComment
+     *
+     * Satu tugas dapat memiliki banyak komentar
+     * dari guru maupun siswa.
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(
+            TaskComment::class
+        );
+    }
 }

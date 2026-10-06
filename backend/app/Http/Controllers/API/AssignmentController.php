@@ -8,6 +8,7 @@ use App\Models\AssignmentFile;
 use App\Models\AssignmentOption;
 use App\Models\AssignmentQuestion;
 use App\Models\Schedule;
+use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -65,6 +66,17 @@ class AssignmentController extends Controller
     }
 
     /**
+     * Memastikan schedule/classroom tertentu memang terkait dengan assignment
+     * dan merupakan milik guru yang sedang login.
+     */
+/**
+     * Memastikan siswa hanya dapat mengakses komentar dari kelasnya sendiri
+     * dan assignment tersebut memang diberikan ke kelas tersebut.
+     */
+/**
+     * Mengambil komentar assignment hanya untuk classroom tertentu.
+     */
+/**
      * Daftar tugas milik guru yang sedang login.
      */
     public function index(Request $request)
@@ -282,6 +294,7 @@ class AssignmentController extends Controller
 
             $type = $types->first();
 
+
             /**
              * Info tidak membutuhkan tanggal mulai
              * maupun tenggat.
@@ -333,6 +346,7 @@ class AssignmentController extends Controller
                         $correctAnswer === null ||
                         trim((string) $correctAnswer) === ''
                     ) {
+
                         $validator->errors()->add(
                             "questions.$index.correct_answer",
                             'Jawaban benar wajib diisi untuk soal Jawaban Singkat.'
@@ -375,6 +389,7 @@ class AssignmentController extends Controller
                         true
                     )
                 ) {
+
                     if (count($options) < 2) {
                         $validator->errors()->add(
                             "questions.$index.options",
@@ -630,10 +645,12 @@ class AssignmentController extends Controller
              */
             'submissions.files',
 
+
             /**
              * Jawaban siswa beserta pilihan yang dipilih.
              */
             'submissions.answers.selectedOptions.option',
+
 
             /**
              * File yang dilampirkan guru pada tugas.
@@ -694,7 +711,7 @@ class AssignmentController extends Controller
             'description' => [
                 'sometimes',
                 'nullable',
-                'string',
+                'string'
             ],
 
             'start_date' => [
@@ -724,6 +741,7 @@ class AssignmentController extends Controller
             $request,
             $assignment
         ) {
+
             /**
              * Jika salah satu tanggal tidak dikirim
              * pada request update, gunakan nilai yang
@@ -748,6 +766,7 @@ class AssignmentController extends Controller
                             'Tanggal mulai tidak boleh setelah tenggat.'
                         );
                     }
+
                 } catch (\Throwable $e) {
                     // Rule date menangani format tanggal.
                 }
@@ -779,6 +798,7 @@ class AssignmentController extends Controller
          * Jika field dikirim null, gunakan mode lama
          * agar assignment selalu memiliki mode yang valid.
          */
+
         if (
             array_key_exists('submission_mode', $validated) &&
             $validated['submission_mode'] === null
@@ -857,10 +877,457 @@ class AssignmentController extends Controller
             return response()->json([
                 'message' => 'Tugas berhasil dihapus.',
             ]);
+
         } catch (\Throwable $e) {
             DB::rollBack();
-
             throw $e;
         }
+    }
+
+    /**
+     * Data halaman Kelola Tugas berdasarkan satu schedule.
+     *
+     * Endpoint:
+     * GET /api/guru/tugas/kelola/{schedule}
+     *
+     * Data yang dikembalikan:
+     * - informasi kelas
+     * - mata pelajaran
+     * - siswa
+     * - tugas
+     * - submission siswa
+     * - soal dan pilihan
+     * - jawaban siswa
+     * - file
+     * - statistik
+     */
+    public function manageBySchedule(
+        Request $request,
+        Schedule $schedule
+    ) {
+        $user = $this->ensureTeacher($request);
+
+        /**
+         * Pastikan schedule memang milik guru yang login.
+         */
+        abort_unless(
+            (int) $schedule->teacher_id ===
+                (int) $user->id,
+            403,
+            'Anda tidak memiliki akses ke kelas ini.'
+        );
+
+        /**
+         * Load informasi schedule.
+         */
+        $schedule->load([
+            'classroom.users',
+            'subject',
+            'teacher',
+        ]);
+
+        /**
+         * Ambil seluruh user siswa
+         * yang berada di classroom tersebut.
+         */
+        $studentUserIds = $schedule->classroom
+            ? $schedule->classroom
+                ->users()
+                ->where('users.role', 'siswa')
+                ->pluck('users.id')
+                ->values()
+            : collect();
+
+        /**
+         * Ambil model Student berdasarkan user_id.
+         */
+        $students = Student::with('user')
+            ->whereIn(
+                'user_id',
+                $studentUserIds
+            )
+            ->get()
+            ->sortBy(function ($student) {
+                return $student->user?->name ?? '';
+            })
+            ->values();
+
+        $studentIds = $students
+            ->pluck('id')
+            ->values();
+
+        /**
+         * Ambil semua assignment yang diberikan
+         * ke schedule ini.
+         */
+        $assignments = Assignment::with([
+            'schedules.classroom',
+            'schedules.subject',
+            'questions.options',
+            'files',
+
+            /**
+             * Submission hanya milik siswa
+             * pada classroom ini.
+             */
+            'submissions' => function ($query) use ($studentIds) {
+                $query
+                    ->whereIn(
+                        'student_id',
+                        $studentIds
+                    )
+
+                    ->with([
+                        'student.user',
+                        'files',
+                        'answers.question',
+                        'answers.selectedOptions.option',
+                    ])
+
+                    ->orderByDesc('created_at');
+            },
+
+            /**
+             * Komentar tugas.
+             */
+            'comments' => function ($query) use ($schedule) {
+                $query
+                    ->where('classroom_id', $schedule->classroom_id)
+                    ->with('user:id,name,role')
+                    ->latest();
+            },
+        ])
+            ->whereHas(
+                'schedules',
+                function ($query) use ($schedule) {
+                    $query->where(
+                        'schedules.id',
+                        $schedule->id
+                    );
+                }
+            )
+
+            ->latest()
+
+            ->get();
+
+        /**
+         * Bentuk data assignment agar frontend
+         * tidak perlu melakukan terlalu banyak
+         * transformasi.
+         */
+        $assignments = $assignments
+            ->map(function ($assignment) use ($students) {
+
+                /**
+                 * Semua submission assignment.
+                 */
+                $allSubmissions = $assignment->submissions;
+
+                /**
+                 * Pilih satu submission terbaik
+                 * untuk setiap siswa.
+                 *
+                 * Jika ada submission dengan nilai,
+                 * pilih nilai tertinggi.
+                 *
+                 * Jika belum ada nilai,
+                 * gunakan submission terbaru.
+                 */
+                $representativeSubmissions = $allSubmissions
+                    ->groupBy('student_id')
+                    ->map(function ($submissions) {
+                        $graded = $submissions
+                            ->filter(
+                                fn ($submission) =>
+                                    $submission->grade !== null
+                            );
+
+                        if ($graded->isNotEmpty()) {
+                            return $graded
+                                ->sortByDesc(
+                                    fn ($submission) =>
+                                        (float) $submission->grade
+                                )
+                                ->first();
+                        }
+
+                        return $submissions
+                            ->sortByDesc('created_at')
+                            ->first();
+                    });
+
+                /**
+                 * Apakah tugas memiliki submission?
+                 *
+                 * info tidak membutuhkan submission.
+                 */
+
+                $type = $assignment->questions
+                    ->first()?->type;
+
+                $isInfo = $type === 'info';
+
+                /**
+                 * Hitung siswa yang sudah mengumpulkan.
+                 */
+                $submittedCount = $isInfo
+                    ? 0
+                    : $representativeSubmissions->count();
+
+                /**
+                 * Hitung submission yang masih perlu
+                 * dinilai secara manual.
+                 */
+                $needsGradingCount = 0;
+
+                if (!$isInfo) {
+                    foreach (
+                        $representativeSubmissions
+                        as $submission
+                    ) {
+
+                        /**
+                         * Jika belum memiliki grade,
+                         * berarti masih perlu dinilai.
+                         */
+                        if ($submission->grade === null) {
+                            $needsGradingCount++;
+                        }
+                    }
+                }
+
+                /**
+                 * Jumlah komentar.
+                 */
+                $commentCount = $assignment
+                    ->comments
+                    ->count();
+
+                /**
+                 * Tambahkan roster sederhana
+                 * untuk kebutuhan frontend.
+                 */
+                $roster = $students
+                    ->map(function ($student) use (
+                        $representativeSubmissions
+                    ) {
+                        $submission =
+                            $representativeSubmissions
+                                ->get($student->id);
+
+                        return [
+                            'student' => $student,
+                            'submission' => $submission,
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    'id' => $assignment->id,
+                    'title' => $assignment->title,
+                    'description' => $assignment->description,
+                    'start_date' => $assignment->start_date,
+                    'due_date' => $assignment->due_date,
+
+                    'submission_mode' =>
+                        $assignment->submission_mode,
+
+                    'type' => $type,
+
+                    'questions' =>
+                        $assignment->questions,
+
+                    'files' =>
+                        $assignment->files,
+
+                    'comments' =>
+                        $assignment->comments,
+
+                    'comment_count' =>
+                        $commentCount,
+
+                    'student_count' =>
+                        $students->count(),
+
+                    'submitted_count' =>
+                        $submittedCount,
+
+                    'needs_grading_count' =>
+                        $needsGradingCount,
+
+                    'submissions' =>
+                        $representativeSubmissions
+                            ->values(),
+
+                    'roster' =>
+                        $roster,
+                ];
+            })
+            ->values();
+
+        /**
+         * Statistik halaman Kelola Tugas.
+         */
+        $totalAssignments = $assignments->count();
+
+        $draftAssignments = $assignments
+            ->filter(function ($assignment) {
+                return empty($assignment['start_date']);
+            })
+            ->count();
+
+        $activeAssignments = $assignments
+            ->filter(function ($assignment) {
+                return !empty($assignment['start_date']);
+            })
+            ->count();
+
+        $needsGrading = $assignments
+            ->sum('needs_grading_count');
+
+        return response()->json([
+            'message' =>
+                'Data Kelola Tugas berhasil diambil.',
+
+            'data' => [
+                'schedule' => [
+                    'id' => $schedule->id,
+
+                    'day' =>
+                        $schedule->day,
+
+                    'start_time' =>
+                        $schedule->start_time,
+
+                    'end_time' =>
+                        $schedule->end_time,
+
+                    'classroom' =>
+                        $schedule->classroom,
+
+                    'subject' =>
+                        $schedule->subject,
+
+                    'teacher' =>
+                        $schedule->teacher,
+                ],
+
+                'students' =>
+                    $students,
+
+                'assignments' =>
+                    $assignments,
+
+                'summary' => [
+                    'total_tasks' =>
+                        $totalAssignments,
+
+                    'active_tasks' =>
+                        $activeAssignments,
+
+                    'needs_grading' =>
+                        $needsGrading,
+
+                    'draft_tasks' =>
+                        $draftAssignments,
+                ],
+            ],
+        ]);
+    }
+
+/**
+     * Memperbarui nilai submission siswa.
+     *
+     * PUT
+     * /api/guru/tugas/{assignment}/submission/{submission}/nilai
+     */
+    public function updateSubmissionGrade(
+        Request $request,
+        Assignment $assignment,
+        \App\Models\Submission $submission
+    ) {
+        $user = $this->ensureTeacher($request);
+
+        /**
+         * Assignment harus milik guru.
+         */
+        $assignment->load([
+            'schedules',
+        ]);
+
+        abort_unless(
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
+            403,
+            'Anda tidak memiliki akses ke tugas ini.'
+        );
+
+        /**
+         * Submission harus berasal dari assignment
+         * yang sedang dinilai.
+         */
+        abort_unless(
+            (int) $submission->assignment_id ===
+                (int) $assignment->id,
+            404,
+            'Submission tidak ditemukan untuk tugas ini.'
+        );
+
+        /**
+         * Validasi nilai.
+         */
+        $validator = Validator::make(
+            $request->all(),
+            [
+                'grade' => [
+                    'required',
+                    'numeric',
+                    'min:0',
+                    'max:100',
+                ],
+            ],
+            [
+                'grade.required' =>
+                    'Nilai wajib diisi.',
+
+                'grade.numeric' =>
+                    'Nilai harus berupa angka.',
+
+                'grade.min' =>
+                    'Nilai minimal adalah 0.',
+
+                'grade.max' =>
+                    'Nilai maksimal adalah 100.',
+            ]
+        );
+
+        $validated = $validator->validate();
+
+        /**
+         * Simpan nilai.
+         */
+        $submission->update([
+            'grade' => $validated['grade'],
+        ]);
+
+        /**
+         * Return submission terbaru.
+         */
+        $submission->load([
+            'student.user',
+            'files',
+            'answers.question',
+            'answers.selectedOptions.option',
+        ]);
+
+        return response()->json([
+            'message' =>
+                'Nilai berhasil diperbarui.',
+            'data' =>
+                $submission,
+        ]);
     }
 }

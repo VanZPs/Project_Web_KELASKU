@@ -22,6 +22,7 @@ import EditProfile from './pages/Guru/EditProfile';
 import JurnalKelas from './pages/Guru/JurnalKelas';
 import DaftarSiswa from './pages/Guru/DaftarSiswa';
 import Tugas from './pages/Guru/Tugas';
+import KelolaTugas from './pages/Guru/KelolaTugas';
 
 
 /*
@@ -80,6 +81,7 @@ const clearAuth = () => {
   localStorage.removeItem(
     'token'
   );
+
   localStorage.removeItem(
     'user'
   );
@@ -118,6 +120,7 @@ const GuestRoute = ({
       />
     );
   }
+
   return (
     <>
       {children}
@@ -152,6 +155,7 @@ const ProtectedRoute = ({
     !user
   ) {
     clearAuth();
+
     return (
       <Navigate
         to="/login"
@@ -168,6 +172,7 @@ const ProtectedRoute = ({
     user.role !== 'siswa'
   ) {
     clearAuth();
+
     return (
       <Navigate
         to="/login"
@@ -193,6 +198,7 @@ const ProtectedRoute = ({
       />
     );
   }
+
   return (
     <>
       {children}
@@ -211,9 +217,11 @@ export default function App() {
   return (
     <Router>
       <Routes>
+
         {/* ==================================================
             ROOT
             ================================================== */}
+
         <Route
           path="/"
           element={
@@ -228,6 +236,7 @@ export default function App() {
         {/* ==================================================
             AUTHENTICATION
             ================================================== */}
+
         <Route
           path="/login"
           element={
@@ -246,10 +255,13 @@ export default function App() {
           }
         />
 
+
         {/* ==================================================
             GURU
             ================================================== */}
+
         {/* Dashboard Guru */}
+
         <Route
           path="/guru"
           element={
@@ -261,7 +273,9 @@ export default function App() {
           }
         />
 
+
         {/* Dashboard Guru - URL alternatif */}
+
         <Route
           path="/guru/dashboard"
           element={
@@ -273,7 +287,9 @@ export default function App() {
           }
         />
 
+
         {/* Kelas Saya */}
+
         <Route
           path="/guru/kelas-saya"
           element={
@@ -285,7 +301,9 @@ export default function App() {
           }
         />
 
+
         {/* Tambah Kelas */}
+
         <Route
           path="/guru/kelas-saya/tambah"
           element={
@@ -297,7 +315,9 @@ export default function App() {
           }
         />
 
+
         {/* Daftar Siswa */}
+
         <Route
           path="/guru/siswa"
           element={
@@ -309,7 +329,9 @@ export default function App() {
           }
         />
 
+
         {/* Jurnal Mengajar */}
+
         <Route
           path="/guru/jurnal"
           element={
@@ -321,7 +343,13 @@ export default function App() {
           }
         />
 
-        {/* Tugas */}
+
+        {/* ==================================================
+            TUGAS
+            ================================================== */}
+
+        {/* Daftar Tugas */}
+
         <Route
           path="/guru/tugas"
           element={
@@ -333,7 +361,23 @@ export default function App() {
           }
         />
 
+
+        {/* Kelola Tugas berdasarkan Jadwal */}
+
+        <Route
+          path="/guru/tugas/kelola/:scheduleId"
+          element={
+            <ProtectedRoute
+              allowedRole="guru"
+            >
+              <KelolaTugas />
+            </ProtectedRoute>
+          }
+        />
+
+
         {/* Edit Profile */}
+
         <Route
           path="/guru/profil"
           element={
@@ -349,6 +393,7 @@ export default function App() {
         {/* ==================================================
             SISWA
             ================================================== */}
+
         <Route
           path="/siswa/*"
           element={
@@ -372,6 +417,7 @@ export default function App() {
         {/* ==================================================
             404
             ================================================== */}
+
         <Route
           path="*"
           element={
@@ -380,6 +426,7 @@ export default function App() {
             </div>
           }
         />
+
       </Routes>
     </Router>
   );

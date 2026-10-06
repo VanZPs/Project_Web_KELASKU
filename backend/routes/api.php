@@ -14,6 +14,7 @@ use App\Http\Controllers\API\StudentController;
 use App\Http\Controllers\API\AssignmentController;
 use App\Http\Controllers\API\SubmissionController;
 use App\Http\Controllers\API\FileController;
+use App\Http\Controllers\API\TaskCommentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -65,11 +66,6 @@ Route::get(
 /*
 |--------------------------------------------------------------------------
 | PRIVATE ROUTES
-|--------------------------------------------------------------------------
-|
-| Semua route di bawah ini membutuhkan
-| Bearer Token Sanctum.
-|
 |--------------------------------------------------------------------------
 */
 
@@ -301,6 +297,11 @@ Route::middleware('auth:sanctum')->group(
             );
 
         Route::get(
+            '/guru/tugas/kelola/{schedule}',
+            [AssignmentController::class, 'manageBySchedule']
+        );
+
+        Route::get(
             '/guru/tugas/{assignment}', 
             [AssignmentController::class, 'show']
             );
@@ -313,6 +314,11 @@ Route::middleware('auth:sanctum')->group(
         Route::delete(
             '/guru/tugas/{assignment}', 
             [AssignmentController::class, 'destroy']
+            );
+        
+        Route::put(
+                '/guru/tugas/{assignment}/submission/{submission}/nilai',
+                [AssignmentController::class, 'updateSubmissionGrade']
             );
 
 
@@ -389,6 +395,48 @@ Route::middleware('auth:sanctum')->group(
         Route::delete(
             '/siswa/tugas/{assignment}/submission/file/{file}',
             [SubmissionController::class, 'destroyFile']
+        );
+
+        /*
+        * ======================================================
+        * GURU - KOMENTAR TUGAS
+        * ======================================================
+        */
+
+        Route::get(
+            '/guru/tugas/{assignment}/komentar',
+            [TaskCommentController::class, 'teacherIndex']
+        );
+
+        Route::post(
+            '/guru/tugas/{assignment}/komentar',
+            [TaskCommentController::class, 'teacherStore']
+        );
+
+        Route::delete(
+            '/guru/tugas/{assignment}/komentar/{comment}',
+            [TaskCommentController::class, 'teacherDestroy']
+        );
+
+        /*
+        * ======================================================
+        * SISWA - KOMENTAR TUGAS
+        * ======================================================
+        */
+
+        Route::get(
+            '/siswa/tugas/{assignment}/komentar',
+            [TaskCommentController::class, 'studentIndex']
+        );
+
+        Route::post(
+            '/siswa/tugas/{assignment}/komentar',
+            [TaskCommentController::class, 'studentStore']
+        );
+
+        Route::delete(
+            '/siswa/tugas/{assignment}/komentar/{comment}',
+            [TaskCommentController::class, 'studentDestroy']
         );
     }
 );
