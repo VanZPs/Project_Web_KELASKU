@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileText,
   Info,
   MessageCircle,
@@ -194,6 +195,7 @@ interface Assignment {
   description?: string | null;
   start_date?: string | null;
   due_date?: string | null;
+  student_count?: number;
   submission_mode?: SubmissionMode;
   status?: AssignmentStatus | string;
   schedule_id?: number | null;
@@ -750,6 +752,13 @@ function getTotalStudents(
   schedule?: Schedule,
 ) {
   if (
+    assignment.student_count !==
+    undefined
+  ) {
+    return assignment.student_count;
+  }
+
+  if (
     schedule?.classroom?.students_count !==
     undefined
   ) {
@@ -1074,10 +1083,14 @@ function TaskCard({
   assignment,
   schedule,
   onOpen,
+  onDownloadFile,
 }: {
   assignment: Assignment;
   schedule?: Schedule;
   onOpen: () => void;
+  onDownloadFile: (
+    file: AssignmentFile,
+  ) => void;
 }) {
   const type =
     getAssignmentType(
@@ -1390,6 +1403,135 @@ function TaskCard({
           />
         </div>
       </button>
+
+      {type === 'info' &&
+        assignment.files &&
+        assignment.files.length > 0 && (
+          <div
+            className="border-t px-5 py-3.5"
+            style={{
+              borderColor:
+                COLORS.line,
+            }}
+          >
+            <div
+              className="mb-2.5 flex items-center gap-1.5 text-[11.5px] font-bold"
+              style={{
+                color:
+                  COLORS.navy,
+              }}
+            >
+              <FileText
+                size={14}
+                strokeWidth={1.9}
+              />
+              Materi pembelajaran
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {assignment.files.map(
+                (
+                  file,
+                  index,
+                ) => {
+                  const fileName =
+                    file.original_name ||
+                    file.file_name ||
+                    file.filename ||
+                    'Materi pembelajaran';
+
+                  const fileSize =
+                    formatAssignmentFileSize(
+                      file.size,
+                    );
+
+                  return (
+                    <div
+                      key={
+                        file.id ??
+                        `${fileName}-${index}`
+                      }
+                      className="flex items-center gap-2.5 rounded-[9px] border px-3 py-2.5"
+                      style={{
+                        backgroundColor:
+                          '#FBF8EF',
+                        borderColor:
+                          COLORS.line,
+                      }}
+                    >
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px]"
+                        style={{
+                          backgroundColor:
+                            COLORS.blueBg,
+                          color:
+                            COLORS.blue,
+                        }}
+                      >
+                        <FileText
+                          size={15}
+                          strokeWidth={1.8}
+                        />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className="truncate text-[11.5px] font-semibold"
+                          style={{
+                            color:
+                              COLORS.navyDeep,
+                          }}
+                          title={
+                            fileName
+                          }
+                        >
+                          {fileName}
+                        </div>
+
+                        {fileSize && (
+                          <div
+                            className="mt-0.5 text-[10px]"
+                            style={{
+                              color:
+                                COLORS.inkSoft,
+                            }}
+                          >
+                            {fileSize}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onDownloadFile(
+                            file,
+                          )
+                        }
+                        className="flex shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[10.5px] font-bold transition hover:opacity-80"
+                        style={{
+                          backgroundColor:
+                            COLORS.paper,
+                          borderColor:
+                            COLORS.line,
+                          color:
+                            COLORS.navy,
+                        }}
+                        title="Unduh materi"
+                      >
+                        <Download
+                          size={13}
+                          strokeWidth={2}
+                        />
+                        Unduh
+                      </button>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          </div>
+        )}
 
       {visibleComments.length >
         0 && (
@@ -2629,6 +2771,7 @@ export default function KelolaTugas() {
     Math.max(
       ...assignments.map(
         (assignment) =>
+          assignment.student_count ??
           getSubmissionCount(
             assignment,
           ),
@@ -3400,22 +3543,36 @@ export default function KelolaTugas() {
                 '/guru/tugas',
               )
             }
-            className="mb-4 inline-flex items-center gap-[7px] text-[13.5px] font-semibold transition"
+            className="mb-4 inline-flex items-center gap-[7px] rounded-[9px] border px-3 py-2 text-[13px] font-semibold transition"
             style={{
+              borderColor:
+                COLORS.line,
+              backgroundColor:
+                COLORS.paper,
               color:
                 COLORS.inkSoft,
+              boxShadow:
+                '0 1px 2px rgba(30,25,15,0.04)',
             }}
             onMouseEnter={(
               event,
             ) => {
               event.currentTarget.style.color =
                 COLORS.navy;
+              event.currentTarget.style.backgroundColor =
+                '#FBF8EF';
+              event.currentTarget.style.borderColor =
+                COLORS.goldSoft;
             }}
             onMouseLeave={(
               event,
             ) => {
               event.currentTarget.style.color =
                 COLORS.inkSoft;
+              event.currentTarget.style.backgroundColor =
+                COLORS.paper;
+              event.currentTarget.style.borderColor =
+                COLORS.line;
             }}
           >
             <ArrowLeft
@@ -3458,7 +3615,7 @@ export default function KelolaTugas() {
               </h1>
 
               <div
-                className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]"
+                className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] font-semibold"
                 style={{
                   color:
                     COLORS.inkSoft,
@@ -3500,26 +3657,6 @@ export default function KelolaTugas() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setCreateTaskModalOpen(
-                  true,
-                )
-              }
-              className="mt-[66px] flex shrink-0 items-center gap-2 rounded-[10px] border px-4 py-2.5 text-[13.5px] font-bold text-white transition hover:opacity-90"
-              style={{
-                backgroundColor:
-                  COLORS.navy,
-                borderColor:
-                  COLORS.navy,
-              }}
-            >
-              <Plus
-                size={15}
-              />
-              Tugas baru
-            </button>
           </div>
 
 
@@ -3651,63 +3788,87 @@ export default function KelolaTugas() {
               </button>
             </div>
 
-            <div
-              className="flex min-w-[210px] items-center gap-2 rounded-[10px] border px-3 py-[9px]"
-              style={{
-                backgroundColor:
-                  COLORS.paper,
-                borderColor:
-                  COLORS.line,
-              }}
-            >
-              <Search
-                size={16}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div
+                className="flex min-w-[210px] items-center gap-2 rounded-[10px] border px-3 py-[9px]"
                 style={{
-                  color:
-                    COLORS.inkSoft,
-                  opacity:
-                    0.7,
+                  backgroundColor:
+                    COLORS.paper,
+                  borderColor:
+                    COLORS.line,
                 }}
-              />
+              >
+                <Search
+                  size={16}
+                  style={{
+                    color:
+                      COLORS.inkSoft,
+                    opacity:
+                      0.7,
+                  }}
+                />
 
-              <input
-                type="text"
-                value={search}
-                onChange={(
-                  event,
-                ) =>
-                  setSearch(
-                    event.target
-                      .value,
-                  )
-                }
-                placeholder="Cari tugas..."
-                className="w-full border-none bg-transparent text-[13.5px] outline-none"
-                style={{
-                  color:
-                    COLORS.ink,
-                }}
-              />
-
-              {search && (
-                <button
-                  type="button"
-                  onClick={() =>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(
+                    event,
+                  ) =>
                     setSearch(
-                      '',
+                      event.target
+                        .value,
                     )
                   }
-                  className="shrink-0"
-                >
-                  <X
-                    size={14}
-                    style={{
-                      color:
-                        COLORS.inkSoft,
-                    }}
-                  />
-                </button>
-              )}
+                  placeholder="Cari tugas..."
+                  className="w-full border-none bg-transparent text-[13.5px] outline-none"
+                  style={{
+                    color:
+                      COLORS.ink,
+                  }}
+                />
+
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSearch(
+                        '',
+                      )
+                    }
+                    className="shrink-0"
+                  >
+                    <X
+                      size={14}
+                      style={{
+                        color:
+                          COLORS.inkSoft,
+                      }}
+                    />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setCreateTaskModalOpen(
+                    true,
+                  )
+                }
+                className="flex shrink-0 items-center gap-2 rounded-[10px] border px-4 py-[10px] text-[13.5px] font-bold text-white transition hover:opacity-90"
+                style={{
+                  backgroundColor:
+                    COLORS.navy,
+                  borderColor:
+                    COLORS.navy,
+                }}
+              >
+                <Plus
+                  size={15}
+                  strokeWidth={2}
+                />
+                Tugas baru
+              </button>
             </div>
           </div>
 
@@ -3854,6 +4015,9 @@ export default function KelolaTugas() {
                       openTaskModal(
                         assignment,
                       )
+                    }
+                    onDownloadFile={
+                      downloadAssignmentFile
                     }
                   />
                 );
