@@ -185,6 +185,7 @@ interface AssignmentFile {
   filename?: string;
   size?: number;
   mime_type?: string;
+  object_key?: string;
 }
 
 interface Assignment {
@@ -829,6 +830,29 @@ function getFileName(
     file.file_path ||
     'File tugas'
   );
+}
+
+function formatAssignmentFileSize(
+  size?: number | null,
+) {
+  if (size === null || size === undefined || !Number.isFinite(Number(size))) {
+    return '';
+  }
+
+  const bytes = Number(size);
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const kilobytes = bytes / 1024;
+
+  if (kilobytes < 1024) {
+    return `${kilobytes.toFixed(kilobytes >= 100 ? 0 : 1)} KB`;
+  }
+
+  const megabytes = kilobytes / 1024;
+  return `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB`;
 }
 
 
@@ -3056,6 +3080,57 @@ export default function KelolaTugas() {
     );
   }
 
+  async function downloadAssignmentFile(
+    file: AssignmentFile,
+  ) {
+    if (
+      !selectedAssignment?.id ||
+      !file.id
+    ) {
+      return;
+    }
+
+    try {
+      const response =
+        await api.get(
+          `/guru/tugas/${selectedAssignment.id}/file/${file.id}`,
+          {
+            responseType: 'blob',
+          },
+        );
+
+      const blobUrl =
+        window.URL.createObjectURL(
+          response.data,
+        );
+
+      const anchor =
+        document.createElement('a');
+
+      anchor.href = blobUrl;
+      anchor.download =
+        file.original_name ||
+        file.file_name ||
+        file.filename ||
+        'materi';
+
+      document.body.appendChild(
+        anchor,
+      );
+      anchor.click();
+      anchor.remove();
+
+      window.URL.revokeObjectURL(
+        blobUrl,
+      );
+    } catch (err) {
+      showToast(
+        'error',
+        getErrorMessage(err),
+      );
+    }
+  }
+
 
   /*
   |--------------------------------------------------------------------------
@@ -4494,6 +4569,120 @@ export default function KelolaTugas() {
                                       )}
                                     </>
                                   )}
+                                </div>
+                              );
+                            },
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* MATERIAL */}
+
+                  {!selectedSubmission &&
+                    selectedAssignment.files &&
+                    selectedAssignment.files.length > 0 && (
+                      <div>
+                        <div
+                          className="mb-3 text-[13px] font-bold"
+                          style={{
+                            color:
+                              COLORS.navyDeep,
+                          }}
+                        >
+                          Materi Pembelajaran
+                        </div>
+
+                        <div className="space-y-2">
+                          {selectedAssignment.files.map(
+                            (file, index) => {
+                              const fileName =
+                                file.original_name ||
+                                file.file_name ||
+                                file.filename ||
+                                'Materi pembelajaran';
+
+                              const fileSize =
+                                formatAssignmentFileSize(
+                                  file.size,
+                                );
+
+                              return (
+                                <div
+                                  key={
+                                    file.id ??
+                                    `${fileName}-${index}`
+                                  }
+                                  className="flex items-center gap-3 rounded-[10px] border px-3.5 py-3"
+                                  style={{
+                                    borderColor:
+                                      COLORS.line,
+                                    backgroundColor:
+                                      COLORS.paper,
+                                  }}
+                                >
+                                  <div
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px]"
+                                    style={{
+                                      backgroundColor:
+                                        COLORS.blueBg,
+                                      color:
+                                        COLORS.blue,
+                                    }}
+                                  >
+                                    <FileText
+                                      size={18}
+                                      strokeWidth={1.8}
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div
+                                      className="truncate text-[12.5px] font-semibold"
+                                      style={{
+                                        color:
+                                          COLORS.navyDeep,
+                                      }}
+                                      title={
+                                        fileName
+                                      }
+                                    >
+                                      {fileName}
+                                    </div>
+
+                                    {fileSize && (
+                                      <div
+                                        className="mt-0.5 text-[10.5px]"
+                                        style={{
+                                          color:
+                                            COLORS.inkSoft,
+                                        }}
+                                      >
+                                        {fileSize}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadAssignmentFile(
+                                        file,
+                                      )
+                                    }
+                                    className="shrink-0 rounded-[8px] border px-3 py-1.5 text-[11px] font-bold transition hover:opacity-80"
+                                    style={{
+                                      borderColor:
+                                        COLORS.line,
+                                      backgroundColor:
+                                        COLORS.paper,
+                                      color:
+                                        COLORS.navy,
+                                    }}
+                                    title="Unduh materi"
+                                  >
+                                    Unduh
+                                  </button>
                                 </div>
                               );
                             },

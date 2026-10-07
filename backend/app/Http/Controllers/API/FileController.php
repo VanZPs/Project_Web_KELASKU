@@ -46,6 +46,9 @@ class FileController extends Controller
 
     /**
      * Memastikan guru memiliki akses ke assignment.
+     *
+     * Assignment dapat diberikan ke banyak schedule,
+     * sehingga pengecekan dilakukan melalui relasi schedules().
      */
     private function authorizeTeacherAssignment(
         Request $request,
@@ -53,11 +56,13 @@ class FileController extends Controller
     ): Assignment {
         $user = $this->ensureTeacher($request);
 
-        $assignment->load('schedule');
+        $assignment->load('schedules');
 
         abort_unless(
-            $assignment->schedule &&
-            $assignment->schedule->teacher_id === $user->id,
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
             403,
             'Anda tidak memiliki akses ke tugas ini.'
         );
@@ -66,7 +71,8 @@ class FileController extends Controller
     }
 
     /**
-     * Memastikan siswa merupakan anggota kelas assignment.
+     * Memastikan siswa merupakan anggota salah satu kelas
+     * yang mendapatkan assignment.
      */
     private function authorizeStudentAssignment(
         Request $request,
@@ -74,21 +80,31 @@ class FileController extends Controller
     ): Assignment {
         $user = $this->ensureStudent($request);
 
-        $assignment->load('schedule.classroom');
-
-        abort_unless(
-            $assignment->schedule &&
-            $assignment->schedule->classroom,
-            404,
-            'Data kelas tugas tidak ditemukan.'
+        $assignment->load(
+            'schedules.classroom'
         );
 
-        $isMember = $assignment->schedule
-            ->classroom
-            ->users()
-            ->where('users.id', $user->id)
-            ->where('users.role', 'siswa')
-            ->exists();
+        $isMember = $assignment->schedules
+            ->filter(
+                fn ($schedule) =>
+                    $schedule->classroom !== null
+            )
+            ->contains(
+                function ($schedule) use ($user) {
+                    return $schedule
+                        ->classroom
+                        ->users()
+                        ->where(
+                            'users.id',
+                            $user->id
+                        )
+                        ->where(
+                            'users.role',
+                            'siswa'
+                        )
+                        ->exists();
+                }
+            );
 
         abort_unless(
             $isMember,
