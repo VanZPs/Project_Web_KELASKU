@@ -92,6 +92,7 @@ class AssignmentController extends Controller
             ->whereHas('schedules', function ($query) use ($user) {
                 $query->where('teacher_id', $user->id);
             })
+            ->where('status', '!=', 'draft')
             ->latest()
             ->get();
 
@@ -473,6 +474,7 @@ class AssignmentController extends Controller
                 'due_date' => $validated['due_date'] ?? null,
                 'submission_mode' => $validated['submission_mode']
                     ?? 'once',
+                'status' => 'active',
             ]);
 
             /**
@@ -734,6 +736,13 @@ class AssignmentController extends Controller
                 'nullable',
                 'string',
                 'in:once,multiple',
+            ],
+
+            'status' => [
+            'sometimes',
+            'required',
+            'string',
+            'in:active,draft',
             ],
         ]);
 
@@ -1129,6 +1138,7 @@ class AssignmentController extends Controller
                     'description' => $assignment->description,
                     'start_date' => $assignment->start_date,
                     'due_date' => $assignment->due_date,
+                    'status' => $assignment->status,
 
                     'submission_mode' =>
                         $assignment->submission_mode,
@@ -1173,13 +1183,13 @@ class AssignmentController extends Controller
 
         $draftAssignments = $assignments
             ->filter(function ($assignment) {
-                return empty($assignment['start_date']);
+                return $assignment['status'] === 'draft';
             })
             ->count();
 
         $activeAssignments = $assignments
             ->filter(function ($assignment) {
-                return !empty($assignment['start_date']);
+                return $assignment['status'] !== 'draft';
             })
             ->count();
 

@@ -1,7 +1,5 @@
 <?php
-
 namespace App\Http\Controllers\API;
-
 use App\Http\Controllers\Controller;
 use App\Models\Assignment;
 use App\Models\AssignmentQuestion;
@@ -14,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-
 class SubmissionController extends Controller
 {
     /**
@@ -23,60 +20,73 @@ class SubmissionController extends Controller
     private function ensureStudent(Request $request)
     {
         $user = $request->user();
-
         abort_unless(
             $user && $user->role === 'siswa',
             403,
             'Akses hanya untuk siswa.'
         );
-
         return $user;
     }
-
     /**
      * Memastikan siswa memiliki akses ke assignment.
+     *
+     * Assignment dengan status draft tidak boleh diakses siswa,
+     * baik melalui daftar tugas maupun akses langsung berdasarkan ID.
+     *
+     * Karena satu assignment dapat ditujukan ke beberapa kelas,
+     * relasi yang digunakan adalah schedules (many-to-many).
      */
     private function getAuthorizedAssignment(
         Request $request,
         Assignment $assignment
     ): Assignment {
         $user = $this->ensureStudent($request);
-
         $assignment->load([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'files',
             'questions.options',
         ]);
-
+        /*
+         * Draft hanya dapat dilihat/dikelola oleh guru.
+         * Siswa tidak boleh melihat maupun mengakses assignment draft.
+         */
+        abort_if(
+            $assignment->status === 'draft',
+            404,
+            'Tugas tidak ditemukan.'
+        );
         abort_unless(
-            $assignment->schedule !== null,
+            $assignment->schedules->isNotEmpty(),
             404,
             'Jadwal tugas tidak ditemukan.'
         );
-
-        $classroom = $assignment->schedule->classroom;
-
-        abort_unless(
-            $classroom !== null,
-            404,
-            'Kelas tugas tidak ditemukan.'
+        /*
+         * Cari jadwal assignment yang kelasnya merupakan kelas
+         * tempat siswa tersebut terdaftar.
+         */
+        $studentClassroomIds = $user->classrooms()
+            ->pluck('classrooms.id');
+        $studentSchedule = $assignment->schedules->first(
+            fn ($schedule) => $studentClassroomIds->contains(
+                $schedule->classroom_id
+            )
         );
-
-        $isMember = $classroom->users()
-            ->where('users.id', $user->id)
-            ->where('users.role', 'siswa')
-            ->exists();
-
         abort_unless(
-            $isMember,
+            $studentSchedule !== null,
             403,
             'Anda bukan anggota kelas dari tugas ini.'
         );
-
+        /*
+         * Simpan jadwal yang sesuai dengan kelas siswa ke relation
+         * sementara agar dapat digunakan oleh response formatter.
+         */
+        $assignment->setRelation(
+            'student_schedule',
+            $studentSchedule
+        );
         return $assignment;
     }
-
     /**
      * Memastikan assignment memang dapat menerima submission siswa.
      *
@@ -90,14 +100,12 @@ class SubmissionController extends Controller
             && $assignment->questions->every(
                 fn ($question) => $question->type === 'info'
             );
-
         abort_if(
             $isInfoAssignment,
             422,
             'Tugas jenis informasi tidak memerlukan pengumpulan dari siswa.'
         );
     }
-
     /**
      * Memastikan assignment sedang berada dalam periode
      * pengumpulan submission.
@@ -112,7 +120,6 @@ class SubmissionController extends Controller
         Assignment $assignment
     ): void {
         $now = now();
-
         if (
             $assignment->start_date !== null
             && $now->lt($assignment->start_date)
@@ -122,7 +129,6 @@ class SubmissionController extends Controller
                 'Tugas belum dapat dikumpulkan karena belum memasuki waktu mulai.'
             );
         }
-
         if (
             $assignment->due_date !== null
             && $now->gt($assignment->due_date)
@@ -133,7 +139,6 @@ class SubmissionController extends Controller
             );
         }
     }
-
     /**
      * Menentukan apakah submission dikumpulkan terlambat.
      *
@@ -149,7 +154,6 @@ class SubmissionController extends Controller
                 $assignment->due_date
             );
     }
-
     /**
      * Menentukan apakah assignment memiliki soal yang dapat
      * dinilai secara otomatis.
@@ -171,7 +175,6 @@ class SubmissionController extends Controller
             }
         );
     }
-
     /**
      * Mengambil nilai tertinggi dari seluruh submission siswa
      * pada sebuah assignment.
@@ -192,17 +195,14 @@ class SubmissionController extends Controller
             )
             ->whereNotNull('grade')
             ->max('grade');
-
         if ($highestGrade === null) {
             return null;
         }
-
         return round(
             (float) $highestGrade,
             2
         );
     }
-
     /**
      * Menilai submission menggunakan AutoGradingService.
      *
@@ -223,21 +223,17 @@ class SubmissionController extends Controller
         if (!$this->hasAutoGradableQuestions($assignment)) {
             return;
         }
-
         $autoGradingService = app(
             AutoGradingService::class
         );
-
         $grade = $autoGradingService->grade(
             $submission,
             $assignment
         );
-
         $submission->update([
             'grade' => $grade,
         ]);
     }
-
     /**
      * Format submission untuk response siswa.
      *
@@ -263,7 +259,6 @@ class SubmissionController extends Controller
                     'answer_text' => $answer->answer_text,
                     'created_at' => $answer->created_at,
                     'updated_at' => $answer->updated_at,
-
                     'question' => $answer->question
                         ? [
                             'id' => $answer->question->id,
@@ -276,7 +271,6 @@ class SubmissionController extends Controller
                                 $answer->question->is_required,
                         ]
                         : null,
-
                     'selected_options' =>
                         $answer->selectedOptions
                             ->map(function ($selectedOption) {
@@ -292,7 +286,6 @@ class SubmissionController extends Controller
                                         $selectedOption->created_at,
                                     'updated_at' =>
                                         $selectedOption->updated_at,
-
                                     'option' =>
                                         $selectedOption->option
                                             ? [
@@ -322,9 +315,7 @@ class SubmissionController extends Controller
             })
             ->values()
             ->all();
-
         $isHighestGrade = false;
-
         if (
             $highestGrade !== null
             && $submission->grade !== null
@@ -338,44 +329,35 @@ class SubmissionController extends Controller
                     2
                 );
         }
-
         return [
             'id' => $submission->id,
             'assignment_id' => $submission->assignment_id,
             'student_id' => $submission->student_id,
             'file_path' => $submission->file_path,
             'student_note' => $submission->student_note,
-
             /*
              * Nilai submission ini.
              */
             'grade' => $submission->grade,
-
             /*
              * Menandai apakah submission ini memiliki
              * nilai tertinggi dari seluruh attempt.
              */
             'is_highest_grade' => $isHighestGrade,
-
             'teacher_feedback' =>
                 $submission->teacher_feedback,
-
             'created_at' => $submission->created_at,
             'updated_at' => $submission->updated_at,
-
             'is_late' => $this->isLate(
                 $submission,
                 $assignment
             ),
-
             'files' => $submission->files
                 ->values()
                 ->all(),
-
             'answers' => $answers,
         ];
     }
-
     /**
      * Format satu option untuk response siswa.
      *
@@ -393,7 +375,6 @@ class SubmissionController extends Controller
             'updated_at' => $option->updated_at,
         ];
     }
-
     /**
      * Format satu question untuk response siswa.
      *
@@ -411,7 +392,6 @@ class SubmissionController extends Controller
             'is_required' => $question->is_required,
             'created_at' => $question->created_at,
             'updated_at' => $question->updated_at,
-
             'options' => $question->options
                 ->map(function ($option) {
                     return $this->formatStudentOption(
@@ -422,24 +402,31 @@ class SubmissionController extends Controller
                 ->all(),
         ];
     }
-
+    /**
+     * Format assignment untuk response siswa.
+     *
     /**
      * Format assignment untuk response siswa.
      *
      * Field sensitif seperti correct_answer dan
      * is_correct tidak pernah dikirim.
+     *
+     * $schedule adalah jadwal assignment yang sesuai dengan kelas siswa.
      */
     private function formatStudentAssignment(
         Assignment $assignment,
         array $formattedSubmissions,
-        ?float $highestGrade = null
+        ?float $highestGrade = null,
+        $schedule = null
     ): array {
+        $schedule ??= $assignment->relationLoaded('student_schedule')
+            ? $assignment->student_schedule
+            : null;
         return [
             'id' => $assignment->id,
-            'schedule_id' => $assignment->schedule_id,
+            'schedule_id' => $schedule?->id,
             'title' => $assignment->title,
             'description' => $assignment->description,
-
             /*
              * Mode pengumpulan:
              *
@@ -448,25 +435,19 @@ class SubmissionController extends Controller
              */
             'submission_mode' =>
                 $assignment->submission_mode ?? 'once',
-
             'due_date' => $assignment->due_date,
             'created_at' => $assignment->created_at,
             'updated_at' => $assignment->updated_at,
             'start_date' => $assignment->start_date,
-
             /*
              * Nilai tertinggi dari seluruh submission siswa.
              */
             'final_grade' => $highestGrade,
-
             'submissions' => $formattedSubmissions,
-
-            'schedule' => $assignment->schedule,
-
+            'schedule' => $schedule,
             'files' => $assignment->files
                 ->values()
                 ->all(),
-
             'questions' => $assignment->questions
                 ->sortBy('order')
                 ->values()
@@ -478,7 +459,6 @@ class SubmissionController extends Controller
                 ->all(),
         ];
     }
-
     /**
      * Validasi jawaban siswa.
      */
@@ -489,7 +469,6 @@ class SubmissionController extends Controller
         $questions = $assignment->questions
             ->sortBy('order')
             ->values();
-
         if ($questions->isEmpty()) {
             if (!empty($answers)) {
                 abort(
@@ -497,17 +476,13 @@ class SubmissionController extends Controller
                     'Tugas ini tidak memiliki soal.'
                 );
             }
-
             return [];
         }
-
         $questionMap = $questions->keyBy(
             fn ($question) => (int) $question->id
         );
-
         $submittedQuestionIds = [];
         $normalized = [];
-
         foreach ($answers as $index => $answer) {
             if (!is_array($answer)) {
                 abort(
@@ -515,7 +490,6 @@ class SubmissionController extends Controller
                     "Format jawaban pada index {$index} tidak valid."
                 );
             }
-
             if (!array_key_exists(
                 'assignment_question_id',
                 $answer
@@ -525,16 +499,13 @@ class SubmissionController extends Controller
                     "assignment_question_id wajib diisi pada jawaban index {$index}."
                 );
             }
-
             $questionId = (int) $answer['assignment_question_id'];
-
             if (!$questionMap->has($questionId)) {
                 abort(
                     422,
                     "Soal dengan ID {$questionId} tidak termasuk dalam tugas ini."
                 );
             }
-
             if (in_array(
                 $questionId,
                 $submittedQuestionIds,
@@ -545,14 +516,10 @@ class SubmissionController extends Controller
                     "Jawaban untuk soal ID {$questionId} dikirim lebih dari satu kali."
                 );
             }
-
             $submittedQuestionIds[] = $questionId;
-
             /** @var AssignmentQuestion $question */
             $question = $questionMap->get($questionId);
-
             $answerText = $answer['answer_text'] ?? null;
-
             if (
                 $answerText !== null
                 && !is_string($answerText)
@@ -562,24 +529,20 @@ class SubmissionController extends Controller
                     "answer_text pada soal ID {$questionId} harus berupa teks."
                 );
             }
-
             if (
                 is_string($answerText)
                 && trim($answerText) === ''
             ) {
                 $answerText = null;
             }
-
             $selectedOptionIds =
                 $answer['selected_option_ids'] ?? [];
-
             if (!is_array($selectedOptionIds)) {
                 abort(
                     422,
                     "selected_option_ids pada soal ID {$questionId} harus berupa array."
                 );
             }
-
             $selectedOptionIds = array_values(
                 array_unique(
                     array_map(
@@ -588,11 +551,9 @@ class SubmissionController extends Controller
                     )
                 )
             );
-
             $optionMap = $question->options->keyBy(
                 fn ($option) => (int) $option->id
             );
-
             foreach ($selectedOptionIds as $optionId) {
                 if (!$optionMap->has($optionId)) {
                     abort(
@@ -601,7 +562,6 @@ class SubmissionController extends Controller
                     );
                 }
             }
-
             switch ($question->type) {
                 case 'short':
                 case 'paragraph':
@@ -611,7 +571,6 @@ class SubmissionController extends Controller
                             "Soal ID {$questionId} tidak mendukung pilihan jawaban."
                         );
                     }
-
                     if (
                         $question->is_required
                         && $answerText === null
@@ -621,9 +580,7 @@ class SubmissionController extends Controller
                             "Jawaban untuk soal ID {$questionId} wajib diisi."
                         );
                     }
-
                     break;
-
                 case 'multiple':
                     if (count($selectedOptionIds) !== 1) {
                         abort(
@@ -631,16 +588,13 @@ class SubmissionController extends Controller
                             "Pilih tepat satu jawaban untuk soal ID {$questionId}."
                         );
                     }
-
                     if ($answerText !== null) {
                         abort(
                             422,
                             "Soal pilihan ganda ID {$questionId} tidak menggunakan answer_text."
                         );
                     }
-
                     break;
-
                 case 'checkbox':
                     if (
                         $question->is_required
@@ -651,16 +605,13 @@ class SubmissionController extends Controller
                             "Minimal satu pilihan harus dipilih untuk soal ID {$questionId}."
                         );
                     }
-
                     if ($answerText !== null) {
                         abort(
                             422,
                             "Soal checkbox ID {$questionId} tidak menggunakan answer_text."
                         );
                     }
-
                     break;
-
                 case 'upload':
                     if ($answerText !== null) {
                         abort(
@@ -668,16 +619,13 @@ class SubmissionController extends Controller
                             "Soal upload ID {$questionId} tidak menggunakan answer_text."
                         );
                     }
-
                     if (!empty($selectedOptionIds)) {
                         abort(
                             422,
                             "Soal upload ID {$questionId} tidak menggunakan pilihan jawaban."
                         );
                     }
-
                     break;
-
                 case 'info':
                     if ($answerText !== null) {
                         abort(
@@ -685,37 +633,31 @@ class SubmissionController extends Controller
                             "Soal info ID {$questionId} tidak dapat dijawab."
                         );
                     }
-
                     if (!empty($selectedOptionIds)) {
                         abort(
                             422,
                             "Soal info ID {$questionId} tidak menggunakan pilihan jawaban."
                         );
                     }
-
                     break;
-
                 default:
                     abort(
                         422,
                         "Tipe soal {$question->type} tidak didukung."
                     );
             }
-
             $normalized[] = [
                 'question' => $question,
                 'answer_text' => $answerText,
                 'selected_option_ids' => $selectedOptionIds,
             ];
         }
-
         $normalizedQuestionIds = collect($normalized)
             ->map(function ($item) {
                 return (int) $item['question']->id;
             })
             ->values()
             ->all();
-
         foreach ($questions as $question) {
             if (
                 !$question->is_required
@@ -724,7 +666,6 @@ class SubmissionController extends Controller
             ) {
                 continue;
             }
-
             if (!in_array(
                 (int) $question->id,
                 $normalizedQuestionIds,
@@ -736,10 +677,8 @@ class SubmissionController extends Controller
                 );
             }
         }
-
         return $normalized;
     }
-
     /**
      * Validasi file submission untuk tugas bertipe upload.
      *
@@ -752,11 +691,9 @@ class SubmissionController extends Controller
     ): void {
         $uploadQuestion = $assignment->questions
             ->firstWhere('type', 'upload');
-
         if (!$uploadQuestion) {
             return;
         }
-
         if (
             $uploadQuestion->is_required
             && (
@@ -769,7 +706,6 @@ class SubmissionController extends Controller
             );
         }
     }
-
     /**
      * Menyimpan jawaban siswa ke submission tertentu.
      */
@@ -780,15 +716,12 @@ class SubmissionController extends Controller
         foreach ($answers as $answerData) {
             /** @var AssignmentQuestion $question */
             $question = $answerData['question'];
-
             if ($question->type === 'info') {
                 continue;
             }
-
             if ($question->type === 'upload') {
                 continue;
             }
-
             $answer = SubmissionAnswer::updateOrCreate(
                 [
                     'submission_id' => $submission->id,
@@ -796,7 +729,6 @@ class SubmissionController extends Controller
                 ],
                 [
                     'answer_text' => $answerData['answer_text'],
-
                     /*
                      * Reset hasil grading sebelum proses
                      * auto-grading dijalankan.
@@ -805,12 +737,10 @@ class SubmissionController extends Controller
                     'points' => 0,
                 ]
             );
-
             SubmissionAnswerOption::where(
                 'submission_answer_id',
                 $answer->id
             )->delete();
-
             foreach (
                 $answerData['selected_option_ids']
                 as $optionId
@@ -822,7 +752,6 @@ class SubmissionController extends Controller
             }
         }
     }
-
     /**
      * Sinkronisasi jawaban siswa saat melakukan edit submission.
      *
@@ -857,7 +786,6 @@ class SubmissionController extends Controller
             })
             ->values()
             ->all();
-
         /*
          * Ambil seluruh jawaban lama dari submission.
          */
@@ -865,7 +793,6 @@ class SubmissionController extends Controller
             'submission_id',
             $submission->id
         )->get();
-
         /*
          * Hapus jawaban lama yang sudah tidak dikirim
          * pada request terbaru.
@@ -886,11 +813,9 @@ class SubmissionController extends Controller
                     'submission_answer_id',
                     $existingAnswer->id
                 )->delete();
-
                 $existingAnswer->delete();
             }
         }
-
         /*
          * Simpan atau update jawaban yang masih dikirim.
          */
@@ -899,7 +824,6 @@ class SubmissionController extends Controller
             $answers
         );
     }
-
     /**
      * Membuat submission baru beserta file yang diunggah.
      */
@@ -911,7 +835,6 @@ class SubmissionController extends Controller
         if (!$request->hasFile('files')) {
             return;
         }
-
         foreach (
             $request->file('files')
             as $file
@@ -919,24 +842,18 @@ class SubmissionController extends Controller
             $extension = strtolower(
                 $file->getClientOriginalExtension()
             );
-
             $filename = (string) Str::uuid();
-
             if ($extension !== '') {
                 $filename .= '.' . $extension;
             }
-
             $objectKey =
                 "submissions/{$submission->id}/{$filename}";
-
             Storage::disk('s3')->putFileAs(
                 "submissions/{$submission->id}",
                 $file,
                 $filename
             );
-
             $uploadedObjects[] = $objectKey;
-
             SubmissionFile::create([
                 'submission_id' => $submission->id,
                 'original_name' =>
@@ -948,7 +865,6 @@ class SubmissionController extends Controller
             ]);
         }
     }
-
     /**
      * Mengambil seluruh submission milik siswa pada assignment.
      */
@@ -968,8 +884,8 @@ class SubmissionController extends Controller
                 'files',
                 'answers.question',
                 'answers.selectedOptions.option',
-                'assignment.schedule.classroom',
-                'assignment.schedule.subject',
+                'assignment.schedules.classroom',
+                'assignment.schedules.subject',
             ])
             ->orderBy(
                 'created_at',
@@ -977,20 +893,20 @@ class SubmissionController extends Controller
             )
             ->get();
     }
-
     /**
      * Daftar tugas yang dapat diakses siswa.
+     *
+     * Assignment berstatus draft sengaja dikecualikan dari query,
+     * sehingga draft tidak pernah muncul pada daftar tugas siswa.
      */
     public function index(Request $request)
     {
         $user = $this->ensureStudent($request);
-
         $classroomIds = $user->classrooms()
             ->pluck('classrooms.id');
-
         $assignments = Assignment::with([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'files',
             'questions.options',
             'submissions' => function ($query) use ($user) {
@@ -1007,8 +923,9 @@ class SubmissionController extends Controller
                 );
             },
         ])
+            ->where('status', '!=', 'draft')
             ->whereHas(
-                'schedule',
+                'schedules',
                 function ($query) use ($classroomIds) {
                     $query->whereIn(
                         'classroom_id',
@@ -1018,14 +935,15 @@ class SubmissionController extends Controller
             )
             ->latest()
             ->get();
-
         $data = $assignments
-            ->map(function ($assignment) use ($user) {
+            ->map(function ($assignment) use (
+                $user,
+                $classroomIds
+            ) {
                 $highestGrade = $this->getHighestGrade(
                     $assignment,
                     $user->id
                 );
-
                 $formattedSubmissions =
                     $assignment->submissions
                         ->map(function ($submission) use (
@@ -1040,22 +958,25 @@ class SubmissionController extends Controller
                         })
                         ->values()
                         ->all();
-
+                $studentSchedule = $assignment->schedules->first(
+                    fn ($schedule) => $classroomIds->contains(
+                        $schedule->classroom_id
+                    )
+                );
                 return $this->formatStudentAssignment(
                     $assignment,
                     $formattedSubmissions,
-                    $highestGrade
+                    $highestGrade,
+                    $studentSchedule
                 );
             })
             ->values()
             ->all();
-
         return response()->json([
             'message' => 'Daftar tugas berhasil diambil.',
             'data' => $data,
         ]);
     }
-
     /**
      * Detail tugas untuk siswa.
      */
@@ -1064,15 +985,13 @@ class SubmissionController extends Controller
         Assignment $assignment
     ) {
         $user = $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $assignment->load([
-            'schedule.classroom',
-            'schedule.subject',
+            'schedules.classroom',
+            'schedules.subject',
             'files',
             'questions.options',
             'submissions' => function ($query) use ($user) {
@@ -1089,12 +1008,21 @@ class SubmissionController extends Controller
                 );
             },
         ]);
-
+        $studentClassroomIds = $user->classrooms()
+            ->pluck('classrooms.id');
+        $studentSchedule = $assignment->relationLoaded(
+            'student_schedule'
+        )
+            ? $assignment->student_schedule
+            : $assignment->schedules->first(
+                fn ($schedule) => $studentClassroomIds->contains(
+                    $schedule->classroom_id
+                )
+            );
         $highestGrade = $this->getHighestGrade(
             $assignment,
             $user->id
         );
-
         $formattedSubmissions =
             $assignment->submissions
                 ->map(function ($submission) use (
@@ -1109,19 +1037,17 @@ class SubmissionController extends Controller
                 })
                 ->values()
                 ->all();
-
         $data = $this->formatStudentAssignment(
             $assignment,
             $formattedSubmissions,
-            $highestGrade
+            $highestGrade,
+            $studentSchedule
         );
-
         return response()->json([
             'message' => 'Detail tugas berhasil diambil.',
             'data' => $data,
         ]);
     }
-
     /**
      * Membuat submission baru atau memperbarui submission
      * berdasarkan submission_mode.
@@ -1138,70 +1064,56 @@ class SubmissionController extends Controller
         Assignment $assignment
     ) {
         $user = $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $this->ensureSubmissionAllowed(
             $assignment
         );
-
         $this->ensureAssignmentIsOpen(
             $assignment
         );
-
         $validated = $request->validate([
             'student_note' => [
                 'nullable',
                 'string',
             ],
-
             'answers' => [
                 'nullable',
                 'array',
             ],
-
             'answers.*.assignment_question_id' => [
                 'required',
                 'integer',
             ],
-
             'answers.*.answer_text' => [
                 'nullable',
                 'string',
             ],
-
             'answers.*.selected_option_ids' => [
                 'nullable',
                 'array',
             ],
-
             'answers.*.selected_option_ids.*' => [
                 'integer',
             ],
-
             'files' => [
                 'nullable',
                 'array',
                 'max:10',
             ],
-
             'files.*' => [
                 'file',
                 'max:512000',
             ],
         ]);
-
         $normalizedAnswers = $this->validateAnswers(
             $validated['answers'] ?? [],
             $assignment
         );
-
         $submissionMode =
             $assignment->submission_mode ?? 'once';
-
         /*
          * Ambil seluruh submission siswa.
          */
@@ -1210,7 +1122,6 @@ class SubmissionController extends Controller
                 $assignment,
                 $user->id
             );
-
         /*
          * Mode once:
          *
@@ -1228,7 +1139,6 @@ class SubmissionController extends Controller
                 'Tugas ini hanya dapat dikumpulkan satu kali. Gunakan fitur edit submission untuk memperbarui jawaban.'
             );
         }
-
         /*
          * Mode multiple:
          *
@@ -1238,27 +1148,21 @@ class SubmissionController extends Controller
          * tertimpa oleh submission berikutnya.
          */
         $submission = null;
-
         /*
          * Karena submission baru belum memiliki file,
          * existingFileCount selalu 0.
          */
         $existingFileCount = 0;
-
         $newFileCount = $request->hasFile('files')
             ? count($request->file('files'))
             : 0;
-
         $this->validateSubmissionFiles(
             $assignment,
             $existingFileCount,
             $newFileCount
         );
-
         DB::beginTransaction();
-
         $uploadedObjects = [];
-
         try {
             /*
              * Selalu membuat submission baru pada endpoint
@@ -1272,7 +1176,6 @@ class SubmissionController extends Controller
                     $validated['student_note'] ?? null,
                 'grade' => null,
             ]);
-
             /*
              * Simpan jawaban siswa.
              */
@@ -1280,7 +1183,6 @@ class SubmissionController extends Controller
                 $submission,
                 $normalizedAnswers
             );
-
             /*
              * Upload file submission.
              */
@@ -1289,7 +1191,6 @@ class SubmissionController extends Controller
                 $submission,
                 $uploadedObjects
             );
-
             /*
              * Auto-grading dilakukan setelah semua jawaban
              * berhasil disimpan.
@@ -1298,58 +1199,48 @@ class SubmissionController extends Controller
                 $submission,
                 $assignment
             );
-
             DB::commit();
-
             /*
              * Reload seluruh relasi setelah transaction selesai.
              */
             $submission->load([
-                'assignment.schedule.classroom',
-                'assignment.schedule.subject',
+                'assignment.schedules.classroom',
+                'assignment.schedules.subject',
                 'files',
                 'answers.question',
                 'answers.selectedOptions.option',
             ]);
-
             $highestGrade = $this->getHighestGrade(
                 $assignment,
                 $user->id
             );
-
             $isLate = $this->isLate(
                 $submission,
                 $assignment
             );
-
             return response()->json([
                 'message' => $isLate
                     ? 'Tugas berhasil dikumpulkan, tetapi terlambat.'
                     : 'Tugas berhasil dikumpulkan.',
-
                 'data' => [
                     'submission' => $this->formatSubmission(
                         $submission,
                         $assignment,
                         $highestGrade
                     ),
-
                     /*
                      * Nilai akhir siswa selalu mengambil
                      * nilai tertinggi.
                      */
                     'final_grade' => $highestGrade,
-
                     'submission_mode' =>
                         $submissionMode,
-
                     'submission_count' =>
                         $existingSubmissions->count() + 1,
                 ],
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-
             foreach ($uploadedObjects as $objectKey) {
                 try {
                     Storage::disk('s3')->delete(
@@ -1359,11 +1250,9 @@ class SubmissionController extends Controller
                     report($storageException);
                 }
             }
-
             throw $e;
         }
     }
-
     /**
      * Mengambil submission siswa.
      *
@@ -1376,34 +1265,28 @@ class SubmissionController extends Controller
         Assignment $assignment
     ) {
         $user = $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $this->ensureSubmissionAllowed(
             $assignment
         );
-
         $submissions =
             $this->getStudentSubmissions(
                 $assignment,
                 $user->id
             );
-
         if ($submissions->isEmpty()) {
             return response()->json([
                 'message' => 'Siswa belum mengumpulkan tugas.',
                 'data' => null,
             ]);
         }
-
         $highestGrade = $this->getHighestGrade(
             $assignment,
             $user->id
         );
-
         $formattedSubmissions =
             $submissions
                 ->map(function ($submission) use (
@@ -1418,27 +1301,21 @@ class SubmissionController extends Controller
                 })
                 ->values()
                 ->all();
-
         return response()->json([
             'message' =>
                 'Pengumpulan tugas berhasil diambil.',
-
             'data' => [
                 'submission_mode' =>
                     $assignment->submission_mode ?? 'once',
-
                 'final_grade' =>
                     $highestGrade,
-
                 'submission_count' =>
                     $submissions->count(),
-
                 'submissions' =>
                     $formattedSubmissions,
             ],
         ]);
     }
-
     /**
      * Memperbarui submission siswa.
      *
@@ -1459,20 +1336,16 @@ class SubmissionController extends Controller
         Assignment $assignment
     ) {
         $user = $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $this->ensureSubmissionAllowed(
             $assignment
         );
-
         $this->ensureAssignmentIsOpen(
             $assignment
         );
-
         /*
          * Ambil submission terbaru milik siswa.
          */
@@ -1486,58 +1359,47 @@ class SubmissionController extends Controller
             )
             ->latest('created_at')
             ->first();
-
         if (!$submission) {
             abort(
                 404,
                 'Submission belum ditemukan. Silakan kumpulkan tugas terlebih dahulu.'
             );
         }
-
         $validated = $request->validate([
             'student_note' => [
                 'nullable',
                 'string',
             ],
-
             'answers' => [
                 'nullable',
                 'array',
             ],
-
             'answers.*.assignment_question_id' => [
                 'required',
                 'integer',
             ],
-
             'answers.*.answer_text' => [
                 'nullable',
                 'string',
             ],
-
             'answers.*.selected_option_ids' => [
                 'nullable',
                 'array',
             ],
-
             'answers.*.selected_option_ids.*' => [
                 'integer',
             ],
-
             'files' => [
                 'nullable',
                 'array',
                 'max:10',
             ],
-
             'files.*' => [
                 'file',
                 'max:512000',
             ],
         ]);
-
         $normalizedAnswers = [];
-
         if (
             array_key_exists(
                 'answers',
@@ -1549,25 +1411,19 @@ class SubmissionController extends Controller
                 $assignment
             );
         }
-
         $existingFileCount = $submission
             ->files()
             ->count();
-
         $newFileCount = $request->hasFile('files')
             ? count($request->file('files'))
             : 0;
-
         $this->validateSubmissionFiles(
             $assignment,
             $existingFileCount,
             $newFileCount
         );
-
         DB::beginTransaction();
-
         $uploadedObjects = [];
-
         try {
             /*
              * Update catatan siswa jika dikirim.
@@ -1583,7 +1439,6 @@ class SubmissionController extends Controller
                         $validated['student_note'],
                 ]);
             }
-
             /*
              * Sinkronisasi jawaban jika dikirim.
              *
@@ -1606,7 +1461,6 @@ class SubmissionController extends Controller
                     $normalizedAnswers
                 );
             }
-
             /*
              * Tambahkan file baru jika ada.
              */
@@ -1615,7 +1469,6 @@ class SubmissionController extends Controller
                 $submission,
                 $uploadedObjects
             );
-
             /*
              * Jika assignment auto-gradable, nilai submission
              * dihitung ulang setelah jawaban diperbarui.
@@ -1631,49 +1484,40 @@ class SubmissionController extends Controller
                     $assignment
                 );
             }
-
             DB::commit();
-
             $submission->load([
                 'files',
                 'answers.question',
                 'answers.selectedOptions.option',
-                'assignment.schedule.classroom',
-                'assignment.schedule.subject',
+                'assignment.schedules.classroom',
+                'assignment.schedules.subject',
             ]);
-
             $highestGrade = $this->getHighestGrade(
                 $assignment,
                 $user->id
             );
-
             $isLate = $this->isLate(
                 $submission,
                 $assignment
             );
-
             return response()->json([
                 'message' => $isLate
                     ? 'Pengumpulan tugas berhasil diperbarui. Submission tetap tercatat sebagai terlambat.'
                     : 'Pengumpulan tugas berhasil diperbarui.',
-
                 'data' => [
                     'submission' => $this->formatSubmission(
                         $submission,
                         $assignment,
                         $highestGrade
                     ),
-
                     'final_grade' =>
                         $highestGrade,
-
                     'submission_mode' =>
                         $assignment->submission_mode ?? 'once',
                 ],
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
-
             foreach ($uploadedObjects as $objectKey) {
                 try {
                     Storage::disk('s3')->delete(
@@ -1683,11 +1527,9 @@ class SubmissionController extends Controller
                     report($storageException);
                 }
             }
-
             throw $e;
         }
     }
-
     /**
      * Menghapus file dari submission siswa.
      *
@@ -1700,20 +1542,16 @@ class SubmissionController extends Controller
         SubmissionFile $file
     ) {
         $user = $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $this->ensureSubmissionAllowed(
             $assignment
         );
-
         $this->ensureAssignmentIsOpen(
             $assignment
         );
-
         $submission = Submission::where(
             'id',
             $file->submission_id
@@ -1727,20 +1565,17 @@ class SubmissionController extends Controller
                 $user->id
             )
             ->firstOrFail();
-
         abort_unless(
             $file->submission_id === $submission->id,
             404,
             'File tidak ditemukan.'
         );
-
         /*
          * Jangan izinkan penghapusan file terakhir pada
          * tugas upload yang bersifat wajib.
          */
         $uploadQuestion = $assignment->questions
             ->firstWhere('type', 'upload');
-
         if (
             $uploadQuestion
             && $uploadQuestion->is_required
@@ -1751,9 +1586,7 @@ class SubmissionController extends Controller
                 'File tidak dapat dihapus karena tugas ini mewajibkan minimal satu file.'
             );
         }
-
         DB::beginTransaction();
-
         try {
             if (
                 $file->object_key
@@ -1765,13 +1598,9 @@ class SubmissionController extends Controller
                     $file->object_key
                 );
             }
-
             $fileId = $file->id;
-
             $file->delete();
-
             DB::commit();
-
             return response()->json([
                 'message' => 'File berhasil dihapus.',
                 'data' => [
@@ -1781,11 +1610,9 @@ class SubmissionController extends Controller
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
-
             throw $e;
         }
     }
-
     /**
      * Menghapus seluruh submission siswa.
      *
@@ -1803,16 +1630,13 @@ class SubmissionController extends Controller
         Assignment $assignment
     ) {
         $this->ensureStudent($request);
-
         $assignment = $this->getAuthorizedAssignment(
             $request,
             $assignment
         );
-
         $this->ensureSubmissionAllowed(
             $assignment
         );
-
         abort(
             422,
             'Submission tidak dapat dihapus. Gunakan fitur edit submission untuk memperbarui jawaban.'

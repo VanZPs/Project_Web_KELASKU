@@ -17,6 +17,7 @@ class Assignment extends Model
         'start_date',
         'due_date',
         'submission_mode',
+        'status',
     ];
 
     protected function casts(): array

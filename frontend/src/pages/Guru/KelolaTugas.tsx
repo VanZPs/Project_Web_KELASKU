@@ -2496,6 +2496,14 @@ export default function KelolaTugas() {
             return false;
           }
 
+          if (
+            activeFilter ===
+              'all' &&
+            status === 'draft'
+          ) {
+            return false;
+          }
+
           if (!keyword) {
             return true;
           }
@@ -2659,6 +2667,113 @@ export default function KelolaTugas() {
     } finally {
       setSendingComment(
         false,
+      );
+    }
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | SAVE AS DRAFT
+  |--------------------------------------------------------------------------
+  */
+
+  async function saveAssignmentAsDraft() {
+    if (!selectedAssignment) {
+      return;
+    }
+
+    const submissions =
+      selectedAssignment.submissions ?? [];
+
+    if (submissions.length > 0) {
+      showToast(
+        'error',
+        'Tugas yang sudah memiliki pengumpulan siswa tidak dapat dipindahkan ke draft.',
+      );
+      return;
+    }
+
+    if (
+      getAssignmentStatus(
+        selectedAssignment,
+      ) === 'draft'
+    ) {
+      return;
+    }
+
+    try {
+      await api.put(
+        `/guru/tugas/${selectedAssignment.id}`,
+        {
+          status: 'draft',
+        },
+      );
+
+      showToast(
+        'success',
+        'Tugas berhasil disimpan sebagai draft.',
+      );
+
+      closeTaskModal();
+
+      await loadManageData(
+        numericScheduleId,
+      );
+
+      setActiveFilter('draft');
+    } catch (err) {
+      showToast(
+        'error',
+        getErrorMessage(err),
+      );
+    }
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESTORE FROM DRAFT
+  |--------------------------------------------------------------------------
+  */
+
+  async function restoreAssignmentFromDraft() {
+    if (!selectedAssignment) {
+      return;
+    }
+
+    if (
+      getAssignmentStatus(
+        selectedAssignment,
+      ) !== 'draft'
+    ) {
+      return;
+    }
+
+    try {
+      await api.put(
+        `/guru/tugas/${selectedAssignment.id}`,
+        {
+          status: 'active',
+        },
+      );
+
+      showToast(
+        'success',
+        'Tugas berhasil dipulihkan dari draft.',
+      );
+
+      closeTaskModal();
+
+      await loadManageData(
+        numericScheduleId,
+      );
+
+      setActiveFilter('all');
+    } catch (err) {
+      showToast(
+        'error',
+        getErrorMessage(err),
       );
     }
   }
@@ -4062,23 +4177,86 @@ export default function KelolaTugas() {
                       } siswa mengumpulkan`}
               </div>
 
-              <button
-                type="button"
-                onClick={
-                  closeTaskModal
-                }
-                className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold"
-                style={{
-                  backgroundColor:
-                    COLORS.paper,
-                  borderColor:
-                    COLORS.line,
-                  color:
-                    COLORS.ink,
-                }}
-              >
-                Tutup
-              </button>
+              <div className="flex items-center gap-2.5">
+                {!selectedSubmission &&
+                  getAssignmentStatus(
+                    selectedAssignment,
+                  ) === 'draft' && (
+                    <button
+                      type="button"
+                      onClick={
+                        restoreAssignmentFromDraft
+                      }
+                      className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold transition"
+                      style={{
+                        backgroundColor:
+                          COLORS.navy,
+                        borderColor:
+                          COLORS.navy,
+                        color:
+                          '#FFFFFF',
+                      }}
+                      title="Pulihkan tugas dari draft"
+                    >
+                      Pulihkan Draft
+                    </button>
+                  )}
+
+                {!selectedSubmission &&
+                  getAssignmentStatus(
+                    selectedAssignment,
+                  ) !== 'draft' && (
+                    <button
+                      type="button"
+                      onClick={
+                        saveAssignmentAsDraft
+                      }
+                      disabled={
+                        (
+                          selectedAssignment.submissions ??
+                          []
+                        ).length > 0
+                      }
+                      className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{
+                        backgroundColor:
+                          '#EFE9DB',
+                        borderColor:
+                          COLORS.goldSoft,
+                        color:
+                          '#7A5A20',
+                      }}
+                      title={
+                        (
+                          selectedAssignment.submissions ??
+                          []
+                        ).length > 0
+                          ? 'Tugas yang sudah memiliki pengumpulan tidak dapat dipindahkan ke draft.'
+                          : 'Simpan tugas sebagai draft'
+                      }
+                    >
+                      Simpan Draft
+                    </button>
+                  )}
+
+                <button
+                  type="button"
+                  onClick={
+                    closeTaskModal
+                  }
+                  className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold"
+                  style={{
+                    backgroundColor:
+                      COLORS.paper,
+                    borderColor:
+                      COLORS.line,
+                    color:
+                      COLORS.ink,
+                  }}
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </ModalShell>
         )}
