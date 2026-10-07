@@ -2205,6 +2205,24 @@ export default function KelolaTugas() {
   const [scoreValue, setScoreValue] =
     useState('');
 
+  const [
+    editingAnswerKeyQuestionId,
+    setEditingAnswerKeyQuestionId,
+  ] = useState<number | null>(null);
+
+  const [
+    answerKeyShortValue,
+    setAnswerKeyShortValue,
+  ] = useState('');
+
+  const [
+    answerKeyOptionIds,
+    setAnswerKeyOptionIds,
+  ] = useState<number[]>([]);
+
+  const [savingAnswerKey, setSavingAnswerKey] =
+    useState(false);
+
   const [toast, setToast] =
     useState<{
       type:
@@ -2781,6 +2799,207 @@ export default function KelolaTugas() {
 
   /*
   |--------------------------------------------------------------------------
+  | ANSWER KEY
+  |--------------------------------------------------------------------------
+  */
+
+  function isAutoGradingType(
+    type?: AssignmentType,
+  ) {
+    return (
+      type === 'short' ||
+      type === 'multiple' ||
+      type === 'checkbox'
+    );
+  }
+
+  function startEditAnswerKey(
+    question: AssignmentQuestion,
+  ) {
+    if (!question.id) {
+      return;
+    }
+
+    setEditingAnswerKeyQuestionId(
+      question.id,
+    );
+
+    if (question.type === 'short') {
+      setAnswerKeyShortValue(
+        question.correct_answer ?? '',
+      );
+      setAnswerKeyOptionIds([]);
+      return;
+    }
+
+    setAnswerKeyShortValue('');
+    setAnswerKeyOptionIds(
+      (question.options ?? [])
+        .filter(
+          (option) =>
+            option.is_correct === true &&
+            option.id !== undefined,
+        )
+        .map((option) => option.id as number),
+    );
+  }
+
+  function cancelEditAnswerKey() {
+    setEditingAnswerKeyQuestionId(null);
+    setAnswerKeyShortValue('');
+    setAnswerKeyOptionIds([]);
+  }
+
+  function toggleAnswerKeyOption(
+    optionId: number,
+    checked: boolean,
+  ) {
+    setAnswerKeyOptionIds((current) => {
+      if (checked) {
+        if (current.includes(optionId)) {
+          return current;
+        }
+
+        return [...current, optionId];
+      }
+
+      return current.filter(
+        (id) => id !== optionId,
+      );
+    });
+  }
+
+  async function saveAnswerKey(
+    question: AssignmentQuestion,
+  ) {
+    if (
+      !selectedAssignment ||
+      !question.id ||
+      savingAnswerKey
+    ) {
+      return;
+    }
+
+    if (
+      !isAutoGradingType(question.type)
+    ) {
+      return;
+    }
+
+    if (
+      question.type === 'short' &&
+      !answerKeyShortValue.trim()
+    ) {
+      showToast(
+        'error',
+        'Kunci jawaban wajib diisi.',
+      );
+      return;
+    }
+
+    if (
+      question.type === 'multiple' &&
+      answerKeyOptionIds.length !== 1
+    ) {
+      showToast(
+        'error',
+        'Pilihan ganda harus memiliki tepat satu kunci jawaban.',
+      );
+      return;
+    }
+
+    if (
+      question.type === 'checkbox' &&
+      answerKeyOptionIds.length < 1
+    ) {
+      showToast(
+        'error',
+        'Kotak centang harus memiliki minimal satu kunci jawaban.',
+      );
+      return;
+    }
+
+    const gradedSubmissionExists = (
+      selectedAssignment.submissions ?? []
+    ).some(
+      (submission) =>
+        getSubmissionGrade(
+          submission,
+        ) !== null,
+    );
+
+    if (gradedSubmissionExists) {
+      const confirmed =
+        window.confirm(
+          'Tugas ini sudah memiliki siswa yang nilainya telah keluar. Jika kunci jawaban diubah, seluruh nilai submission akan dihitung ulang otomatis menggunakan kunci jawaban baru. Lanjutkan?',
+        );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      setSavingAnswerKey(true);
+
+      const payload =
+        question.type === 'short'
+          ? {
+              question_id:
+                question.id,
+              correct_answer:
+                answerKeyShortValue.trim(),
+              correct_option_ids: [],
+            }
+          : {
+              question_id:
+                question.id,
+              correct_answer: '',
+              correct_option_ids:
+                answerKeyOptionIds,
+            };
+
+      const response =
+        await api.put(
+          `/guru/tugas/${selectedAssignment.id}/kunci-jawaban`,
+          payload,
+        );
+
+      const updatedAssignment =
+        response.data?.data as
+          | Assignment
+          | undefined;
+
+      if (updatedAssignment) {
+        setSelectedAssignment(
+          updatedAssignment,
+        );
+      }
+
+      cancelEditAnswerKey();
+
+      await loadManageData(
+        numericScheduleId,
+      );
+
+      showToast(
+        'success',
+        response.data?.message ||
+          'Kunci jawaban berhasil diperbarui dan nilai siswa telah dihitung ulang.',
+      );
+    } catch (err) {
+      showToast(
+        'error',
+        getErrorMessage(err),
+      );
+    } finally {
+      setSavingAnswerKey(false);
+    }
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
   | OPEN / CLOSE MODAL
   |--------------------------------------------------------------------------
   */
@@ -2796,6 +3015,7 @@ export default function KelolaTugas() {
     );
     setRosterSearch('');
     setCommentText('');
+    cancelEditAnswerKey();
   }
 
   function closeTaskModal() {
@@ -2812,6 +3032,7 @@ export default function KelolaTugas() {
     setRosterSearch('');
     setCommentText('');
     setScoreModalOpen(false);
+    cancelEditAnswerKey();
   }
 
 
@@ -3855,97 +4076,427 @@ export default function KelolaTugas() {
                             (
                               question,
                               index,
-                            ) => (
-                              <div
-                                key={
-                                  question.id ??
-                                  index
-                                }
-                                className={
-                                  getAssignmentType(
+                            ) => {
+                              const autoGrading =
+                                isAutoGradingType(
+                                  question.type,
+                                );
+
+                              const isEditing =
+                                editingAnswerKeyQuestionId ===
+                                question.id;
+
+                              const correctOptions =
+                                (question.options ?? [])
+                                  .filter(
+                                    (option) =>
+                                      option.is_correct === true,
+                                  );
+
+                              return (
+                                <div
+                                  key={
+                                    question.id ??
+                                    index
+                                  }
+                                  className={
+                                    getAssignmentType(
+                                      selectedAssignment,
+                                    ) === 'info'
+                                      ? 'rounded-[13px] border px-5 py-5'
+                                      : 'rounded-[10px] border px-3.5 py-3'
+                                  }
+                                  style={{
+                                    borderColor:
+                                      getAssignmentType(
+                                        selectedAssignment,
+                                      ) === 'info'
+                                        ? '#D9C38E'
+                                        : COLORS.line,
+                                    backgroundColor:
+                                      getAssignmentType(
+                                        selectedAssignment,
+                                      ) === 'info'
+                                        ? '#FBF4DF'
+                                        : COLORS.paper,
+                                    boxShadow:
+                                      getAssignmentType(
+                                        selectedAssignment,
+                                      ) === 'info'
+                                        ? '0 4px 14px -8px rgba(122,90,32,0.24)'
+                                        : undefined,
+                                  }}
+                                >
+                                  {getAssignmentType(
                                     selectedAssignment,
-                                  ) === 'info'
-                                    ? 'rounded-[13px] border px-5 py-5'
-                                    : 'rounded-[10px] border px-3.5 py-3'
-                                }
-                                style={{
-                                  borderColor:
-                                    getAssignmentType(
-                                      selectedAssignment,
-                                    ) === 'info'
-                                      ? '#D9C38E'
-                                      : COLORS.line,
-                                  backgroundColor:
-                                    getAssignmentType(
-                                      selectedAssignment,
-                                    ) === 'info'
-                                      ? '#FBF4DF'
-                                      : COLORS.paper,
-                                  boxShadow:
-                                    getAssignmentType(
-                                      selectedAssignment,
-                                    ) === 'info'
-                                      ? '0 4px 14px -8px rgba(122,90,32,0.24)'
-                                      : undefined,
-                                }}
-                              >
-                                {getAssignmentType(
-                                  selectedAssignment,
-                                ) === 'info' ? (
-                                  <div className="flex items-center gap-3">
-                                    <div
-                                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-                                      style={{
-                                        backgroundColor:
-                                          COLORS.goldSoft,
-                                        color:
-                                          '#7A5A20',
-                                      }}
-                                    >
-                                      <Info
-                                        size={18}
-                                        strokeWidth={2}
-                                      />
-                                    </div>
+                                  ) === 'info' ? (
+                                    <div className="flex items-center gap-3">
+                                      <div
+                                        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+                                        style={{
+                                          backgroundColor:
+                                            COLORS.goldSoft,
+                                          color:
+                                            '#7A5A20',
+                                        }}
+                                      >
+                                        <Info
+                                          size={18}
+                                          strokeWidth={2}
+                                        />
+                                      </div>
 
-                                    <div
-                                      className="min-w-0 flex-1 text-[13.5px] font-semibold leading-[1.75]"
-                                      style={{
-                                        color:
-                                          COLORS.navyDeep,
-                                      }}
-                                    >
-                                      {question.question ||
-                                        'Tidak ada informasi.'}
+                                      <div
+                                        className="min-w-0 flex-1 text-[13.5px] font-semibold leading-[1.75]"
+                                        style={{
+                                          color:
+                                            COLORS.navyDeep,
+                                        }}
+                                      >
+                                        {question.question ||
+                                          'Tidak ada informasi.'}
+                                      </div>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div
-                                      className="mb-1 text-[10px] font-bold uppercase"
-                                      style={{
-                                        color:
-                                          COLORS.gold,
-                                      }}
-                                    >
-                                      Soal{' '}
-                                      {index + 1}
-                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <div
+                                            className="mb-1 text-[10px] font-bold uppercase"
+                                            style={{
+                                              color:
+                                                COLORS.gold,
+                                            }}
+                                          >
+                                            Soal{' '}
+                                            {index + 1}
+                                          </div>
 
-                                    <div
-                                      className="text-[12.5px] font-semibold leading-[1.5]"
-                                      style={{
-                                        color:
-                                          COLORS.navyDeep,
-                                      }}
-                                    >
-                                      {question.question ||
-                                        `Soal ${index + 1}`}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            ),
+                                          <div
+                                            className="text-[12.5px] font-semibold leading-[1.5]"
+                                            style={{
+                                              color:
+                                                COLORS.navyDeep,
+                                            }}
+                                          >
+                                            {question.question ||
+                                              `Soal ${index + 1}`}
+                                          </div>
+                                        </div>
+
+                                        {autoGrading && (
+                                          <span
+                                            className="shrink-0 rounded-full px-2.5 py-1 text-[9.5px] font-bold"
+                                            style={{
+                                              backgroundColor:
+                                                COLORS.greenBg,
+                                              color:
+                                                COLORS.green,
+                                            }}
+                                          >
+                                            Auto Grading
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {autoGrading && (
+                                        <div
+                                          className="mt-3 rounded-[10px] border px-3.5 py-3"
+                                          style={{
+                                            borderColor:
+                                              '#D9E3D5',
+                                            backgroundColor:
+                                              '#F7FAF5',
+                                          }}
+                                        >
+                                          <div className="flex items-center justify-between gap-3">
+                                            <div className="text-[11px] font-bold">
+                                              <span
+                                                style={{
+                                                  color:
+                                                    COLORS.green,
+                                                }}
+                                              >
+                                                Kunci jawaban
+                                              </span>
+                                            </div>
+
+                                            {!isEditing && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  startEditAnswerKey(
+                                                    question,
+                                                  )
+                                                }
+                                                className="flex items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[10.5px] font-bold"
+                                                style={{
+                                                  borderColor:
+                                                    COLORS.line,
+                                                  backgroundColor:
+                                                    COLORS.paper,
+                                                  color:
+                                                    COLORS.navy,
+                                                }}
+                                              >
+                                                <Pencil
+                                                  size={12}
+                                                />
+                                                Edit
+                                              </button>
+                                            )}
+                                          </div>
+
+                                          {!isEditing ? (
+                                            <div className="mt-2">
+                                              {question.type ===
+                                              'short' ? (
+                                                <div
+                                                  className="rounded-[8px] border px-3 py-2 text-[12px]"
+                                                  style={{
+                                                    borderColor:
+                                                      COLORS.line,
+                                                    backgroundColor:
+                                                      COLORS.paper,
+                                                    color:
+                                                      question.correct_answer
+                                                        ? COLORS.ink
+                                                        : COLORS.inkSoft,
+                                                  }}
+                                                >
+                                                  {question.correct_answer?.trim() ||
+                                                    'Belum ada kunci jawaban.'}
+                                                </div>
+                                              ) : correctOptions.length >
+                                                0 ? (
+                                                <div className="space-y-1.5">
+                                                  {correctOptions.map(
+                                                    (
+                                                      option,
+                                                      optionIndex,
+                                                    ) => (
+                                                      <div
+                                                        key={
+                                                          option.id ??
+                                                          optionIndex
+                                                        }
+                                                        className="flex items-center gap-2 rounded-[8px] border px-3 py-2 text-[12px]"
+                                                        style={{
+                                                          borderColor:
+                                                            '#D9E3D5',
+                                                          backgroundColor:
+                                                            COLORS.paper,
+                                                          color:
+                                                            COLORS.ink,
+                                                        }}
+                                                      >
+                                                        <CheckCircle2
+                                                          size={13}
+                                                          style={{
+                                                            color:
+                                                              COLORS.green,
+                                                          }}
+                                                        />
+                                                        <span>
+                                                          {option.option_text ||
+                                                            `Pilihan ${optionIndex + 1}`}
+                                                        </span>
+                                                      </div>
+                                                    ),
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div
+                                                  className="text-[11.5px] italic"
+                                                  style={{
+                                                    color:
+                                                      COLORS.inkSoft,
+                                                  }}
+                                                >
+                                                  Belum ada kunci jawaban.
+                                                </div>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <div className="mt-3 space-y-3">
+                                              {question.type ===
+                                              'short' ? (
+                                                <input
+                                                  type="text"
+                                                  value={
+                                                    answerKeyShortValue
+                                                  }
+                                                  onChange={(
+                                                    event,
+                                                  ) =>
+                                                    setAnswerKeyShortValue(
+                                                      event.target
+                                                        .value,
+                                                    )
+                                                  }
+                                                  placeholder="Masukkan kunci jawaban..."
+                                                  className="w-full rounded-[8px] border px-3 py-2.5 text-[12px] outline-none"
+                                                  style={{
+                                                    borderColor:
+                                                      COLORS.line,
+                                                    backgroundColor:
+                                                      COLORS.paper,
+                                                    color:
+                                                      COLORS.ink,
+                                                  }}
+                                                  disabled={
+                                                    savingAnswerKey
+                                                  }
+                                                />
+                                              ) : (
+                                                <div className="space-y-2">
+                                                  {(question.options ??
+                                                    []).map(
+                                                    (
+                                                      option,
+                                                      optionIndex,
+                                                    ) => {
+                                                      const optionId =
+                                                        option.id;
+
+                                                      if (
+                                                        optionId ===
+                                                        undefined
+                                                      ) {
+                                                        return null;
+                                                      }
+
+                                                      const checked =
+                                                        answerKeyOptionIds.includes(
+                                                          optionId,
+                                                        );
+
+                                                      return (
+                                                        <label
+                                                          key={
+                                                            optionId ??
+                                                            optionIndex
+                                                          }
+                                                          className="flex cursor-pointer items-center gap-2.5 rounded-[8px] border px-3 py-2.5"
+                                                          style={{
+                                                            borderColor:
+                                                              checked
+                                                                ? '#B8D0B8'
+                                                                : COLORS.line,
+                                                            backgroundColor:
+                                                              checked
+                                                                ? COLORS.greenBg
+                                                                : COLORS.paper,
+                                                          }}
+                                                        >
+                                                          <input
+                                                            type={
+                                                              question.type ===
+                                                              'multiple'
+                                                                ? 'radio'
+                                                                : 'checkbox'
+                                                            }
+                                                            name={`answer-key-${question.id}`}
+                                                            checked={
+                                                              checked
+                                                            }
+                                                            onChange={(
+                                                              event,
+                                                            ) => {
+                                                              if (
+                                                                question.type ===
+                                                                'multiple'
+                                                              ) {
+                                                                setAnswerKeyOptionIds(
+                                                                  event.target
+                                                                    .checked
+                                                                    ? [
+                                                                        optionId,
+                                                                      ]
+                                                                    : [],
+                                                                );
+                                                              } else {
+                                                                toggleAnswerKeyOption(
+                                                                  optionId,
+                                                                  event.target
+                                                                    .checked,
+                                                                );
+                                                              }
+                                                            }}
+                                                            className="h-3.5 w-3.5"
+                                                            disabled={
+                                                              savingAnswerKey
+                                                            }
+                                                          />
+                                                          <span
+                                                            className="text-[12px]"
+                                                            style={{
+                                                              color:
+                                                                COLORS.ink,
+                                                            }}
+                                                          >
+                                                            {option.option_text ||
+                                                              `Pilihan ${optionIndex + 1}`}
+                                                          </span>
+                                                        </label>
+                                                      );
+                                                    },
+                                                  )}
+                                                </div>
+                                              )}
+
+                                              <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={
+                                                    cancelEditAnswerKey
+                                                  }
+                                                  disabled={
+                                                    savingAnswerKey
+                                                  }
+                                                  className="rounded-[8px] border px-3 py-2 text-[10.5px] font-bold"
+                                                  style={{
+                                                    borderColor:
+                                                      COLORS.line,
+                                                    backgroundColor:
+                                                      COLORS.paper,
+                                                    color:
+                                                      COLORS.ink,
+                                                  }}
+                                                >
+                                                  Batal
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    saveAnswerKey(
+                                                      question,
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    savingAnswerKey
+                                                  }
+                                                  className="rounded-[8px] px-3 py-2 text-[10.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                                  style={{
+                                                    backgroundColor:
+                                                      COLORS.navy,
+                                                  }}
+                                                >
+                                                  {savingAnswerKey
+                                                    ? 'Menyimpan...'
+                                                    : 'Simpan Kunci'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            },
                           )}
                         </div>
                       </div>

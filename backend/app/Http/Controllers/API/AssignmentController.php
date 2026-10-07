@@ -739,10 +739,10 @@ class AssignmentController extends Controller
             ],
 
             'status' => [
-            'sometimes',
-            'required',
-            'string',
-            'in:active,draft',
+                'sometimes',
+                'required',
+                'string',
+                'in:active,draft',
             ],
         ]);
 
@@ -838,6 +838,338 @@ class AssignmentController extends Controller
 
         return response()->json([
             'message' => 'Tugas berhasil diperbarui.',
+            'data' => $assignment,
+        ]);
+    }
+
+    /**
+     * Memperbarui kunci jawaban satu soal.
+     *
+     * Hanya berlaku untuk:
+     * - short
+     * - multiple
+     * - checkbox
+     *
+     * Setelah kunci jawaban berubah, seluruh submission
+     * pada assignment akan di-grade ulang menggunakan
+     * AutoGradingService agar nilai siswa otomatis
+     * menyesuaikan dengan kunci jawaban terbaru.
+     *
+     * PUT
+     * /api/guru/tugas/{assignment}/kunci-jawaban
+     */
+    public function updateAnswerKey(
+        Request $request,
+        Assignment $assignment
+    ) {
+        $user = $this->ensureTeacher($request);
+
+        /**
+         * Load schedule untuk memastikan assignment
+         * memang dimiliki oleh guru yang sedang login.
+         */
+        $assignment->load([
+            'schedules',
+            'questions.options',
+        ]);
+
+        abort_unless(
+            $assignment->schedules->contains(
+                'teacher_id',
+                $user->id
+            ),
+            403,
+            'Anda tidak memiliki akses ke tugas ini.'
+        );
+
+        /**
+         * Validasi request.
+         *
+         * short:
+         * - menggunakan correct_answer
+         * - correct_option_ids harus kosong
+         *
+         * multiple:
+         * - harus tepat satu correct_option_id
+         *
+         * checkbox:
+         * - minimal satu correct_option_id
+         */
+        $validator = Validator::make(
+            $request->all(),
+            [
+                'question_id' => [
+                    'required',
+                    'integer',
+                ],
+
+                'correct_answer' => [
+                    'nullable',
+                    'string',
+                ],
+
+                'correct_option_ids' => [
+                    'nullable',
+                    'array',
+                ],
+
+                'correct_option_ids.*' => [
+                    'integer',
+                    'distinct',
+                ],
+            ]
+        );
+
+        $validated = $validator->validate();
+
+        /**
+         * Pastikan question memang bagian dari assignment.
+         */
+        $question = $assignment->questions()
+            ->with('options')
+            ->whereKey($validated['question_id'])
+            ->first();
+
+        abort_unless(
+            $question,
+            404,
+            'Soal tidak ditemukan pada tugas ini.'
+        );
+
+        /**
+         * Hanya tipe soal yang memiliki auto grading
+         * yang boleh mengubah kunci jawaban.
+         */
+        abort_unless(
+            in_array(
+                $question->type,
+                [
+                    'short',
+                    'multiple',
+                    'checkbox',
+                ],
+                true
+            ),
+            422,
+            'Soal ini tidak menggunakan auto grading.'
+        );
+
+        $correctOptionIds = collect(
+            $validated['correct_option_ids'] ?? []
+        )
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        /**
+         * Validasi kunci berdasarkan tipe soal.
+         */
+        if ($question->type === 'short') {
+            $correctAnswer = trim(
+                (string) (
+                    $validated['correct_answer'] ?? ''
+                )
+            );
+
+            abort_if(
+                $correctAnswer === '',
+                422,
+                'Kunci jawaban wajib diisi.'
+            );
+
+            abort_if(
+                $correctOptionIds->isNotEmpty(),
+                422,
+                'Soal Jawaban Singkat tidak menggunakan pilihan jawaban.'
+            );
+        }
+
+        if (
+            in_array(
+                $question->type,
+                [
+                    'multiple',
+                    'checkbox',
+                ],
+                true
+            )
+        ) {
+            /**
+             * Multiple dan checkbox tidak menggunakan
+             * correct_answer.
+             */
+            abort_if(
+                isset($validated['correct_answer']) &&
+                trim(
+                    (string) (
+                        $validated['correct_answer'] ?? ''
+                    )
+                ) !== '',
+                422,
+                'Soal pilihan tidak menggunakan correct_answer.'
+            );
+
+            /**
+             * Pastikan semua option yang dikirim memang
+             * milik question tersebut.
+             */
+            $availableOptionIds = $question->options
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $invalidOptionIds = $correctOptionIds
+                ->diff($availableOptionIds);
+
+            abort_if(
+                $invalidOptionIds->isNotEmpty(),
+                422,
+                'Salah satu pilihan jawaban tidak valid.'
+            );
+
+            /**
+             * Pilihan ganda harus memiliki tepat satu
+             * jawaban benar.
+             */
+            if (
+                $question->type === 'multiple'
+                && $correctOptionIds->count() !== 1
+            ) {
+                abort(
+                    422,
+                    'Pilihan ganda harus memiliki tepat satu kunci jawaban.'
+                );
+            }
+
+            /**
+             * Checkbox harus memiliki minimal satu
+             * jawaban benar.
+             */
+            if (
+                $question->type === 'checkbox'
+                && $correctOptionIds->isEmpty()
+            ) {
+                abort(
+                    422,
+                    'Kotak centang harus memiliki minimal satu kunci jawaban.'
+                );
+            }
+        }
+
+        /**
+         * Simpan perubahan kunci jawaban dan re-grade
+         * seluruh submission dalam satu transaction.
+         *
+         * Jika proses grading gagal, perubahan kunci
+         * jawaban juga di-rollback.
+         */
+        DB::transaction(function () use (
+            $assignment,
+            $question,
+            $correctOptionIds,
+            $validated
+        ) {
+            /**
+             * ==========================================
+             * JAWABAN SINGKAT
+             * ==========================================
+             */
+            if ($question->type === 'short') {
+                $question->update([
+                    'correct_answer' => trim(
+                        (string) (
+                            $validated['correct_answer'] ?? ''
+                        )
+                    ),
+                ]);
+            }
+
+            /**
+             * ==========================================
+             * PILIHAN GANDA / KOTAK CENTANG
+             * ==========================================
+             */
+            if (
+                in_array(
+                    $question->type,
+                    [
+                        'multiple',
+                        'checkbox',
+                    ],
+                    true
+                )
+            ) {
+                /**
+                 * Set semua pilihan menjadi salah terlebih dahulu,
+                 * kemudian tandai pilihan yang baru sebagai benar.
+                 */
+                foreach ($question->options as $option) {
+                    $option->update([
+                        'is_correct' =>
+                            $correctOptionIds->contains(
+                                (int) $option->id
+                            ),
+                    ]);
+                }
+
+                /**
+                 * Pastikan correct_answer tidak tersisa
+                 * pada tipe pilihan.
+                 */
+                $question->update([
+                    'correct_answer' => null,
+                ]);
+            }
+
+            /**
+             * Reload relationship agar AutoGradingService
+             * menggunakan kunci jawaban terbaru.
+             */
+            $assignment->load([
+                'questions.options',
+            ]);
+
+            /**
+             * Ambil seluruh submission dari assignment.
+             *
+             * Semua attempt ikut dihitung ulang karena
+             * mode multiple menyimpan beberapa submission
+             * dan nilai tertinggi digunakan sebagai nilai akhir.
+             */
+            $submissions = $assignment->submissions()
+                ->lockForUpdate()
+                ->get();
+
+            $autoGradingService = app(
+                \App\Services\AutoGradingService::class
+            );
+
+            foreach ($submissions as $submission) {
+                $grade = $autoGradingService->grade(
+                    $submission,
+                    $assignment
+                );
+
+                $submission->update([
+                    'grade' => $grade,
+                ]);
+            }
+        });
+
+        /**
+         * Load data terbaru untuk dikirim kembali
+         * ke frontend.
+         */
+        $assignment->load([
+            'schedules.classroom',
+            'schedules.subject',
+            'questions.options',
+            'files',
+        ]);
+
+        return response()->json([
+            'message' =>
+                'Kunci jawaban berhasil diperbarui dan nilai siswa telah dihitung ulang.',
             'data' => $assignment,
         ]);
     }
