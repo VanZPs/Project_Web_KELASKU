@@ -15,6 +15,8 @@ use App\Http\Controllers\API\AssignmentController;
 use App\Http\Controllers\API\SubmissionController;
 use App\Http\Controllers\API\FileController;
 use App\Http\Controllers\API\TaskCommentController;
+use App\Http\Controllers\API\GradeController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -441,6 +443,30 @@ Route::middleware('auth:sanctum')->group(
         Route::delete(
             '/siswa/tugas/{assignment}/komentar/{comment}',
             [TaskCommentController::class, 'studentDestroy']
+        );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | GURU - NILAI
+        |--------------------------------------------------------------------------
+        */
+        // Ringkasan seluruh mata pelajaran, kelas, dan nilai guru.
+        Route::get(
+            '/guru/nilai',
+            [GradeController::class, 'index']
+        );
+
+        // Leger nilai siswa pada kelas dan mata pelajaran tertentu.
+        Route::get(
+            '/guru/nilai/leger',
+            [GradeController::class, 'leger']
+        );
+
+        // Memperbarui nilai siswa pada kelas dan mata pelajaran tertentu.
+        Route::patch(
+            '/guru/nilai/leger/nilai',
+            [GradeController::class, 'updateGrade']
         );
     }
 );

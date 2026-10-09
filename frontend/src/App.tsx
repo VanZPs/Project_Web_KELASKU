@@ -23,6 +23,7 @@ import JurnalKelas from './pages/Guru/JurnalKelas';
 import DaftarSiswa from './pages/Guru/DaftarSiswa';
 import Tugas from './pages/Guru/Tugas';
 import KelolaTugas from './pages/Guru/KelolaTugas';
+import Nilai from './pages/Guru/Nilai';
 
 
 /*
@@ -371,6 +372,16 @@ export default function App() {
               allowedRole="guru"
             >
               <KelolaTugas />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Nilai */}
+        <Route
+          path="/guru/nilai"
+          element={
+            <ProtectedRoute allowedRole="guru">
+              <Nilai />
             </ProtectedRoute>
           }
         />
