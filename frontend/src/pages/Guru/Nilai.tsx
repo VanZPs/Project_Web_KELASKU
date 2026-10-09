@@ -5,6 +5,8 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  Download,
+  FileSpreadsheet,
   GraduationCap,
   LoaderCircle,
   Pencil,
@@ -12,6 +14,9 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 import api from '../../api/axios';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
@@ -51,6 +56,7 @@ interface ClassSummary {
   taskCount: number;
   average: number | null;
   taskAverages: (number | null)[];
+  taskIds: (number | null)[];
   taskTitles: string[];
   taskTypes: string[];
 }
@@ -66,6 +72,31 @@ interface LedgerData {
   subjectName: string;
   students: Student[];
   tasks: Task[];
+}
+
+interface AssignmentDetail {
+  id: number;
+  title: string;
+  description?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  status?: string | null;
+  submission_mode?: string | null;
+  questions?: Array<{
+    id?: number;
+    type?: string;
+    question?: string | null;
+    options?: Array<{ id?: number; option_text?: string; text?: string; label?: string }>;
+  }>;
+  files?: Array<{
+    id: number;
+    original_name?: string;
+    file_name?: string;
+    filename?: string;
+    file_path?: string;
+    mime_type?: string;
+    size?: number;
+  }>;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -121,6 +152,25 @@ function formatScore(value: number | null | undefined) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function formatDate(value: string | null | undefined) {
+  if (!value) return 'Belum ditentukan';
+
+  // Tanggal YYYY-MM-DD diproses sebagai tanggal kalender lokal
+  // agar tidak bergeser sehari akibat konversi zona waktu.
+  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+  const date = dateOnly
+    ? new Date(`${value}T12:00:00`)
+    : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return 'Tanggal tidak valid';
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
 function formatType(type: string) {
   const labels: Record<string, string> = {
     short: 'Jawaban singkat',
@@ -169,6 +219,14 @@ function normalizeOverview(response: any): SubjectSummary[] {
                 : item,
             ),
           )
+        : [];
+
+      const taskIds = Array.isArray(rawTaskAverages)
+        ? rawTaskAverages.map((item: any) => {
+            if (typeof item !== 'object' || item === null) return null;
+            const id = Number(firstValue(item, ['assignment_id', 'task_id', 'id'], null));
+            return Number.isInteger(id) && id > 0 ? id : null;
+          })
         : [];
 
       const taskTitles = Array.isArray(rawTaskAverages)
@@ -244,6 +302,7 @@ function normalizeOverview(response: any): SubjectSummary[] {
           ),
         ),
         taskAverages,
+        taskIds,
         taskTitles,
         taskTypes,
       };
@@ -382,6 +441,9 @@ export default function Nilai() {
   const [ledger, setLedger] = useState<LedgerData | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState('');
+  const [selectedTask, setSelectedTask] = useState<AssignmentDetail | null>(null);
+  const [taskDetailLoading, setTaskDetailLoading] = useState(false);
+  const [taskDetailError, setTaskDetailError] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [sortOrder, setSortOrder] = useState<'az' | 'za'>('az');
   const [editingScore, setEditingScore] = useState<{
@@ -495,6 +557,54 @@ export default function Nilai() {
     }
   }
 
+  async function openTaskDetail(taskId: number | null, taskTitle: string) {
+    if (!taskId) {
+      setTaskDetailError('ID tugas tidak tersedia dari data ringkasan. Muat ulang halaman setelah API mengirim assignment_id.');
+      setSelectedTask({
+        id: 0,
+        title: taskTitle,
+      });
+      return;
+    }
+
+    setSelectedTask(null);
+    setTaskDetailError('');
+    setTaskDetailLoading(true);
+
+    try {
+      // Endpoint show tugas guru sudah tersedia di backend dan memeriksa hak akses guru.
+      const response = await api.get(`/guru/tugas/${taskId}`);
+      const detail = response?.data?.data ?? response?.data?.assignment ?? response?.data;
+
+      if (!detail || Number(detail.id) !== taskId) {
+        throw new Error('Respons detail tugas tidak sesuai dengan tugas yang dipilih.');
+      }
+
+      setSelectedTask({
+        ...detail,
+        id: taskId,
+        title: String(detail.title ?? taskTitle),
+        questions: Array.isArray(detail.questions) ? detail.questions : [],
+        files: Array.isArray(detail.files) ? detail.files : [],
+      });
+    } catch (err: any) {
+      setTaskDetailError(
+        err?.response?.data?.message ??
+          err?.message ??
+          'Detail tugas gagal dimuat. Silakan coba lagi.',
+      );
+      setSelectedTask({ id: taskId, title: taskTitle });
+    } finally {
+      setTaskDetailLoading(false);
+    }
+  }
+
+  function closeTaskDetail() {
+    setSelectedTask(null);
+    setTaskDetailError('');
+    setTaskDetailLoading(false);
+  }
+
   function backToSubjects() {
     setCurrentSubject(null);
     setSearch('');
@@ -536,7 +646,7 @@ export default function Nilai() {
     setSavingScore(true);
     setEditScoreError('');
     try {
-      await api.put('/guru/nilai/leger/nilai', {
+      await api.patch('/guru/nilai/leger/nilai', {
         classroom_id: ledgerClass.id,
         subject_id: ledgerClass.subjectId,
         student_id: editingScore.studentId,
@@ -590,6 +700,91 @@ export default function Nilai() {
         : b.name.localeCompare(a.name, 'id'),
     );
   }, [ledger, studentSearch, sortOrder]);
+
+  function getExportStudents(): Student[] {
+    if (!ledger) return [];
+    return [...ledger.students].sort((a, b) =>
+      sortOrder === 'az' ? a.name.localeCompare(b.name, 'id') : b.name.localeCompare(a.name, 'id'),
+    );
+  }
+
+  function getExportFilename(extension: 'pdf' | 'xlsx'): string {
+    const safeName = (value: string) => value.normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const classroom = safeName(ledger?.classroomName ?? ledgerClass?.name ?? 'Kelas');
+    const subject = safeName(ledger?.subjectName ?? ledgerClass?.subjectName ?? 'Mapel');
+    const semester = safeName(getSemesterLabel());
+    return `Leger_Nilai_${classroom}_${subject}_${semester}.${extension}`;
+  }
+
+  function downloadPDF() {
+    if (!ledger || !ledgerClass) return;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const students = getExportStudents();
+
+    doc.setFontSize(16);
+    doc.text('LEGER NILAI SISWA', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Kelas: ${ledger.classroomName}`, 14, 22);
+    doc.text(`Mata pelajaran: ${ledger.subjectName}`, 14, 27);
+    doc.text(`Semester: ${getSemesterLabel()}`, 14, 32);
+
+    autoTable(doc, {
+      startY: 38,
+      head: [['No', 'Email', 'Nama Lengkap', 'L/P', ...ledger.tasks.map((task) => task.title)]],
+      body: students.map((student, index) => [
+        index + 1, student.email || '–', student.name, student.gender || '–',
+        ...ledger.tasks.map((task) => formatScore(student.scores[task.id])),
+      ]),
+      theme: 'grid',
+      margin: { top: 12, right: 10, bottom: 15, left: 10 },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: [30, 42, 71], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 43 },
+        3: { cellWidth: 12, halign: 'center' },
+      },
+      didDrawPage: () => {
+        const pageNumber = doc.getCurrentPageInfo().pageNumber;
+        doc.setFontSize(8);
+        doc.text(`Halaman ${pageNumber}`, doc.internal.pageSize.getWidth() - 10,
+          doc.internal.pageSize.getHeight() - 5, { align: 'right' });
+      },
+    });
+    doc.save(getExportFilename('pdf'));
+  }
+
+  function downloadExcel() {
+    if (!ledger || !ledgerClass) return;
+    const students = getExportStudents();
+    const rows: (string | number)[][] = [
+      ['LEGER NILAI SISWA'],
+      ['Kelas', ledger.classroomName],
+      ['Mata pelajaran', ledger.subjectName],
+      ['Semester', getSemesterLabel()],
+      [],
+      ['No', 'Email', 'Nama Lengkap', 'L/P', ...ledger.tasks.map((task) => task.title)],
+      ...students.map((student, index) => [
+        index + 1, student.email || '–', student.name, student.gender || '–',
+        ...ledger.tasks.map((task) => {
+          const score = student.scores[task.id];
+          return score === null || score === undefined ? '' : score;
+        }),
+      ]),
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 6 }, { wch: 28 }, { wch: 28 }, { wch: 8 },
+      ...ledger.tasks.map(() => ({ wch: 16 })),
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Leger Nilai');
+    XLSX.writeFile(workbook, getExportFilename('xlsx'));
+  }
 
   return (
     <GuruLayout
@@ -703,6 +898,7 @@ export default function Nilai() {
                   key={`${item.subjectId}-${item.id}`}
                   item={item}
                   onOpen={() => openLedger(item)}
+                  onTaskClick={(taskId, taskTitle) => void openTaskDetail(taskId, taskTitle)}
                 />
               ))
             )}
@@ -786,6 +982,19 @@ export default function Nilai() {
                   <option value="az">Nama A–Z</option>
                   <option value="za">Nama Z–A</option>
                 </select>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap justify-end gap-2 px-5 pb-4 sm:px-8">
+                <button type="button" onClick={downloadPDF}
+                  disabled={ledgerLoading || !ledger || !!ledgerError}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#B93838] bg-[#C94040] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-[#A92F2F] hover:bg-[#A92F2F] disabled:cursor-not-allowed disabled:opacity-50">
+                  <Download size={16} /> Download PDF
+                </button>
+                <button type="button" onClick={downloadExcel}
+                  disabled={ledgerLoading || !ledger || !!ledgerError}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#27804A] bg-[#2F8F55] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-[#216B3D] hover:bg-[#216B3D] disabled:cursor-not-allowed disabled:opacity-50">
+                  <FileSpreadsheet size={16} /> Download Excel
+                </button>
               </div>
 
               {ledgerLoading ? (
@@ -1083,6 +1292,158 @@ export default function Nilai() {
             )}
           </div>
         )}
+
+            {(selectedTask || taskDetailLoading) && (
+              <div
+                className="fixed inset-0 z-[320] flex items-center justify-center bg-[#14110A]/45 p-4"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget && !taskDetailLoading) {
+                    closeTaskDetail();
+                  }
+                }}
+              >
+                <section
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Detail tugas"
+                  className="flex max-h-[calc(100vh-32px)] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-[#E3DACB] bg-[#FFFDF8] shadow-2xl"
+                >
+                  <header className="flex items-start justify-between gap-3 border-b border-[#E3DACB] px-5 py-4 sm:px-6">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E5ECF5] text-[#1E2A47]">
+                        <BookOpen size={19} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#8A6A2B]">Detail tugas</p>
+                        <h3 className="mt-1 break-words font-['Fraunces',serif] text-xl font-semibold text-[#141C30]">
+                          {selectedTask?.title ?? 'Memuat detail tugas...'}
+                        </h3>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeTaskDetail}
+                      disabled={taskDetailLoading}
+                      aria-label="Tutup detail tugas"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F1EAD8] disabled:opacity-50"
+                    >
+                      <X size={18} />
+                    </button>
+                  </header>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                    {taskDetailLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-12 text-sm text-[#6B7080]">
+                        <LoaderCircle size={18} className="animate-spin" />
+                        Memuat detail tugas...
+                      </div>
+                    ) : taskDetailError ? (
+                      <div className="rounded-xl border border-[#E9C9BE] bg-[#FBEEE9] px-4 py-3 text-sm leading-6 text-[#A8503B]">
+                        {taskDetailError}
+                        {selectedTask?.id ? (
+                          <button
+                            type="button"
+                            onClick={() => void openTaskDetail(selectedTask.id, selectedTask.title)}
+                            className="ml-2 font-bold underline underline-offset-2"
+                          >
+                            Coba lagi
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : selectedTask ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <div className="rounded-xl border border-[#E3DACB] bg-white px-3.5 py-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#858273]">Jenis tugas</p>
+                            <p className="mt-1 text-sm font-bold text-[#23283A]">
+                              {[...new Set((selectedTask.questions ?? []).map((question) => question.type).filter(Boolean))]
+                                .map((type) => ({
+                                  short: 'Jawaban singkat',
+                                  paragraph: 'Paragraf',
+                                  multiple: 'Pilihan ganda',
+                                  checkbox: 'Kotak centang',
+                                  upload: 'Upload file',
+                                  info: 'Catatan informasi',
+                                } as Record<string, string>)[type!] ?? type)
+                                .join(', ') || (selectedTask.files?.length ? 'Upload file' : 'Tugas')}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-[#E3DACB] bg-white px-3.5 py-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#858273]">Tanggal mulai</p>
+                            <p className="mt-1 text-sm font-bold text-[#23283A]">{formatDate(selectedTask.start_date)}</p>
+                          </div>
+                          <div className="rounded-xl border border-[#E3DACB] bg-white px-3.5 py-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#858273]">Tenggat</p>
+                            <p className="mt-1 text-sm font-bold text-[#23283A]">{formatDate(selectedTask.due_date)}</p>
+                          </div>
+                        </div>
+
+                        <section className="rounded-xl border border-[#E3DACB] bg-white p-4">
+                          <h4 className="text-sm font-extrabold text-[#141C30]">Deskripsi / materi</h4>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#52596A]">
+                            {selectedTask.description?.trim() || 'Tidak ada deskripsi tambahan.'}
+                          </p>
+                        </section>
+
+                        <section className="rounded-xl border border-[#E3DACB] bg-white p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-extrabold text-[#141C30]">Soal tugas</h4>
+                            <span className="rounded-full bg-[#E5ECF5] px-2.5 py-1 text-[10px] font-bold text-[#344563]">
+                              {selectedTask.questions?.length ?? 0} soal
+                            </span>
+                          </div>
+                          {selectedTask.questions?.length ? (
+                            <div className="mt-3 space-y-3">
+                              {selectedTask.questions.map((question, index) => (
+                                <div key={question.id ?? index} className="rounded-lg border border-[#EEE8DC] bg-[#FBF9F3] p-3.5">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#8A6A2B]">Soal {index + 1}</p>
+                                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#23283A]">
+                                    {question.question?.trim() || 'Konten soal tidak tersedia.'}
+                                  </p>
+                                  {question.options?.length ? (
+                                    <ul className="mt-2 space-y-1.5">
+                                      {question.options.map((option, optionIndex) => (
+                                        <li key={option.id ?? optionIndex} className="flex gap-2 text-xs leading-5 text-[#52596A]">
+                                          <span className="font-bold">{String.fromCharCode(65 + optionIndex)}.</span>
+                                          <span>{option.option_text ?? option.text ?? option.label ?? 'Pilihan'}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-[#6B7080]">Tugas ini tidak memiliki daftar soal terstruktur.</p>
+                          )}
+                        </section>
+
+                        {selectedTask.files?.length ? (
+                          <section className="rounded-xl border border-[#E3DACB] bg-white p-4">
+                            <h4 className="text-sm font-extrabold text-[#141C30]">Lampiran materi</h4>
+                            <ul className="mt-2 space-y-2">
+                              {selectedTask.files.map((file, index) => (
+                                <li key={file.id ?? index} className="flex items-start gap-2 rounded-lg bg-[#FBF9F3] px-3 py-2.5 text-sm text-[#344563]">
+                                  <Download size={15} className="mt-0.5 shrink-0" />
+                                  <span className="break-all">{file.original_name ?? file.file_name ?? file.filename ?? file.file_path ?? `Lampiran ${index + 1}`}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </section>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <footer className="flex justify-end border-t border-[#E3DACB] px-5 py-3.5 sm:px-6">
+                    <button type="button" onClick={closeTaskDetail} className="rounded-xl border border-[#DCD2C1] bg-white px-4 py-2.5 text-sm font-bold text-[#344563] transition hover:bg-[#FBF8EF]">
+                      Tutup
+                    </button>
+                  </footer>
+                </section>
+              </div>
+            )}
+
       </div>
     </GuruLayout>
   );
@@ -1237,12 +1598,22 @@ function SubjectCard({
 function ClassCard({
   item,
   onOpen,
+  onTaskClick,
 }: {
   item: ClassSummary;
   onOpen: () => void;
+  onTaskClick: (taskId: number | null, taskTitle: string) => void;
 }) {
   const isRequired = item.subjectName.toLowerCase().includes('wajib');
   const bars = item.taskAverages;
+  const [taskPage, setTaskPage] = useState(0);
+  const tasksPerPage = 2;
+  const taskPageCount = Math.max(1, Math.ceil(bars.length / tasksPerPage));
+  const safeTaskPage = Math.min(taskPage, taskPageCount - 1);
+  const visibleTaskBars = bars.slice(
+    safeTaskPage * tasksPerPage,
+    safeTaskPage * tasksPerPage + tasksPerPage,
+  );
 
   return (
     <article className={`${cardClass} flex flex-col`}>
@@ -1271,63 +1642,180 @@ function ClassCard({
           />
         </div>
 
-        <div className="mb-4 rounded-xl border border-[#E3DACB] bg-[#FBF9F3] px-3.5 py-3">
-          <div className="mb-3 flex items-center justify-between gap-3 text-xs font-bold text-[#141C30]">
-            <span>Rata-rata per tugas</span>
-            <span className="text-[11px] font-normal text-[#6B7080]">
-              {bars.length ? `Tugas 1–${bars.length}` : 'Belum ada nilai'}
+        <div className="mb-4 overflow-hidden rounded-2xl border border-[#E3DACB] bg-gradient-to-br from-white to-[#F8F6EF] p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E5ECF5] text-[#1E2A47]">
+                  <GraduationCap size={16} />
+                </span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#141C30]">
+                    Rata-rata per tugas
+                  </h3>
+                  <p className="mt-0.5 text-[11px] text-[#7B8190]">
+                    Perbandingan nilai rata-rata setiap tugas
+                  </p>
+                </div>
+              </div>
+            </div>
+            <span className="rounded-full border border-[#E3DACB] bg-white px-3 py-1.5 text-[11px] font-bold text-[#344563] shadow-sm">
+              {bars.length ? `${bars.length} tugas` : 'Belum ada tugas'}
             </span>
           </div>
+
           {bars.length ? (
-            <div className="flex min-h-[90px] items-end gap-1.5 overflow-hidden">
-              {bars.map((score, index) => {
-                const height =
-                  score === null ? 5 : Math.max(10, Math.min(100, score));
-                return (
-                  <div
-                    className="group/bar relative flex min-w-0 flex-1 flex-col items-center gap-1"
-                    key={item.taskTitles[index] ?? index}
-                    title={`${item.taskTitles[index] ?? `Tugas ${index + 1}`}: ${
-                      score === null ? 'Belum ada nilai' : `rata-rata ${score}`
-                    }`}
-                    aria-label={`${item.taskTitles[index] ?? `Tugas ${index + 1}`}: ${
-                      score === null ? 'Belum ada nilai' : `rata-rata ${score}`
-                    }`}
-                  >
-                    <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden min-w-max -translate-x-1/2 rounded-lg bg-[#141C30] px-3 py-2 shadow-lg group-hover/bar:block group-focus-within/bar:block">
-                      <span className="block text-left text-[11px] font-semibold leading-4 text-white">
-                        {item.taskTitles[index] ?? `Tugas ${index + 1}`}
-                      </span>
-                      <span className="mt-0.5 block text-left text-[10px] leading-4 text-[#B9C2D4]">
-                        Tugas {index + 1} · {item.taskTypes[index] ?? 'Tugas'}
-                      </span>
-                    </span>
-                    <span className="text-[10px] font-bold tabular-nums text-[#6B7080]">
-                      {score === null ? '–' : Math.round(score)}
-                    </span>
-                    <div
-                      className="flex h-14 w-full items-end justify-center"
-                      tabIndex={0}
+            <>
+              <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] font-medium text-[#6B7080]">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#2F8F55]" />
+                  Mencapai KKM (≥ {KKM})
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#C94040]" />
+                  Di bawah KKM
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-3 border-l-2 border-dashed border-[#A17A2D]" />
+                  Batas KKM
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTaskPage((page) => Math.max(0, page - 1))}
+                  disabled={safeTaskPage === 0}
+                  aria-label="Lihat dua tugas sebelumnya"
+                  title="Tugas sebelumnya"
+                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-xl border border-[#E3DACB] bg-white text-[#344563] shadow-sm transition hover:border-[#C5A45D] hover:bg-[#FBF8EF] disabled:cursor-not-allowed disabled:opacity-30 sm:h-10 sm:w-9"
+                >
+                  <ArrowLeft size={17} />
+                </button>
+
+                <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+                {visibleTaskBars.map((score, visibleIndex) => {
+                  const index = safeTaskPage * tasksPerPage + visibleIndex;
+                  const hasScore = score !== null && Number.isFinite(score);
+                  const normalizedScore = hasScore
+                    ? Math.max(0, Math.min(100, score))
+                    : 0;
+                  const meetsKKM = hasScore && score >= KKM;
+                  const taskName = item.taskTitles[index] ?? `Tugas ${index + 1}`;
+
+                  return (
+                    <button
+                      type="button"
+                      key={`${item.taskIds[index] ?? taskName}-${index}`}
+                      onClick={() => onTaskClick(item.taskIds[index] ?? null, taskName)}
+                      className="min-w-0 rounded-xl border border-[#ECE5D8] bg-white/90 px-3.5 py-3 text-left transition duration-200 hover:border-[#CDB783] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C5A45D]/50"
+                      title={`Klik untuk melihat detail: ${taskName} · ${item.taskTypes[index] ?? 'Tugas'}`}
+                      aria-label={`Lihat detail tugas ${taskName}`}
                     >
+                      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-bold text-[#23283A]" title={taskName}>
+                            {`Tugas ${index + 1}`}
+                          </p>
+                          <p className="mt-0.5 truncate text-[10px] text-[#858273]" title={taskName}>
+                            {taskName}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-lg px-2.5 py-1 text-sm font-extrabold tabular-nums ${
+                            !hasScore
+                              ? 'bg-[#F1EEE6] text-[#858273]'
+                              : meetsKKM
+                                ? 'bg-[#E5F2E9] text-[#287447]'
+                                : 'bg-[#FBE9E4] text-[#B33C32]'
+                          }`}
+                        >
+                          {hasScore ? Number(score.toFixed(1)).toString() : '–'}
+                        </span>
+                      </div>
+
                       <div
-                        className={`w-full max-w-[26px] rounded-t-md ${
-                          score !== null && score < KKM
-                            ? 'bg-gradient-to-b from-[#C46B4F] to-[#A8503B]'
-                            : 'bg-gradient-to-b from-[#2C3B5E] to-[#1E2A47]'
-                        }`}
-                        style={{ height: `${height}%` }}
-                      />
-                    </div>
-                    <span className="mt-0.5 text-[10px] text-[#6B7080]">
-                      {index + 1}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                        className="relative h-2.5 overflow-visible rounded-full bg-[#ECEAE3]"
+                        role="progressbar"
+                        aria-label={`Rata-rata ${taskName}`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={hasScore ? normalizedScore : 0}
+                      >
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            !hasScore
+                              ? 'bg-[#D8D4C8]'
+                              : meetsKKM
+                                ? 'bg-gradient-to-r from-[#4BA66D] to-[#287447]'
+                                : 'bg-gradient-to-r from-[#E68A72] to-[#C94040]'
+                          }`}
+                          style={{ width: `${normalizedScore}%` }}
+                        />
+                        <span
+                          className="pointer-events-none absolute -top-1 h-[18px] border-l-2 border-dashed border-[#A17A2D]"
+                          style={{ left: `${KKM}%` }}
+                          aria-hidden="true"
+                        />
+                      </div>
+                      <div className="mt-1.5 flex justify-between text-[9px] tabular-nums text-[#929080]">
+                        <span>0</span>
+                        <span className="font-semibold text-[#8A6A2B]">KKM {KKM}</span>
+                        <span>100</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTaskPage((page) => Math.min(taskPageCount - 1, page + 1))
+                  }
+                  disabled={safeTaskPage >= taskPageCount - 1}
+                  aria-label="Lihat dua tugas berikutnya"
+                  title="Tugas berikutnya"
+                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-xl border border-[#E3DACB] bg-white text-[#344563] shadow-sm transition hover:border-[#C5A45D] hover:bg-[#FBF8EF] disabled:cursor-not-allowed disabled:opacity-30 sm:h-10 sm:w-9"
+                >
+                  <ArrowRight size={17} />
+                </button>
+              </div>
+
+              {taskPageCount > 1 && (
+                <div className="mt-3 flex items-center justify-center gap-1.5">
+                  {Array.from({ length: taskPageCount }, (_, pageIndex) => (
+                    <button
+                      key={pageIndex}
+                      type="button"
+                      onClick={() => setTaskPage(pageIndex)}
+                      aria-label={`Tampilkan halaman tugas ${pageIndex + 1}`}
+                      aria-current={safeTaskPage === pageIndex ? 'page' : undefined}
+                      className={`h-1.5 rounded-full transition-all ${
+                        safeTaskPage === pageIndex
+                          ? 'w-5 bg-[#1E2A47]'
+                          : 'w-1.5 bg-[#D8D4C8] hover:bg-[#A7A08F]'
+                      }`}
+                    />
+                  ))}
+                  <span className="ml-1 text-[10px] text-[#7B8190]">
+                    {safeTaskPage * tasksPerPage + 1}–
+                    {Math.min((safeTaskPage + 1) * tasksPerPage, bars.length)} dari {bars.length} tugas
+                  </span>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="py-5 text-center text-xs text-[#6B7080]">
-              Nilai tugas akan muncul di sini setelah tersedia.
+            <div className="rounded-xl border border-dashed border-[#DCD2C1] bg-white/70 px-4 py-7 text-center">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#F1EEE6] text-[#858273]">
+                <BookOpen size={18} />
+              </span>
+              <p className="mt-2 text-xs font-semibold text-[#344563]">
+                Nilai tugas belum tersedia
+              </p>
+              <p className="mt-1 text-[11px] text-[#7B8190]">
+                Grafik akan muncul setelah data nilai tugas tersedia.
+              </p>
             </div>
           )}
         </div>
