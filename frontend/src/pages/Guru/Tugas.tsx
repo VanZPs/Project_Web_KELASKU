@@ -271,17 +271,6 @@ function isAssignmentRunning(
   return true;
 }
 
-function getClassKey(
-  schedule?: Schedule,
-  scheduleId?: number,
-) {
-  return String(
-    scheduleId ??
-      schedule?.id ??
-      `${schedule?.classroom?.id ?? 'class'}-${schedule?.subject?.id ?? 'subject'}`,
-  );
-}
-
 function getAssignmentSchedules(
   assignment: Assignment,
 ): Schedule[] {
@@ -412,6 +401,27 @@ export default function Tugas() {
 
   const [search, setSearch] =
     useState('');
+
+  // Simpan mata pelajaran yang dipilih agar saat kembali dari Kelola Tugas,
+  // halaman langsung menampilkan pilihan kelas pada mata pelajaran tersebut.
+  const TASK_SUBJECT_STORAGE_KEY = 'kelasku_tugas_selected_subject_id';
+
+  const [selectedSubjectId, setSelectedSubjectId] =
+    useState<number | null>(() => {
+      try {
+        const storedSubjectId = sessionStorage.getItem(
+          TASK_SUBJECT_STORAGE_KEY,
+        );
+        if (!storedSubjectId) return null;
+
+        const parsedSubjectId = Number(storedSubjectId);
+        return Number.isFinite(parsedSubjectId) && parsedSubjectId > 0
+          ? parsedSubjectId
+          : null;
+      } catch {
+        return null;
+      }
+    });
 
   const [createTaskModalOpen, setCreateTaskModalOpen] =
     useState(false);
@@ -651,58 +661,206 @@ export default function Tugas() {
       return 'Guru';
     }, [schedules]);
 
-
-  /*
+/*
   |--------------------------------------------------------------------------
-  | UNIQUE CLASSROOMS
+  | SUBJECTS AND CLASSES
   |--------------------------------------------------------------------------
+  | Mata pelajaran diambil dari jadwal mengajar dan relasi jadwal pada tugas.
+  | Kelas dikelompokkan berdasarkan mata pelajaran + kelas agar tidak berulang
+  | jika ada lebih dari satu slot jadwal untuk kelas yang sama.
   */
-  const uniqueClassrooms =
-    useMemo(() => {
+  const subjectCards = useMemo(() => {
+    const subjectMap = new Map<
+      number,
+      {
+        id: number;
+        name: string;
+        schedules: Schedule[];
+        classKeys: Set<string>;
+        assignments: Assignment[];
+      }
+    >();
 
-      const map =
-        new Map<
-          number,
-          Classroom
-        >();
+    const allSchedules: Schedule[] = [...schedules];
+    assignments.forEach((assignment) => {
+      getAssignmentSchedules(assignment).forEach((schedule) => {
+        allSchedules.push(schedule);
+      });
+    });
 
-      schedules.forEach(
-        (schedule) => {
-          if (
-            schedule.classroom
-          ) {
-            map.set(
-              schedule.classroom.id,
-              schedule.classroom,
-            );
+    allSchedules.forEach((schedule) => {
+      const subjectId = Number(schedule.subject_id ?? schedule.subject?.id);
+      const subjectName = schedule.subject?.name?.trim();
+
+      if (!Number.isFinite(subjectId) || subjectId <= 0 || !subjectName) {
+        return;
+      }
+
+      if (!subjectMap.has(subjectId)) {
+        subjectMap.set(subjectId, {
+          id: subjectId,
+          name: subjectName,
+          schedules: [],
+          classKeys: new Set<string>(),
+          assignments: [],
+        });
+      }
+
+      const subject = subjectMap.get(subjectId)!;
+      const classroomId = Number(schedule.classroom_id ?? schedule.classroom?.id);
+      const classKey = Number.isFinite(classroomId) && classroomId > 0
+        ? String(classroomId)
+        : `schedule-${schedule.id}`;
+
+      subject.classKeys.add(classKey);
+
+      if (
+        schedule.id &&
+        !subject.schedules.some((item) => item.id === schedule.id)
+      ) {
+        subject.schedules.push(schedule);
+      }
+    });
+
+    assignments.forEach((assignment) => {
+      const assignmentSchedules = getAssignmentSchedules(assignment);
+      const subjectIds = new Set(
+        assignmentSchedules
+          .map((schedule) => Number(schedule.subject_id ?? schedule.subject?.id))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      );
+
+      subjectIds.forEach((subjectId) => {
+        const subject = subjectMap.get(subjectId);
+        if (
+          subject &&
+          !subject.assignments.some((item) => item.id === assignment.id)
+        ) {
+          subject.assignments.push(assignment);
+        }
+      });
+    });
+
+    return [...subjectMap.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, 'id'),
+    );
+  }, [schedules, assignments]);
+
+  const visibleSubjectCards = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return subjectCards.filter((subject) =>
+      subject.name.toLowerCase().includes(keyword),
+    );
+  }, [subjectCards, search]);
+
+  const selectedSubject = subjectCards.find(
+    (subject) => subject.id === selectedSubjectId,
+  );
+
+  useEffect(() => {
+    if (
+      selectedSubjectId === null ||
+      subjectCards.length === 0 ||
+      subjectCards.some((subject) => subject.id === selectedSubjectId)
+    ) {
+      return;
+    }
+
+    setSelectedSubjectId(null);
+    try {
+      sessionStorage.removeItem(TASK_SUBJECT_STORAGE_KEY);
+    } catch {
+      // Abaikan jika sessionStorage tidak tersedia.
+    }
+  }, [selectedSubjectId, subjectCards]);
+
+  const subjectClassCards = useMemo(() => {
+    if (selectedSubjectId === null) return [];
+
+    const allSchedules: Schedule[] = [...schedules];
+    assignments.forEach((assignment) => {
+      getAssignmentSchedules(assignment).forEach((schedule) => {
+        allSchedules.push(schedule);
+      });
+    });
+
+    const classMap = new Map<
+      string,
+      { key: string; schedule: Schedule; assignments: Assignment[] }
+    >();
+
+    allSchedules.forEach((schedule) => {
+      const subjectId = Number(schedule.subject_id ?? schedule.subject?.id);
+      if (subjectId !== selectedSubjectId) return;
+
+      const classroomId = Number(schedule.classroom_id ?? schedule.classroom?.id);
+      const key = Number.isFinite(classroomId) && classroomId > 0
+        ? `${subjectId}-${classroomId}`
+        : `${subjectId}-schedule-${schedule.id}`;
+
+      if (!classMap.has(key)) {
+        classMap.set(key, { key, schedule, assignments: [] });
+      } else {
+        // Prioritaskan jadwal yang memiliki informasi kelas dan jadwal paling lengkap.
+        const current = classMap.get(key)!;
+        if (
+          (!current.schedule.classroom && schedule.classroom) ||
+          (!current.schedule.start_time && schedule.start_time)
+        ) {
+          current.schedule = schedule;
+        }
+      }
+    });
+
+    assignments.forEach((assignment) => {
+      const assignmentSchedules = getAssignmentSchedules(assignment);
+      const belongsToSubject = assignmentSchedules.some(
+        (schedule) =>
+          Number(schedule.subject_id ?? schedule.subject?.id) === selectedSubjectId,
+      );
+
+      if (belongsToSubject) {
+        assignmentSchedules.forEach((schedule) => {
+          const subjectId = Number(schedule.subject_id ?? schedule.subject?.id);
+          if (subjectId !== selectedSubjectId) return;
+
+          const classroomId = Number(schedule.classroom_id ?? schedule.classroom?.id);
+          const key = Number.isFinite(classroomId) && classroomId > 0
+            ? `${subjectId}-${classroomId}`
+            : `${subjectId}-schedule-${schedule.id}`;
+          const card = classMap.get(key);
+
+          if (card && !card.assignments.some((item) => item.id === assignment.id)) {
+            card.assignments.push(assignment);
           }
-        },
-      );
+        });
+        return;
+      }
 
-      assignments.forEach(
-        (assignment) => {
-          getAssignmentSchedules(
-            assignment,
-          ).forEach(
-            (schedule) => {
-              if (schedule.classroom) {
-                map.set(
-                  schedule.classroom.id,
-                  schedule.classroom,
-                );
-              }
-            },
-          );
-        },
-      );
-      return [
-        ...map.values(),
-      ];
-    }, [
-      schedules,
-      assignments,
-    ]);
+      // Fallback untuk respons API yang hanya menyertakan schedule_id.
+      if (assignment.schedule_id) {
+        const matching = [...classMap.values()].find(
+          (card) => card.schedule.id === assignment.schedule_id,
+        );
+        if (matching && !matching.assignments.some((item) => item.id === assignment.id)) {
+          matching.assignments.push(assignment);
+        }
+      }
+    });
 
+    const keyword = search.trim().toLowerCase();
+    return [...classMap.values()]
+      .filter((card) =>
+        !keyword ||
+        card.schedule.classroom?.name?.toLowerCase().includes(keyword),
+      )
+      .sort((a, b) =>
+        (a.schedule.classroom?.name ?? '').localeCompare(
+          b.schedule.classroom?.name ?? '',
+          'id',
+        ),
+      );
+  }, [schedules, assignments, selectedSubjectId, search]);
 
   /*
   |--------------------------------------------------------------------------
@@ -729,221 +887,6 @@ export default function Tugas() {
     assignments.filter(
       isAssignmentRunning,
     ).length;
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | FILTER ASSIGNMENTS
-  |--------------------------------------------------------------------------
-  */
-  const filteredAssignments =
-    useMemo(() => {
-
-      const keyword =
-        search
-          .trim()
-          .toLowerCase();
-
-      return assignments.filter(
-        (assignment) => {
-
-          const assignmentSchedules =
-            getAssignmentSchedules(
-              assignment,
-            );
-
-          const matchesScheduleSearch =
-            assignmentSchedules.some(
-              (schedule) =>
-                schedule.classroom?.name
-                  ?.toLowerCase()
-                  .includes(keyword) ||
-                schedule.subject?.name
-                  ?.toLowerCase()
-                  .includes(keyword),
-            );
-
-          const matchesSearch =
-            !keyword ||
-            assignment.title
-              .toLowerCase()
-              .includes(keyword) ||
-            matchesScheduleSearch;
-
-          const matchesFilter =
-            activeFilter ===
-              'all' ||
-            getUngradedCount(
-              assignment,
-            ) > 0;
-
-          return (
-            matchesSearch &&
-            matchesFilter
-          );
-        },
-      );
-    }, [
-      assignments,
-      search,
-      activeFilter,
-    ]);
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | GROUP ASSIGNMENTS
-  |--------------------------------------------------------------------------
-  */
-  const groupedCards =
-    useMemo(() => {
-      const groups =
-        new Map<
-          string,
-          {
-            key: string;
-            schedule?: Schedule;
-            assignments: Assignment[];
-          }
-        >();
-
-      filteredAssignments.forEach(
-        (assignment) => {
-          const assignmentSchedules =
-            getAssignmentSchedules(
-              assignment,
-            );
-
-          if (
-            assignmentSchedules.length === 0
-          ) {
-            const key = getClassKey(
-              assignment.schedule,
-              assignment.schedule_id,
-            );
-
-            if (!groups.has(key)) {
-              groups.set(key, {
-                key,
-                schedule:
-                  assignment.schedule,
-                assignments: [],
-              });
-            }
-
-            groups
-              .get(key)!
-              .assignments.push(
-                assignment,
-              );
-            return;
-          }
-
-          assignmentSchedules.forEach(
-            (schedule) => {
-              const key = getClassKey(
-                schedule,
-                schedule.id,
-              );
-
-              if (!groups.has(key)) {
-                groups.set(key, {
-                  key,
-                  schedule,
-                  assignments: [],
-                });
-              }
-
-              groups
-                .get(key)!
-                .assignments.push(
-                  assignment,
-                );
-            },
-          );
-        },
-      );
-
-      return [
-        ...groups.values(),
-      ];
-    }, [
-      filteredAssignments,
-    ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | SUBJECT ICON
-  |--------------------------------------------------------------------------
-  */
-  function renderSubjectIcon(
-    group: {
-      schedule?: Schedule;
-      assignments: Assignment[];
-    },
-  ) {
-
-    const subjectName =
-      group.schedule?.subject?.name
-        ?.toLowerCase() ?? '';
-
-    let background =
-      '#E5ECF5';
-
-    let color =
-      '#3E6BAE';
-
-    if (
-      subjectName.includes(
-        'matematika',
-      ) ||
-      subjectName.includes(
-        'fisika',
-      ) ||
-      subjectName.includes(
-        'kimia',
-      )
-    ) {
-
-      background =
-        '#E5ECF5';
-
-      color =
-        '#3E6BAE';
-
-    } else if (
-      subjectName.includes(
-        'bahasa',
-      ) ||
-      subjectName.includes(
-        'seni',
-      )
-    ) {
-
-      background =
-        '#E7D3A8';
-
-      color =
-        '#7A5A20';
-    }
-
-
-    return (
-      <div
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px]"
-        style={{
-          backgroundColor:
-            background,
-          color,
-        }}
-      >
-        <BookOpen
-          size={20}
-          strokeWidth={1.8}
-        />
-      </div>
-    );
-  }
 
   /*
   |--------------------------------------------------------------------------
@@ -1157,6 +1100,25 @@ export default function Tugas() {
         <div className="mb-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
+              {selectedSubject && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSubjectId(null);
+                    setSearch('');
+                    try {
+                      sessionStorage.removeItem(TASK_SUBJECT_STORAGE_KEY);
+                    } catch {
+                      // Abaikan jika sessionStorage tidak tersedia.
+                    }
+                  }}
+                  className="mb-4 inline-flex items-center gap-2 rounded-lg border border-[#DCD2C1] bg-[#FFFDF8] px-3.5 py-2 text-sm font-semibold text-[#344563] transition hover:border-[#C5A45D] hover:bg-white"
+                >
+                  <ArrowRight size={15} className="rotate-180" />
+                  Kembali ke mata pelajaran
+                </button>
+              )}
+
               <div className="mb-2 flex items-center gap-2">
 
                 <span className="h-1.5 w-1.5 rounded-full bg-[#C49A5A]" />
@@ -1171,9 +1133,16 @@ export default function Tugas() {
               </h1>
 
               <p className="mt-2 max-w-[520px] text-[13px] leading-5 text-[#6B7080]">
-                Kelola tugas untuk setiap kelas yang Anda ajar, mulai dari membuat
-                tugas baru hingga menilai yang sudah dikumpulkan.
+                {selectedSubject
+                  ? `Pilih kelas untuk mengelola tugas mata pelajaran ${selectedSubject.name}.`
+                  : 'Pilih mata pelajaran untuk melihat dan mengelola tugas di setiap kelas yang Anda ajar.'}
               </p>
+              {selectedSubject && (
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#E5ECF5] px-3 py-1 text-xs font-bold text-[#3E6BAE]">
+                  <BookOpen size={13} />
+                  {selectedSubject.name}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1302,7 +1271,7 @@ export default function Tugas() {
                         .value,
                     )
                   }
-                  placeholder="Cari tugas atau kelas..."
+                  placeholder={selectedSubject ? "Cari kelas..." : "Cari mata pelajaran..."}
                   className="w-full border-none bg-transparent text-[13.5px] outline-none"
                   style={{
                     color:
@@ -1373,7 +1342,9 @@ export default function Tugas() {
                   }}
                 >
                   {
-                    uniqueClassrooms.length
+                    selectedSubject
+                      ? subjectClassCards.length
+                      : subjectCards.length
                   }
                 </div>
 
@@ -1384,7 +1355,7 @@ export default function Tugas() {
                       '#6B7080',
                   }}
                 >
-                  Kelas diajar
+                  {selectedSubject ? 'Kelas diajar' : 'Mata pelajaran'}
                 </div>
               </div>
             </div>
@@ -1557,259 +1528,170 @@ export default function Tugas() {
 
 
           {/* =====================================================
-              GRID KARTU
+              PILIH MATA PELAJARAN / PILIH KELAS
           ====================================================== */}
           {loading ? (
             <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
-              {[1, 2, 3, 4].map(
-                (item) => (
-                  <div
-                    key={item}
-                    className="h-[235px] animate-pulse rounded-[14px] border"
-                    style={{
-                      backgroundColor:
-                        '#FFFDF8',
-                      borderColor:
-                        '#E3DACB',
-                    }}
-                  />
-                ),
-              )}
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} className="h-[235px] animate-pulse rounded-[14px] border"
+                  style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }} />
+              ))}
             </div>
-
-          ) : groupedCards.length ===
-            0 ? (
-            <div
-              className="rounded-[14px] border px-6 py-16 text-center"
-              style={{
-                backgroundColor:
-                  '#FFFDF8',
-                borderColor:
-                  '#E3DACB',
-              }}
-            >
-
-              <div
-                className="mx-auto flex h-12 w-12 items-center justify-center rounded-[12px]"
-                style={{
-                  backgroundColor:
-                    '#E7ECF4',
-                  color:
-                    '#1E2A47',
-                }}
-              >
-                <BookOpen
-                  size={21}
-                />
+          ) : error ? (
+            <div className="rounded-[14px] border px-6 py-16 text-center"
+              style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
+              <AlertCircle className="mx-auto text-[#A8503B]" size={25} />
+              <h2 className="mt-3 text-lg font-semibold text-[#141C30]">Data tugas gagal dimuat</h2>
+              <p className="mt-2 text-sm text-[#6B7080]">{error}</p>
+              <button type="button" onClick={() => { loadAssignments(); loadSchedules(); }}
+                className="mt-4 rounded-[10px] bg-[#1E2A47] px-4 py-2.5 text-sm font-bold text-white">
+                Coba lagi
+              </button>
+            </div>
+          ) : !selectedSubject ? (
+            visibleSubjectCards.length === 0 ? (
+              <div className="rounded-[14px] border px-6 py-16 text-center"
+                style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[12px] bg-[#E7ECF4] text-[#1E2A47]">
+                  <BookOpen size={21} />
+                </div>
+                <h2 className="mt-4 text-[19px] font-semibold text-[#141C30]">
+                  {search ? 'Mata pelajaran tidak ditemukan' : 'Belum ada mata pelajaran'}
+                </h2>
+                <p className="mx-auto mt-2 max-w-[430px] text-[13px] leading-6 text-[#6B7080]">
+                  {search ? 'Tidak ada mata pelajaran yang sesuai dengan pencarian.' : 'Mata pelajaran akan muncul setelah jadwal mengajar tersedia.'}
+                </p>
               </div>
-
-              <h2
-                className="mt-4 text-[19px] font-semibold"
-                style={{
-                  color:
-                    '#141C30',
-                  fontFamily:
-                    '"Fraunces", serif',
-                }}
-              >
-                {search ||
-                activeFilter ===
-                  'grading'
-                  ? 'Tugas tidak ditemukan'
-                  : 'Belum ada tugas'}
-              </h2>
-
-              <p
-                className="mx-auto mt-2 max-w-[430px] text-[13px] leading-6"
-                style={{
-                  color:
-                    '#6B7080',
-                }}
-              >
-                {search ||
-                activeFilter ===
-                  'grading'
-                  ? 'Tidak ada tugas yang sesuai dengan filter atau pencarian saat ini.'
-                  : 'Buat tugas pertama untuk mulai memberikan tugas kepada siswa.'}
-              </p>
-
-              {!search &&
-                activeFilter ===
-                  'all' && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCreateTaskModalOpen(true)
-                    }
-                    className="mx-auto mt-5 flex items-center gap-2 rounded-[10px] px-4 py-2.5 text-[13.5px] font-bold text-white"
-                    style={{
-                      backgroundColor:
-                        '#1E2A47',
-                    }}
-                  >
-                    <Plus
-                      size={15}
-                    />
-                    Tugas baru
-                  </button>
-                )}
-            </div>
-          ) : (
-
-            <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
-              {groupedCards.map(
-                (group) => {
-
-                  const schedule =
-                    group.schedule;
-
-                  const className =
-                    schedule?.subject
-                      ?.name &&
-                    schedule?.classroom
-                      ?.name
-                      ? `${schedule.subject.name} — ${schedule.classroom.name}`
-                      : schedule
-                          ?.classroom
-                          ?.name ??
-                        'Kelas';
-
-                  const studentCount =
-                    getStudentCount(
-                      schedule,
-                      classroomStudentCounts,
-                    );
+            ) : (
+              <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
+                {visibleSubjectCards.map((subject) => {
+                  const subjectNeedGrading = subject.assignments.reduce(
+                    (total, assignment) => total + getUngradedCount(assignment), 0);
+                  const subjectRunning = subject.assignments.filter(isAssignmentRunning).length;
+                  const classroomIds = [...new Set(subject.schedules.map(
+                    (schedule) => Number(schedule.classroom?.id ?? schedule.classroom_id))
+                    .filter((id) => Number.isFinite(id) && id > 0))];
+                  const studentCount = classroomIds.reduce((total, classroomId) => {
+                    const schedule = subject.schedules.find(
+                      (item) => Number(item.classroom?.id ?? item.classroom_id) === classroomId);
+                    return total + getStudentCount(schedule, classroomStudentCounts);
+                  }, 0);
 
                   return (
-                    <div
-                      key={group.key}
-                      className="flex flex-col overflow-hidden rounded-[14px] border shadow-sm"
-                      style={{
-                        backgroundColor:
-                          '#FFFDF8',
-                        borderColor:
-                          '#E3DACB',
-                      }}
-                    >
-                      <div className="flex items-start gap-3.5 border-b px-[22px] pb-4 pt-5">
-                        {renderSubjectIcon(
-                          group,
-                        )}
+                    <div key={subject.id} className="flex flex-col overflow-hidden rounded-[14px] border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
+                      <div className="flex items-start gap-3.5 border-b border-[#E3DACB] px-[22px] pb-5 pt-5">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-[#E5ECF5] text-[#3E6BAE]">
+                          <BookOpen size={20} strokeWidth={1.8} />
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <div
-                            className="text-[17px] leading-[1.3]"
-                            style={{
-                              color:
-                                '#141C30',
-                              fontFamily:
-                                '"Fraunces", serif',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {className}
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap gap-x-3.5 gap-y-2">
-                            <span
-                              className="flex items-center gap-1.5 text-[12px]"
-                              style={{
-                                color:
-                                  '#6B7080',
-                              }}
-                            >
-                              <Users
-                                size={14}
-                                opacity={
-                                  0.75
-                                }
-                              />
-
-                              {
-                                studentCount
-                              }{' '}
-                              siswa
-                            </span>
-                          </div>
-
-                          <div
-                            className="mt-2 flex items-center gap-1.5 text-[11.5px]"
-                            style={{
-                              color:
-                                '#8A806F',
-                            }}
-                          >
-                            <Calendar
-                              size={13}
-                              strokeWidth={1.9}
-                            />
-
-                            <span>
-                              {schedule?.day ??
-                                'Jadwal'}
-                            </span>
-
-                            <span
-                              className="h-1 w-1 rounded-full"
-                              style={{
-                                backgroundColor:
-                                  '#C7C0AC',
-                              }}
-                            />
-
-                            <Clock3
-                              size={13}
-                              strokeWidth={1.9}
-                            />
-
-                            <span>
-                              {schedule?.start_time
-                                ? schedule.start_time.slice(0, 5)
-                                : '--:--'}
-                              {' – '}
-                              {schedule?.end_time
-                                ? schedule.end_time.slice(0, 5)
-                                : '--:--'}
-                            </span>
-                          </div>
+                          <h2 className="font-['Fraunces',serif] text-[20px] font-semibold text-[#141C30]">{subject.name}</h2>
+                          <p className="mt-1.5 text-[12px] text-[#6B7080]">{subject.classKeys.size} kelas diajar</p>
                         </div>
                       </div>
-
-                      <div className="px-[22px] pb-1 pt-4">
-                        {renderCardStatus(
-                          group.assignments,
-                        )}
+                      <div className="grid grid-cols-2 gap-3 px-[22px] py-4">
+                        <div className="rounded-[10px] border border-[#E3DACB] bg-[#FBF9F3] p-3">
+                          <div className="font-['Fraunces',serif] text-xl font-semibold text-[#141C30]">{subject.assignments.length}</div>
+                          <p className="mt-1 text-[11.5px] text-[#6B7080]">Total tugas dibuat</p>
+                        </div>
+                        <div className="rounded-[10px] border border-[#E3DACB] bg-[#FBF9F3] p-3">
+                          <div className="font-['Fraunces',serif] text-xl font-semibold text-[#141C30]">{studentCount}</div>
+                          <p className="mt-1 text-[11.5px] text-[#6B7080]">Total siswa</p>
+                        </div>
                       </div>
-
-                      <div className="mt-auto px-[22px] pb-5">
+                      <div className="px-[22px] pb-1">
+                        {subjectNeedGrading > 0 ? (
+                          <div className="flex items-center gap-2.5 rounded-[10px] border border-[#E4BCA9] bg-[#F6E1D9] px-[13px] py-[11px] text-[13px] text-[#A8503B]">
+                            <span className="h-[9px] w-[9px] shrink-0 rounded-full bg-[#A8503B]" />
+                            <span><b>{subjectNeedGrading} tugas</b> perlu dinilai</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2.5 rounded-[10px] border border-[#C7DBCC] bg-[#E7F0EA] px-[13px] py-[11px] text-[13px] text-[#4C7A5E]">
+                            <span className="h-[9px] w-[9px] shrink-0 rounded-full bg-[#4C7A5E]" />
+                            <span className="font-bold">Semua tugas sudah dinilai</span>
+                          </div>
+                        )}
+                        <div className="mt-2.5 flex items-center gap-2.5 rounded-[10px] border border-[#E3DACB] bg-[#FBF9F3] px-[13px] py-[11px] text-[13px] text-[#23283A]">
+                          <span className="h-[9px] w-[9px] shrink-0 rounded-full bg-[#B9791F]" />
+                          <span><b>{subjectRunning} tugas</b> sedang berjalan</span>
+                        </div>
+                      </div>
+                      <div className="mt-auto px-[22px] pb-5 pt-5">
                         <button
                           type="button"
                           onClick={() => {
-                            if (group.schedule?.id) {
-                              navigate(
-                                `/guru/tugas/kelola/${group.schedule.id}`,
+                            setSelectedSubjectId(subject.id);
+                            setSearch('');
+                            try {
+                              sessionStorage.setItem(
+                                TASK_SUBJECT_STORAGE_KEY,
+                                String(subject.id),
                               );
+                            } catch {
+                              // Navigasi tetap berfungsi meski penyimpanan sesi tidak tersedia.
                             }
                           }}
-                          disabled={!group.schedule?.id}
-                          className="flex w-full items-center justify-center gap-2 rounded-[10px] border px-0 py-3 text-[13.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                          style={{
-                            backgroundColor:
-                              '#1E2A47',
-                            borderColor:
-                              '#1E2A47',
-                          }}
-                        >
-                          Kelola tugas
-                          <ArrowRight
-                            size={15}
-                            strokeWidth={2}
-                          />
+                          className="flex w-full items-center justify-center gap-2 rounded-[10px] border px-0 py-3 text-[13.5px] font-bold text-white transition hover:opacity-90"
+                          style={{ backgroundColor: '#1E2A47', borderColor: '#1E2A47' }}>
+                          Lihat kelas <ArrowRight size={15} strokeWidth={2} />
                         </button>
                       </div>
                     </div>
                   );
-                },
-              )}
+                })}
+              </div>
+            )
+          ) : subjectClassCards.length === 0 ? (
+            <div className="rounded-[14px] border px-6 py-16 text-center"
+              style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[12px] bg-[#E7ECF4] text-[#1E2A47]"><BookOpen size={21} /></div>
+              <h2 className="mt-4 text-[19px] font-semibold text-[#141C30]">
+                {search ? 'Kelas tidak ditemukan' : 'Belum ada kelas untuk mata pelajaran ini'}
+              </h2>
+              <p className="mx-auto mt-2 max-w-[430px] text-[13px] leading-6 text-[#6B7080]">
+                {search ? 'Tidak ada kelas yang sesuai dengan pencarian.' : 'Kelas akan muncul setelah jadwal mengajar untuk mata pelajaran ini tersedia.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
+              {subjectClassCards.map((group) => {
+                const schedule = group.schedule;
+                const className = schedule.classroom?.name ?? 'Kelas';
+                const studentCount = getStudentCount(schedule, classroomStudentCounts);
+                return (
+                  <div key={group.key} className="flex flex-col overflow-hidden rounded-[14px] border shadow-sm"
+                    style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
+                    <div className="flex items-start gap-3.5 border-b border-[#E3DACB] px-[22px] pb-4 pt-5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-[#E5ECF5] text-[#3E6BAE]">
+                        <BookOpen size={20} strokeWidth={1.8} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="font-['Fraunces',serif] text-[19px] font-semibold text-[#141C30]">
+                          {selectedSubject.name} — {className}
+                        </h2>
+                        <div className="mt-2 flex flex-wrap gap-x-3.5 gap-y-2">
+                          <span className="flex items-center gap-1.5 text-[12px] text-[#6B7080]"><Users size={14} opacity={0.75} />{studentCount} siswa</span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-1.5 text-[11.5px] text-[#8A806F]">
+                          <Calendar size={13} strokeWidth={1.9} /><span>{schedule.day ?? 'Jadwal'}</span>
+                          <span className="h-1 w-1 rounded-full bg-[#C7C0AC]" />
+                          <Clock3 size={13} strokeWidth={1.9} />
+                          <span>{schedule.start_time ? schedule.start_time.slice(0, 5) : '--:--'}{' – '}{schedule.end_time ? schedule.end_time.slice(0, 5) : '--:--'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-[22px] pb-1 pt-4">{renderCardStatus(group.assignments)}</div>
+                    <div className="mt-auto px-[22px] pb-5">
+                      <button type="button" onClick={() => navigate(`/guru/tugas/kelola/${schedule.id}`)}
+                        disabled={!schedule.id}
+                        className="flex w-full items-center justify-center gap-2 rounded-[10px] border px-0 py-3 text-[13.5px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                        style={{ backgroundColor: '#1E2A47', borderColor: '#1E2A47' }}>
+                        Kelola tugas <ArrowRight size={15} strokeWidth={2} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </main>
