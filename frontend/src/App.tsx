@@ -18,7 +18,6 @@ import {
 
 import KelasSaya from './pages/Guru/KelasSaya';
 import TambahKelas from './pages/Guru/TambahKelas';
-import EditProfile from './pages/Guru/EditProfile';
 import JurnalKelas from './pages/Guru/JurnalKelas';
 import DaftarSiswa from './pages/Guru/DaftarSiswa';
 import Tugas from './pages/Guru/Tugas';
@@ -387,15 +386,14 @@ export default function App() {
         />
 
 
-        {/* Edit Profile */}
+        {/* Edit Profil sekarang dibuka sebagai modal dari Sidebar.
+            URL lama diarahkan kembali ke dashboard Guru. */}
 
         <Route
           path="/guru/profil"
           element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <EditProfile />
+            <ProtectedRoute allowedRole="guru">
+              <Navigate to="/guru/dashboard" replace />
             </ProtectedRoute>
           }
         />
