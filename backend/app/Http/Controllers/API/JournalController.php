@@ -628,7 +628,7 @@ class JournalController extends Controller
         )
             ->whereDate(
                 'date',
-                now()
+                now('Asia/Jakarta')->toDateString()
             )
             ->get()
             ->keyBy('student_id');
@@ -652,9 +652,10 @@ class JournalController extends Controller
                     'email' =>
                         $student->email,
 
+                    // Kosongkan status bila belum ada presensi tersimpan.
                     'status' =>
                         $attendance?->status
-                        ?? 'hadir',
+                        ?? null,
 
                     'notes' =>
                         $attendance?->notes
@@ -682,6 +683,10 @@ class JournalController extends Controller
 
                     'is_holiday' =>
                         $journal->is_holiday,
+
+                    'is_empty' =>
+                        !$journal->is_holiday
+                        && $journal->topic === 'Jurnal Kelas Kosong',
 
                     'holiday_name' =>
                         $journal->holiday_name,
@@ -768,7 +773,8 @@ class JournalController extends Controller
          * VALIDASI HARI
          * ============================================================
          */
-        $today = now()
+        $nowJakarta = now('Asia/Jakarta');
+        $today = $nowJakarta
             ->locale('id')
             ->translatedFormat('l');
 
@@ -778,6 +784,31 @@ class JournalController extends Controller
                 'message' =>
                     "Kelas hanya dapat dimulai pada hari {$schedule->day}. "
                     . "Hari ini adalah {$today}.",
+            ], 422);
+        }
+
+        /*
+         * ============================================================
+         * VALIDASI JAM MENGAJAR
+         * ============================================================
+         *
+         * Waktu menggunakan zona Asia/Jakarta.
+         * Jadwal aktif mulai tepat pada start_time dan berakhir
+         * tepat pada end_time (end_time tidak termasuk).
+         */
+        $currentTime = $nowJakarta->format('H:i:s');
+        $startTime = substr((string) $schedule->start_time, 0, 8);
+        $endTime = substr((string) $schedule->end_time, 0, 8);
+
+        if ($currentTime < $startTime || $currentTime >= $endTime) {
+            return response()->json([
+                'success' => false,
+                'message' =>
+                    'Jurnal hanya dapat diisi selama jadwal mengajar berlangsung, yaitu '
+                    . substr($startTime, 0, 5)
+                    . '–'
+                    . substr($endTime, 0, 5)
+                    . ' WIB.',
             ], 422);
         }
 
@@ -839,8 +870,9 @@ class JournalController extends Controller
          * ============================================================
          */
         $journalDate = \Carbon\Carbon::parse(
-            $validated['date']
-        );
+            $validated['date'],
+            'Asia/Jakarta'
+        )->startOfDay();
 
         $journalDateDay = $journalDate
             ->locale('id')
@@ -860,7 +892,7 @@ class JournalController extends Controller
          * VALIDASI TANGGAL HARUS HARI INI
          * ============================================================
          */
-        if (!$journalDate->isSameDay(now())) {
+        if (!$journalDate->isSameDay($nowJakarta)) {
             return response()->json([
                 'success' => false,
                 'message' =>
@@ -902,17 +934,21 @@ class JournalController extends Controller
             'schedule_id',
             $schedule->id
         )
-            ->whereDate(
-                'date',
-                $validated['date']
-            )
-            ->exists();
+            ->whereDate('date', $validated['date'])
+            ->first();
 
-        if ($existingJournal) {
+        // Jurnal kosong otomatis boleh dilengkapi oleh guru.
+        // Jurnal normal dan jurnal hari libur tetap tidak boleh diduplikasi.
+        if (
+            $existingJournal
+            && (
+                $existingJournal->is_holiday
+                || $existingJournal->topic !== 'Jurnal Kelas Kosong'
+            )
+        ) {
             return response()->json([
                 'success' => false,
-                'message' =>
-                    'Jurnal untuk jadwal hari ini sudah dibuat.',
+                'message' => 'Jurnal untuk jadwal hari ini sudah dibuat.',
             ], 422);
         }
 
@@ -923,54 +959,102 @@ class JournalController extends Controller
          */
         $journal = DB::transaction(function () use (
             $validated,
-            $schedule
+            $schedule,
+            $existingJournal
         ) {
-            $journal = Journal::create([
-                'schedule_id' =>
-                    $schedule->id,
+            $journalData = [
+                'topic' => $validated['topic'],
+                'description' => $validated['description'] ?? null,
+                'is_holiday' => false,
+                'holiday_name' => null,
+            ];
 
-                'date' =>
-                    $validated['date'],
-
-                'topic' =>
-                    $validated['topic'],
-
-                'description' =>
-                    $validated['description']
-                    ?? null,
-
-                /*
-                 * Jurnal yang dibuat guru
-                 * bukan jurnal hari libur.
-                 */
-                'is_holiday' =>
-                    false,
-
-                'holiday_name' =>
-                    null,
-            ]);
+            if ($existingJournal) {
+                // Mengubah penanda jurnal kosong menjadi jurnal asli guru.
+                $existingJournal->update($journalData);
+                $journal = $existingJournal->fresh();
+            } else {
+                $journal = Journal::create([
+                    'schedule_id' => $schedule->id,
+                    'date' => $validated['date'],
+                    ...$journalData,
+                ]);
+            }
 
             foreach ($validated['attendances'] as $attendance) {
                 Attendance::updateOrCreate(
                     [
-                        'schedule_id' =>
-                            $schedule->id,
-
-                        'student_id' =>
-                            $attendance['student_id'],
-
-                        'date' =>
-                            $validated['date'],
+                        'schedule_id' => $schedule->id,
+                        'student_id' => $attendance['student_id'],
+                        'date' => $validated['date'],
                     ],
                     [
-                        'status' =>
-                            $attendance['status'],
-
-                        'notes' =>
-                            $attendance['notes']
-                            ?? null,
+                        'status' => $attendance['status'],
+                        'notes' => $attendance['notes'] ?? null,
                     ]
                 );
+            }
+
+            // Sinkronkan hanya baris presensi yang belum ada pada jurnal kosong.
+            $sameClassSchedules = Schedule::where('classroom_id', $schedule->classroom_id)
+                ->where('day', $schedule->day)
+                ->orderBy('start_time')
+                ->get();
+
+            $sourceRows = collect();
+
+            foreach ($sameClassSchedules as $candidate) {
+                $candidateJournal = Journal::where('schedule_id', $candidate->id)
+                    ->whereDate('date', $validated['date'])
+                    ->first();
+
+                if (
+                    !$candidateJournal
+                    || $candidateJournal->is_holiday
+                    || $candidateJournal->topic === 'Jurnal Kelas Kosong'
+                ) {
+                    continue;
+                }
+
+                $rows = Attendance::where('schedule_id', $candidate->id)
+                    ->whereDate('date', $validated['date'])
+                    ->orderBy('student_id')
+                    ->get();
+
+                if ($rows->isNotEmpty()) {
+                    $sourceRows = $rows;
+                    break;
+                }
+            }
+
+            if ($sourceRows->isNotEmpty()) {
+                foreach ($sameClassSchedules as $targetSchedule) {
+                    $targetJournal = Journal::where('schedule_id', $targetSchedule->id)
+                        ->whereDate('date', $validated['date'])
+                        ->first();
+
+                    if (
+                        !$targetJournal
+                        || $targetJournal->is_holiday
+                        || $targetJournal->topic !== 'Jurnal Kelas Kosong'
+                    ) {
+                        continue;
+                    }
+
+                    foreach ($sourceRows as $sourceRow) {
+                        Attendance::firstOrCreate(
+                            [
+                                'schedule_id' => $targetSchedule->id,
+                                'student_id' => $sourceRow->student_id,
+                                'date' => $validated['date'],
+                            ],
+                            [
+                                'status' => $sourceRow->status,
+                                'notes' => $sourceRow->notes,
+                            ]
+                        );
+                    }
+                }
             }
 
             return $journal;
@@ -1002,6 +1086,10 @@ class JournalController extends Controller
 
                     'is_holiday' =>
                         $journal->is_holiday,
+
+                    'is_empty' =>
+                        !$journal->is_holiday
+                        && $journal->topic === 'Jurnal Kelas Kosong',
 
                     'holiday_name' =>
                         $journal->holiday_name,
@@ -1123,6 +1211,10 @@ class JournalController extends Controller
                      */
                     'is_holiday' =>
                         $journal->is_holiday,
+
+                    'is_empty' =>
+                        !$journal->is_holiday
+                        && $journal->topic === 'Jurnal Kelas Kosong',
 
                     'holiday_name' =>
                         $journal->holiday_name,

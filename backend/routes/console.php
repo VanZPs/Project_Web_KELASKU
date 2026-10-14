@@ -11,3 +11,8 @@ Artisan::command('inspire', function () {
 Schedule::command('journals:generate-holidays')
     ->dailyAt('00:05')
     ->timezone('Asia/Jakarta');
+
+Schedule::command('journals:generate-empty')
+    ->everyMinute()
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping();

@@ -3,6 +3,10 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { Download, FileSpreadsheet } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 import api from '../../api/axios';
 import { KelasSayaLayout } from '../../layouts/Guru/KelasSayaLayout';
@@ -1812,6 +1816,182 @@ function ClassStudentModal({
       sort,
     ]);
 
+
+  // Data ekspor berisi seluruh siswa kelas, tidak terpengaruh pencarian atau pengurutan modal.
+  const exportRows = useMemo(() => {
+    return [...kelas.siswa]
+      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+      .map((student, index) => ({
+        no: index + 1,
+        nama: student.nama,
+        email: student.email || '-',
+        gender:
+          student.jenis_kelamin?.toLowerCase() === 'laki-laki'
+            ? 'L'
+            : student.jenis_kelamin?.toLowerCase() === 'perempuan'
+              ? 'P'
+              : '-',
+        hadir: student.summary.hadir,
+        izin: student.summary.izin,
+        sakit: student.summary.sakit,
+        dispen: student.summary.dispen,
+        alpa: student.summary.alpa,
+        kehadiran: student.summary.persentase,
+      }));
+  }, [kelas.siswa]);
+
+  const exportFileBase = `Presensi-${kelas.nama.replace(/[^a-zA-Z0-9-_]+/g, '-')}`;
+
+  const exportDate = () =>
+    new Intl.DateTimeFormat('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+  function exportAttendancePdf() {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(30, 42, 71);
+    doc.text('Rekap Presensi Siswa', 14, 16);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(80, 85, 100);
+    doc.text(`Kelas: ${kelas.nama}`, 14, 23);
+    doc.text('Semester ganjil 2026/2027', 14, 29);
+    doc.text(`Jumlah siswa: ${exportRows.length}`, 14, 35);
+    doc.text(`Tanggal ekspor: ${exportDate()}`, 14, 41);
+
+    autoTable(doc, {
+      startY: 47,
+      head: [[
+        'No',
+        'Nama lengkap',
+        'Email',
+        'L/P',
+        'Hadir',
+        'Izin',
+        'Sakit',
+        'Dispen',
+        'Alpa',
+        'Kehadiran (%)',
+      ]],
+      body: exportRows.map((row) => [
+        row.no,
+        row.nama,
+        row.email,
+        row.gender,
+        row.hadir,
+        row.izin,
+        row.sakit,
+        row.dispen,
+        row.alpa,
+        `${row.kehadiran}%`,
+      ]),
+      theme: 'grid',
+      styles: {
+        font: 'helvetica',
+        fontSize: 8,
+        cellPadding: 2.5,
+        textColor: [35, 40, 58],
+        lineColor: [227, 218, 203],
+        lineWidth: 0.2,
+      },
+      headStyles: {
+        fillColor: [30, 42, 71],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: {
+        fillColor: [251, 248, 241],
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 12, halign: 'center' },
+        4: { halign: 'center' },
+        5: { halign: 'center' },
+        6: { halign: 'center' },
+        7: { halign: 'center' },
+        8: { halign: 'center' },
+        9: { halign: 'center' },
+      },
+      didDrawPage: () => {
+        doc.setFontSize(8);
+        doc.setTextColor(120, 124, 137);
+        doc.text(
+          `Halaman ${doc.getCurrentPageInfo().pageNumber} dari ${doc.getNumberOfPages()}`,
+          doc.internal.pageSize.getWidth() - 14,
+          doc.internal.pageSize.getHeight() - 7,
+          { align: 'right' },
+        );
+      },
+    });
+
+    doc.save(`${exportFileBase}.pdf`);
+  }
+
+  function exportAttendanceExcel() {
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['REKAP PRESENSI SISWA'],
+      [`Kelas: ${kelas.nama}`],
+      ['Semester ganjil 2026/2027'],
+      [`Tanggal ekspor: ${exportDate()}`],
+      [`Jumlah siswa: ${exportRows.length}`],
+      [],
+      [
+        'No',
+        'Nama lengkap',
+        'Email',
+        'L/P',
+        'Hadir',
+        'Izin',
+        'Sakit',
+        'Dispen',
+        'Alpa',
+        'Kehadiran (%)',
+      ],
+      ...exportRows.map((row) => [
+        row.no,
+        row.nama,
+        row.email,
+        row.gender,
+        row.hadir,
+        row.izin,
+        row.sakit,
+        row.dispen,
+        row.alpa,
+        row.kehadiran,
+      ]),
+    ]);
+
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 28 },
+      { wch: 34 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 17 },
+    ];
+    worksheet['!freeze'] = { xSplit: 0, ySplit: 7 };
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Presensi');
+    XLSX.writeFile(workbook, `${exportFileBase}.xlsx`);
+  }
+
   return (
     <ModalOverlay>
       <div className="w-full max-w-[1120px] max-h-[88vh] bg-[#FFFDF8] rounded-[16px] border border-[#E3DACB] shadow-[0_25px_80px_rgba(20,28,48,0.25)] overflow-hidden flex flex-col">
@@ -1891,16 +2071,39 @@ function ClassStudentModal({
           </div>
 
 
-          <select
-            value={sort}
-            onChange={(event) =>
-              setSort(
-                event.target
-                  .value as typeof sort
-              )
-            }
-            className="h-[39px] px-3 rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] text-[12px] text-[#5F6574] outline-none focus:border-[#B98A3E]"
-          >
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={exportAttendancePdf}
+              disabled={exportRows.length === 0}
+              className="inline-flex h-[39px] items-center justify-center gap-2 rounded-[9px] border border-[#B42318] bg-[#C9362B] px-3 text-[12px] font-semibold text-white transition hover:bg-[#A92B22] disabled:cursor-not-allowed disabled:opacity-50"
+              title="Unduh rekap presensi PDF"
+            >
+              <Download className="h-4 w-4" />
+              PDF
+            </button>
+
+            <button
+              type="button"
+              onClick={exportAttendanceExcel}
+              disabled={exportRows.length === 0}
+              className="inline-flex h-[39px] items-center justify-center gap-2 rounded-[9px] border border-[#2F7650] bg-[#37865C] px-3 text-[12px] font-semibold text-white transition hover:bg-[#286A46] disabled:cursor-not-allowed disabled:opacity-50"
+              title="Unduh rekap presensi Excel"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
+            </button>
+
+            <select
+              value={sort}
+              onChange={(event) =>
+                setSort(
+                  event.target
+                    .value as typeof sort
+                )
+              }
+              className="h-[39px] px-3 rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] text-[12px] text-[#5F6574] outline-none focus:border-[#B98A3E]"
+            >
             <option value="nama_asc">
               Nama A–Z
             </option>
@@ -1917,6 +2120,7 @@ function ClassStudentModal({
               Kehadiran terendah
             </option>
           </select>
+          </div>
 
         </div>
 

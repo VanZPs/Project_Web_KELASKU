@@ -36,6 +36,7 @@ interface JurnalTerakhir {
   description: string | null;
   is_holiday: boolean;
   holiday_name: string | null;
+  is_empty?: boolean;
 }
 
 interface Presensi {
@@ -90,7 +91,7 @@ interface StudentItem {
   id: number;
   nama: string;
   email: string;
-  status: AttendanceStatus;
+  status: AttendanceStatus | null;
   notes: string;
 }
 
@@ -120,6 +121,7 @@ interface HistoryItem {
   description: string | null;
   is_holiday: boolean;
   holiday_name: string | null;
+  is_empty?: boolean;
   kelas: string;
   mata_pelajaran: string;
 }
@@ -602,13 +604,6 @@ export default function JurnalKelas() {
   ] = useState('');
 
   const [
-    period,
-    setPeriod,
-  ] = useState<
-    'minggu_ini' | 'semua'
-  >('minggu_ini');
-
-  const [
     loading,
     setLoading,
   ] = useState(true);
@@ -765,6 +760,18 @@ export default function JurnalKelas() {
   const normalizedToday =
     normalizeDay(todayName);
 
+  // Perbarui waktu secara berkala agar tombol otomatis aktif/nonaktif
+  // ketika memasuki atau melewati jam mengajar.
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   /*
    * ============================================================
    * MAPEL GURU
@@ -873,6 +880,72 @@ export default function JurnalKelas() {
     );
   };
 
+  const getScheduleTimeRange = (
+    schedule: JurnalScheduleToday | JurnalSchedule | null
+  ): { startMinutes: number; endMinutes: number } | null => {
+    if (!schedule?.waktu) return null;
+
+    // Mendukung format seperti "10:00 - 11:30", "10.00–11.30",
+    // maupun waktu yang menyertakan detik.
+    const times = schedule.waktu.match(/(\d{1,2})[.:](\d{2})(?::\d{2})?/g);
+    if (!times || times.length < 2) return null;
+
+    const toMinutes = (value: string): number => {
+      const match = value.match(/(\d{1,2})[.:](\d{2})/);
+      if (!match) return Number.NaN;
+      return Number(match[1]) * 60 + Number(match[2]);
+    };
+
+    const startMinutes = toMinutes(times[0]);
+    const endMinutes = toMinutes(times[1]);
+
+    if (
+      !Number.isFinite(startMinutes) ||
+      !Number.isFinite(endMinutes) ||
+      endMinutes <= startMinutes
+    ) return null;
+
+    return { startMinutes, endMinutes };
+  };
+
+  const isWithinSchedule = (item: JurnalItem): boolean => {
+    const schedule = getTodaySchedule(item);
+    if (!schedule) return false;
+
+    const range = getScheduleTimeRange(schedule);
+    if (!range) return false;
+
+    const nowMinutes =
+      currentTime.getHours() * 60 + currentTime.getMinutes() +
+      currentTime.getSeconds() / 60;
+
+    // Jam akhir tidak termasuk: pada pukul 11.30, jadwal 10.00–11.30
+    // sudah berakhir dan tombol tidak lagi dapat digunakan.
+    return nowMinutes >= range.startMinutes && nowMinutes < range.endMinutes;
+  };
+
+  const getScheduleAvailabilityMessage = (item: JurnalItem): string => {
+    const schedule = getTodaySchedule(item);
+    if (!schedule) {
+      return 'Jurnal hanya dapat diisi pada hari sesuai jadwal mengajar.';
+    }
+
+    const range = getScheduleTimeRange(schedule);
+    if (!range) {
+      return `Format waktu jadwal (${schedule.waktu}) belum dapat dibaca. Hubungi administrator sekolah.`;
+    }
+
+    const formatTime = (minutes: number) =>
+      `${String(Math.floor(minutes / 60)).padStart(2, '0')}.${String(minutes % 60).padStart(2, '0')}`;
+    const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+    if (nowMinutes < range.startMinutes) {
+      return `Tombol Mulai Kelas akan aktif pukul ${formatTime(range.startMinutes)} dan hanya tersedia sampai pukul ${formatTime(range.endMinutes)}.`;
+    }
+
+    return `Waktu pengisian jurnal untuk jadwal ini sudah berakhir pada pukul ${formatTime(range.endMinutes)}. Jadwal yang tidak diisi akan tercatat sebagai jurnal kosong.`;
+  };
+
   /*
    * ============================================================
    * FILTER & SORT JURNAL
@@ -902,8 +975,11 @@ export default function JurnalKelas() {
         result =
           result.filter(
             (item) =>
-              item.status ===
-              'lengkap'
+              item.status === 'lengkap' &&
+              !(
+                item.jurnal_terakhir?.is_holiday !== true &&
+                item.jurnal_terakhir?.topic === 'Jurnal Kelas Kosong'
+              )
           );
       }
 
@@ -1055,14 +1131,11 @@ export default function JurnalKelas() {
         }
       );
 
-      void period;
-
       return result;
     }, [
       jurnalList,
       activeTab,
       searchQuery,
-      period,
       normalizedToday,
     ]);
 
@@ -1089,15 +1162,21 @@ export default function JurnalKelas() {
   const jumlahLengkap =
     jurnalList.filter(
       (item) =>
-        item.status ===
-        'lengkap'
+        item.status === 'lengkap' &&
+        !(
+          item.jurnal_terakhir?.is_holiday !== true &&
+          item.jurnal_terakhir?.topic === 'Jurnal Kelas Kosong'
+        )
     ).length;
 
   const jumlahMenunggu =
     jurnalList.filter(
       (item) =>
-        item.status ===
-        'menunggu'
+        item.status === 'menunggu' ||
+        (
+          item.jurnal_terakhir?.is_holiday !== true &&
+          item.jurnal_terakhir?.topic === 'Jurnal Kelas Kosong'
+        )
     ).length;
 
   /*
@@ -1112,11 +1191,8 @@ export default function JurnalKelas() {
     const todaySchedule =
       getTodaySchedule(item);
 
-    if (!todaySchedule) {
-      setUnavailableWarningId(
-        item.id
-      );
-
+    if (!todaySchedule || !isWithinSchedule(item)) {
+      setUnavailableWarningId(item.id);
       return;
     }
 
@@ -1167,7 +1243,7 @@ export default function JurnalKelas() {
 
               status:
                 student.status ??
-                'hadir',
+                null,
 
               notes:
                 student.notes ??
@@ -1288,6 +1364,13 @@ export default function JurnalKelas() {
         return;
       }
 
+      if (!isWithinSchedule(selectedSchedule)) {
+        setModalError(
+          'Waktu pengisian jurnal untuk jadwal ini sudah berakhir. Jurnal tidak dapat disimpan di luar jam mengajar.'
+        );
+        return;
+      }
+
       if (!journalDate) {
         setModalError(
           'Tanggal pertemuan wajib diisi.'
@@ -1318,6 +1401,18 @@ export default function JurnalKelas() {
       ) {
         setModalError(
           'Kelas ini belum memiliki siswa.'
+        );
+
+        return;
+      }
+
+      if (
+        scheduleDetail.students.some(
+          (student) => !student.status
+        )
+      ) {
+        setModalError(
+          'Pilih status presensi untuk setiap siswa sebelum menyimpan jurnal.'
         );
 
         return;
@@ -1453,19 +1548,59 @@ export default function JurnalKelas() {
         if (
           sortedHistory.length > 0
         ) {
+          // Ambil tanggal dari jurnal paling baru.
+          const latestJournalDate =
+            sortedHistory[0].tanggal;
+
           const latest =
             parseLocalDate(
-              sortedHistory[0]
-                .tanggal
+              latestJournalDate
             );
 
+          const latestMonth =
+            latest.getMonth() + 1;
+
+          const latestYear =
+            latest.getFullYear();
+
+          // Atur bulan dan tahun agar modal langsung
+          // menampilkan periode jurnal paling baru.
+          setHistoryMonth(latestMonth);
+          setHistoryYear(latestYear);
+
+          // Cari minggu yang memuat tanggal jurnal terbaru.
+          // Ini penting agar modal tidak selalu membuka Minggu 1.
+          const latestMonthWeeks =
+            getWeeksOfMonth(
+              latestYear,
+              latestMonth
+            );
+
+          const latestWeekIndex =
+            latestMonthWeeks.findIndex(
+              (week) =>
+                latestJournalDate >= week.startDate &&
+                latestJournalDate <= week.endDate
+            );
+
+          setHistoryWeekPage(
+            latestWeekIndex >= 0
+              ? latestWeekIndex
+              : 0
+          );
+        } else {
+          // Jika belum ada riwayat, tampilkan periode sekarang.
+          const currentDate = new Date();
+
           setHistoryMonth(
-            latest.getMonth() + 1
+            currentDate.getMonth() + 1
           );
 
           setHistoryYear(
-            latest.getFullYear()
+            currentDate.getFullYear()
           );
+
+          setHistoryWeekPage(0);
         }
       } catch (err) {
         console.error(
@@ -1833,34 +1968,6 @@ export default function JurnalKelas() {
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
-            <div className="relative">
-              <select
-                value={period}
-                onChange={(event) =>
-                  setPeriod(
-                    event.target.value as
-                      | 'minggu_ini'
-                      | 'semua'
-                  )
-                }
-                className="h-[40px] w-full appearance-none rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] py-2 pl-3 pr-9 text-[13px] font-semibold text-[#23283A] outline-none transition focus:border-[#B98A3E] sm:w-[145px]"
-              >
-                <option value="minggu_ini">
-                  Minggu ini
-                </option>
-
-                <option value="semua">
-                  Semua waktu
-                </option>
-              </select>
-
-              <ChevronDown
-                size={14}
-                strokeWidth={1.9}
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7080]"
-              />
-            </div>
-
             <div className="flex h-[40px] w-full items-center gap-2 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3 sm:w-[240px]">
               <Search
                 size={16}
@@ -2074,14 +2181,21 @@ export default function JurnalKelas() {
           <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
             {filteredJurnal.map(
               (item) => {
+                const isEmptyJournal =
+                  item.jurnal_terakhir?.is_holiday !== true &&
+                  item.jurnal_terakhir?.topic === 'Jurnal Kelas Kosong';
+
                 const isPending =
-                  item.status ===
-                  'menunggu';
+                  item.status === 'menunggu' ||
+                  isEmptyJournal;
 
                 const isToday =
                   isScheduleToday(
                     item
                   );
+
+                const canStartNow =
+                  isToday && isWithinSchedule(item);
 
                 const showUnavailableWarning =
                   unavailableWarningId ===
@@ -2198,9 +2312,11 @@ export default function JurnalKelas() {
                         />
                       )}
 
-                      {isPending
-                        ? 'Menunggu diisi'
-                        : 'Lengkap'}
+                      {isEmptyJournal
+                        ? 'Jurnal kosong'
+                        : isPending
+                          ? 'Menunggu diisi'
+                          : 'Lengkap'}
                     </span>
 
                     {/* CARD HEADER */}
@@ -2366,7 +2482,7 @@ export default function JurnalKelas() {
                         >
                           {latestDate ? (
                             <>
-                              <div className="font-['Fraunces',serif] text-[16px] font-bold leading-none text-[#141C30]">
+                              <div className={`font-['Fraunces',serif] text-[16px] font-bold leading-none ${isEmptyJournal ? 'text-[#A8503B]' : 'text-[#141C30]'}`}>
                                 {
                                   latestDate.day
                                 }
@@ -2404,23 +2520,43 @@ export default function JurnalKelas() {
 
                           {isPending ? (
                             <>
-                              <div className="text-[13px] italic leading-[1.45] text-[#6B7080]">
-                                {filled >
-                                0
-                                  ? 'Masih terdapat sesi yang belum memiliki jurnal pada minggu ini.'
-                                  : 'Materi dan presensi belum diisi untuk pertemuan ini.'}
-                              </div>
+                              {isEmptyJournal ? (
+                                <>
+                                  <div className="text-[13px] font-semibold leading-[1.45] text-[#A8503B]">
+                                    Jurnal Kelas Kosong
+                                  </div>
 
-                              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#A8503B]">
-                                <Clock3
-                                  size={12}
-                                />
+                                  {item.jurnal_terakhir?.description && (
+                                    <div className="mt-1.5 line-clamp-2 text-[11px] leading-[1.5] text-[#A8503B]">
+                                      {item.jurnal_terakhir.description}
+                                    </div>
+                                  )}
 
-                                {
-                                  remainingMeetings
-                                }{' '}
-                                sesi belum diisi
-                              </div>
+                                  {item.jurnal_terakhir?.tanggal && (
+                                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#A8503B]">
+                                      <CalendarDays size={12} />
+                                      {formatLongDate(item.jurnal_terakhir.tanggal)}
+                                    </div>
+                                  )}
+
+                                  <div className="mt-1.5 text-[11px] text-[#A8503B]">
+                                    Jurnal otomatis dibuat karena guru belum mengisi jurnal setelah jadwal berakhir.
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="text-[13px] italic leading-[1.45] text-[#6B7080]">
+                                    {filled > 0
+                                      ? 'Masih terdapat sesi yang belum memiliki jurnal pada minggu ini.'
+                                      : 'Materi dan presensi belum diisi untuk pertemuan ini.'}
+                                  </div>
+
+                                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[#A8503B]">
+                                    <Clock3 size={12} />
+                                    {remainingMeetings} sesi belum diisi
+                                  </div>
+                                </>
+                              )}
                             </>
                           ) : (
                             <>
@@ -2565,23 +2701,7 @@ export default function JurnalKelas() {
                           </div>
 
                           <div className="mt-0.5">
-                            Tombol mulai kelas hanya dapat digunakan pada hari sesuai jadwal mengajar, yaitu{' '}
-                            <span className="font-bold text-[#23283A]">
-                              {(
-                                item.jadwal ??
-                                []
-                              )
-                                .map(
-                                  (
-                                    schedule
-                                  ) =>
-                                    schedule.hari
-                                )
-                                .join(
-                                  ' dan '
-                                )}
-                            </span>
-                            .
+                            {getScheduleAvailabilityMessage(item)}
                           </div>
                         </div>
 
@@ -2624,16 +2744,15 @@ export default function JurnalKelas() {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          handleStartClass(
-                            item
-                          )
-                        }
-                        aria-disabled={
-                          !isToday
+                        onClick={() => handleStartClass(item)}
+                        disabled={!canStartNow}
+                        title={
+                          canStartNow
+                            ? 'Isi jurnal selama jam mengajar berlangsung'
+                            : getScheduleAvailabilityMessage(item)
                         }
                         className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] border px-2 py-2.5 text-[12.5px] font-bold transition ${
-                          !isToday
+                          !canStartNow
                             ? 'cursor-not-allowed border-[#D5D1C8] bg-[#D5D1C8] text-[#8A8E9A]'
                             : isPending
                               ? 'border-[#A8503B] bg-[#A8503B] text-white hover:bg-[#8F4331]'
@@ -2646,8 +2765,8 @@ export default function JurnalKelas() {
                           fill="currentColor"
                         />
 
-                        {!isToday
-                          ? 'Belum waktunya'
+                        {!canStartNow
+                          ? 'Di luar jadwal'
                           : isPending
                             ? 'Mulai kelas sekarang'
                             : 'Mulai kelas'}
@@ -2763,6 +2882,15 @@ export default function JurnalKelas() {
             {/* BODY */}
 
             <div className="overflow-y-auto px-5 py-5 md:px-6">
+              {selectedSchedule && !isWithinSchedule(selectedSchedule) && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#E4BCA9] bg-[#F6E1D9] px-3.5 py-3 text-[12.5px] leading-5 text-[#A8503B]">
+                  <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    {getScheduleAvailabilityMessage(selectedSchedule)} Pengisian dan penyimpanan jurnal telah dinonaktifkan.
+                  </span>
+                </div>
+              )}
+
               {modalError && (
                 <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#E4BCA9] bg-[#F6E1D9] px-3.5 py-3 text-[12.5px] leading-5 text-[#A8503B]">
                   <TriangleAlert
@@ -2809,15 +2937,11 @@ export default function JurnalKelas() {
                         }
                         onChange={(
                           event
-                        ) =>
-                          setJournalDate(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        disabled={saving}
-                        className="h-[42px] w-full rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] pl-10 pr-3 text-[13px] text-[#23283A] outline-none transition focus:border-[#B98A3E]"
+                        ) => setJournalDate(event.target.value)}
+                        min={getToday()}
+                        max={getToday()}
+                        disabled={saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
+                        className="h-[42px] w-full rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] pl-10 pr-3 text-[13px] text-[#23283A] outline-none transition focus:border-[#B98A3E] disabled:cursor-not-allowed disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -2844,7 +2968,7 @@ export default function JurnalKelas() {
                             .value
                         )
                       }
-                      disabled={saving}
+                      disabled={saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
                       placeholder="Contoh: Norma dan keadilan"
                       className="h-[42px] w-full rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3 text-[13px] text-[#23283A] outline-none transition placeholder:text-[#9A9DA7] focus:border-[#B98A3E]"
                     />
@@ -2870,7 +2994,7 @@ export default function JurnalKelas() {
                             .value
                         )
                       }
-                      disabled={saving}
+                      disabled={saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
                       rows={3}
                       placeholder="Tuliskan ringkasan kegiatan pembelajaran, metode, atau catatan penting."
                       className="w-full resize-none rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-3 py-2.5 text-[13px] leading-5 text-[#23283A] outline-none transition placeholder:text-[#9A9DA7] focus:border-[#B98A3E]"
@@ -2992,7 +3116,7 @@ export default function JurnalKelas() {
                                             }
                                             type="button"
                                             disabled={
-                                              saving
+                                              saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)
                                             }
                                             onClick={() =>
                                               changeAttendance(
@@ -3045,7 +3169,7 @@ export default function JurnalKelas() {
                                       )
                                     }
                                     disabled={
-                                      saving
+                                      saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)
                                     }
                                     maxLength={
                                       255
@@ -3092,7 +3216,9 @@ export default function JurnalKelas() {
                 disabled={
                   saving ||
                   loadingDetail ||
-                  !scheduleDetail
+                  !scheduleDetail ||
+                  !selectedSchedule ||
+                  !isWithinSchedule(selectedSchedule)
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#1E2A47] bg-[#1E2A47] px-5 py-2.5 text-[12.5px] font-bold text-white transition hover:bg-[#141C30] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -3422,6 +3548,13 @@ export default function JurnalKelas() {
                           history.tanggal
                         );
 
+                      const isEmptyJournal =
+                        !history.is_holiday &&
+                        (
+                          history.is_empty === true ||
+                          history.topic === 'Jurnal Kelas Kosong'
+                        );
+
                       return (
                         <div
                           key={
@@ -3430,7 +3563,9 @@ export default function JurnalKelas() {
                           className={`flex gap-3 rounded-xl border p-3.5 ${
                             history.is_holiday
                               ? 'border-[#E6C96A] bg-[#FFF4C7]'
-                              : 'border-[#E3DACB] bg-[#FBF9F3]'
+                              : isEmptyJournal
+                                ? 'border-[#E4BCA9] bg-[#FFF0EC]'
+                                : 'border-[#E3DACB] bg-[#FBF9F3]'
                           }`}
                         >
 
@@ -3440,10 +3575,12 @@ export default function JurnalKelas() {
                             className={`w-11 shrink-0 self-start rounded-[9px] border px-0 py-[7px] text-center ${
                               history.is_holiday
                                 ? 'border-[#E6C96A] bg-[#FFF9E6]'
-                                : 'border-[#E3DACB] bg-white'
+                                : isEmptyJournal
+                                  ? 'border-[#E4BCA9] bg-white'
+                                  : 'border-[#E3DACB] bg-white'
                             }`}
                           >
-                            <div className="font-['Fraunces',serif] text-[16px] font-bold leading-none text-[#141C30]">
+                            <div className={`font-['Fraunces',serif] text-[16px] font-bold leading-none ${isEmptyJournal ? 'text-[#A8503B]' : 'text-[#141C30]'}`}>
                               {
                                 date.day
                               }
@@ -3464,7 +3601,9 @@ export default function JurnalKelas() {
                               className={`text-[10.5px] font-bold uppercase tracking-[0.03em] ${
                                 history.is_holiday
                                   ? 'text-[#9A7414]'
-                                  : 'text-[#6B7080]'
+                                  : isEmptyJournal
+                                    ? 'text-[#A8503B]'
+                                    : 'text-[#6B7080]'
                               }`}
                             >
                               {formatLongDate(
@@ -3478,7 +3617,14 @@ export default function JurnalKelas() {
                               </div>
                             )}
 
-                            <div className="mt-1 text-[13px] font-semibold leading-5 text-[#23283A]">
+                            {isEmptyJournal && (
+                              <div className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#E4BCA9] bg-[#F6E1D9] px-2 py-0.5 text-[9.5px] font-bold text-[#A8503B]">
+                                <TriangleAlert size={10} />
+                                Jurnal kosong
+                              </div>
+                            )}
+
+                            <div className={`mt-1 text-[13px] font-semibold leading-5 ${isEmptyJournal ? 'text-[#A8503B]' : 'text-[#23283A]'}`}>
                               {history.is_holiday
                                 ? 'Hari Libur Nasional'
                                 : history.topic}
@@ -3491,7 +3637,9 @@ export default function JurnalKelas() {
                                 className={`mt-1.5 text-[11.5px] leading-5 ${
                                   history.is_holiday
                                     ? 'font-medium text-[#7A6118]'
-                                    : 'text-[#6B7080]'
+                                    : isEmptyJournal
+                                      ? 'text-[#A8503B]'
+                                      : 'text-[#6B7080]'
                                 }`}
                               >
                                 {history.is_holiday
