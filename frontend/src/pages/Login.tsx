@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
 import logoKesatrian from '../assets/Logo-Kesatrian.jpeg';
@@ -12,7 +12,32 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [stats, setStats] = useState({
+    guru_aktif: 0,
+    siswa_terdaftar: 0,
+    kelas_berjalan: 0,
+  });
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await api.get('/stats');
+
+        if (response.data.success) {
+          setStats({
+            guru_aktif: response.data.data.guru_aktif,
+            siswa_terdaftar: response.data.data.siswa_terdaftar,
+            kelas_berjalan: response.data.data.kelas_berjalan,
+          });
+        }
+      } catch (error) {
+        console.error('Gagal mengambil statistik:', error);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +158,7 @@ export default function Login() {
           <div className="grid grid-cols-3 gap-3 border-t border-white/20 pt-5 text-center relative z-10">
             <div>
               <div className="font-['Fraunces',serif] font-bold text-[18px] text-white">
-                1
+                {stats.guru_aktif}
               </div>
 
               <div className="text-[11px] text-[#D0D9EE] mt-0.5">
@@ -143,7 +168,7 @@ export default function Login() {
 
             <div>
               <div className="font-['Fraunces',serif] font-bold text-[18px] text-white">
-                1
+                {stats.siswa_terdaftar}
               </div>
 
               <div className="text-[11px] text-[#D0D9EE] mt-0.5">
@@ -153,7 +178,7 @@ export default function Login() {
 
             <div>
               <div className="font-['Fraunces',serif] font-bold text-[18px] text-white">
-                1
+                {stats.kelas_berjalan}
               </div>
 
               <div className="text-[11px] text-[#D0D9EE] mt-0.5">
@@ -167,11 +192,11 @@ export default function Login() {
         <div className="flex flex-col justify-center p-9 md:p-[40px_46px_32px]">
           <div className="mb-6">
             <h2 className="font-['Fraunces',serif] font-semibold text-[23px] text-[#141C30] tracking-[-0.01em] m-0">
-              Masuk ke akun kamu
+              Masuk ke akun Anda
             </h2>
 
             <p className="text-[13.5px] text-[#6B7080] mt-1.5">
-              Gunakan akun yang diberikan oleh pihak sekolah.
+              Silahkan masukkan email dan kata sandi akun Anda!
             </p>
           </div>
 

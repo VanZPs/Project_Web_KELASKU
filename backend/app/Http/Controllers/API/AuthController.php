@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\Classroom;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\User;
@@ -261,9 +262,6 @@ class AuthController extends Controller
 
     /**
      * Memperbarui nama user yang sedang login.
-     *
-     * Endpoint:
-     * PUT /api/me
      */
     public function updateProfile(Request $request)
     {
@@ -322,18 +320,24 @@ class AuthController extends Controller
 
 
     /**
-     * Statistik sederhana user.
+     * Statistik publik untuk halaman login.
      */
     public function stats(Request $request)
     {
-        $user = $request->user();
+        $guruAktif = User::where('role', 'guru')->count();
 
+        $siswaTerdaftar = User::where('role', 'siswa')->count();
+
+        $kelasBerjalan = Classroom::where('archived', false)
+            ->whereHas('schedules')
+            ->count();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'user_id' => $user->id,
-                'role' => $user->role,
+                'guru_aktif' => $guruAktif,
+                'siswa_terdaftar' => $siswaTerdaftar,
+                'kelas_berjalan' => $kelasBerjalan,
             ],
         ]);
     }
