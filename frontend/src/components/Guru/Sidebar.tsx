@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import logoKesatrian from '../../assets/Logo-Kesatrian.jpeg';
@@ -18,6 +18,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const profilePhotoUrlRef = useRef<string | null>(null);
+
+  const clearProfilePhoto = useCallback(() => {
+    if (profilePhotoUrlRef.current) {
+      URL.revokeObjectURL(profilePhotoUrlRef.current);
+      profilePhotoUrlRef.current = null;
+    }
+    setProfilePhotoUrl(null);
+  }, []);
+
+  const loadProfilePhoto = useCallback(async () => {
+    let nextObjectUrl: string | null = null;
+
+    try {
+      const response = await api.get('/me/profile-photo', {
+        responseType: 'blob',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+
+      // Backend dapat mengembalikan 204 bila pengguna belum memiliki foto.
+      if (response.status === 204 || !response.data || response.data.size === 0) {
+        clearProfilePhoto();
+        return;
+      }
+
+      nextObjectUrl = URL.createObjectURL(response.data as Blob);
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+      }
+      profilePhotoUrlRef.current = nextObjectUrl;
+      setProfilePhotoUrl(nextObjectUrl);
+    } catch (error) {
+      clearProfilePhoto();
+
+      // Hindari menganggap 204/404 sebagai error yang perlu ditampilkan.
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status !== 404 && status !== 204) {
+        console.error('Gagal memuat foto profil:', error);
+      }
+    }
+  }, [clearProfilePhoto]);
+
+  useEffect(() => {
+    void loadProfilePhoto();
+
+    // EditProfileModal mengirim event ini setelah foto berhasil diganti/dihapus.
+    const handleProfilePhotoUpdated = () => {
+      void loadProfilePhoto();
+    };
+
+    window.addEventListener('profile-photo-updated', handleProfilePhotoUpdated);
+    return () => {
+      window.removeEventListener('profile-photo-updated', handleProfilePhotoUpdated);
+      clearProfilePhoto();
+    };
+  }, [loadProfilePhoto, clearProfilePhoto]);
 
   const handleLogout = async () => {
     try {
@@ -59,19 +116,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="font-['Fraunces',serif] text-[19px] font-semibold leading-[1.1] text-white">
             KELASKU
           </div>
-          <div className="mt-0.5 text-[11.5px] text-[#9BA6C4]">SMA Kesatrian 1 Semarang</div>
+          <div className="mt-0.5 text-[11.5px] text-[#9BA6C4]">
+            SMA Kesatrian 1 Semarang
+          </div>
         </div>
       </div>
 
-      <div className="hidden items-center gap-[10px] rounded-xl border border-white/10 bg-white/5 p-[12px_13px] md:flex">
-        <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] text-[14px] font-bold text-[#141C30]">
-          {getInitials(namaGuru)}
+      <button
+        type="button"
+        onClick={onEditProfile}
+        aria-label={`Edit profil ${namaGuru}`}
+        className="group hidden w-full shrink-0 cursor-pointer items-center gap-[10px] rounded-xl border border-white/10 bg-white/5 p-[12px_13px] text-left transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A55E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1E2A47] md:flex"
+      >
+        <div className="flex h-[44px] w-[44px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] text-[14px] font-bold text-[#141C30]">
+          {profilePhotoUrl ? (
+            <img
+              src={profilePhotoUrl}
+              alt={`Foto profil ${namaGuru}`}
+              className="h-full w-full object-cover"
+              onError={() => setProfilePhotoUrl(null)}
+            />
+          ) : (
+            getInitials(namaGuru)
+          )}
         </div>
-        <div className="min-w-0">
-          <div className="truncate text-[13.5px] font-semibold leading-[1.3] text-white">{namaGuru}</div>
-          <div className="mt-px truncate text-[11.5px] text-[#9BA6C4]">{mapelGuru}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13.5px] font-semibold leading-[1.3] text-white">
+            {namaGuru}
+          </div>
+          <div className="mt-px truncate text-[11.5px] text-[#9BA6C4]">
+            {mapelGuru}
+          </div>
         </div>
-      </div>
+      </button>
 
       <nav className="flex shrink-0 flex-1 flex-row gap-0.5 md:flex-col">
         <Link to="/guru/dashboard" className={navLinkClass(isDashboardActive)}>
@@ -106,16 +183,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="ml-1.5 flex shrink-0 flex-row gap-0.5 border-l border-white/10 pl-3 md:ml-0 md:flex-col md:border-l-0 md:border-t md:pt-3.5 md:pl-0">
-        <button
-          type="button"
-          onClick={onEditProfile}
-          className="flex shrink-0 cursor-pointer items-center gap-[11px] rounded-[9px] border-none bg-transparent p-[9px_11px] text-left text-[14px] text-[#C6CCDE] transition-colors hover:bg-white/5 hover:text-white"
-          aria-label="Buka Edit Profil"
-        >
-          <svg className="h-[18px] w-[18px] shrink-0 opacity-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
-          Edit profil
-        </button>
-
         <button
           type="button"
           onClick={handleLogout}

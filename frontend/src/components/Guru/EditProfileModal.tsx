@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   AlertTriangle,
   BookOpen,
+  Camera,
   Check,
   Loader2,
   Pencil,
@@ -68,6 +69,13 @@ export default function EditProfileModal({
   const [loadingAvailableSubjects, setLoadingAvailableSubjects] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -133,13 +141,17 @@ export default function EditProfileModal({
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showPhotoPreview) {
+        setShowPhotoPreview(false);
+        return;
+      }
       if (event.key === 'Escape' && !subjectToDelete && deletingSubjectId === null) {
         onClose();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose, subjectToDelete, deletingSubjectId]);
+  }, [isOpen, onClose, subjectToDelete, deletingSubjectId, showPhotoPreview]);
 
   const mainSubject = useMemo(
     () => subjects.find((subject) => subject.is_primary) ?? null,
@@ -150,7 +162,112 @@ export default function EditProfileModal({
     [subjects],
   );
 
-  if (!isOpen) return null;
+
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    const loadProfilePhoto = async () => {
+      try {
+        const response = await api.get('/me/profile-photo', {
+          responseType: 'blob',
+        });
+        objectUrl = URL.createObjectURL(response.data);
+        if (!cancelled) setProfilePhotoUrl(objectUrl);
+        else URL.revokeObjectURL(objectUrl);
+      } catch {
+        if (!cancelled) setProfilePhotoUrl(null);
+      }
+    };
+
+    void loadProfilePhoto();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isOpen]);
+
+
+  const handleChoosePhoto = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Format foto harus JPG, PNG, atau WebP.');
+      setSuccess('');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Ukuran foto maksimal 2 MB.');
+      setSuccess('');
+      return;
+    }
+
+    if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
+    setSelectedPhoto(file);
+    setPreviewPhotoUrl(URL.createObjectURL(file));
+    setError('');
+    setSuccess('');
+  };
+
+  const handleCancelPhoto = () => {
+    if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
+    setSelectedPhoto(null);
+    setPreviewPhotoUrl(null);
+  };
+
+  const handleUploadPhoto = async () => {
+    if (!selectedPhoto) return;
+
+    const formData = new FormData();
+    formData.append('photo', selectedPhoto);
+
+    try {
+      setUploadingPhoto(true);
+      setError('');
+      setSuccess('');
+      await api.post('/me/profile-photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (previewPhotoUrl) {
+        setProfilePhotoUrl(previewPhotoUrl);
+        setPreviewPhotoUrl(null);
+      }
+      setSelectedPhoto(null);
+      setSuccess('Foto profil berhasil diperbarui.');
+      window.dispatchEvent(new Event('profile-photo-updated'));
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Gagal mengunggah foto profil.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    try {
+      setRemovingPhoto(true);
+      setError('');
+      setSuccess('');
+      await api.delete('/me/profile-photo');
+      if (previewPhotoUrl) URL.revokeObjectURL(previewPhotoUrl);
+      setPreviewPhotoUrl(null);
+      setSelectedPhoto(null);
+      setProfilePhotoUrl(null);
+      setSuccess('Foto profil berhasil dihapus.');
+      window.dispatchEvent(new Event('profile-photo-updated'));
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Gagal menghapus foto profil.');
+    } finally {
+      setRemovingPhoto(false);
+    }
+  };
 
   const handleEditName = () => {
     setName(user?.name || '');
@@ -306,6 +423,9 @@ export default function EditProfileModal({
     }
   };
 
+
+  if (!isOpen) return null;
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-6"
@@ -371,6 +491,94 @@ export default function EditProfileModal({
                   <div>
                     <h3 className="font-bold text-[#3F3027]">Informasi Profil</h3>
                     <p className="text-xs text-[#8A7A70]">Informasi akun guru</p>
+                  </div>
+                </div>
+
+
+                <div className="mb-5 flex flex-col gap-3 rounded-xl border border-[#E7DED6] bg-[#FAF8F5] p-4 sm:flex-row sm:items-start">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previewPhotoUrl || profilePhotoUrl) {
+                        setShowPhotoPreview(true);
+                      }
+                    }}
+                    disabled={!previewPhotoUrl && !profilePhotoUrl}
+                    title={
+                      previewPhotoUrl || profilePhotoUrl
+                        ? 'Klik untuk memperbesar foto profil'
+                        : 'Belum ada foto profil'
+                    }
+                    aria-label="Perbesar foto profil"
+                    className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#E7DED6] bg-[#F3E8DF] text-[#AE5A3E] ${
+                      previewPhotoUrl || profilePhotoUrl
+                        ? 'cursor-zoom-in transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#AE5A3E] focus-visible:ring-offset-2'
+                        : 'cursor-default'
+                    }`}
+                  >
+                    {(previewPhotoUrl || profilePhotoUrl) ? (
+                      <img
+                        src={previewPhotoUrl || profilePhotoUrl || undefined}
+                        alt="Foto profil"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <User size={32} />
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-[#3F3027]">Foto Profil</p>
+                    <p className="mt-1 text-xs leading-5 text-[#8A7A70]">
+                      JPG, PNG, atau WebP. Ukuran maksimal 2 MB.
+                    </p>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleChoosePhoto}
+                      className="hidden"
+                    />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        disabled={uploadingPhoto || removingPhoto}
+                        className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#AE5A3E] px-3 py-2 text-xs font-semibold text-white hover:bg-[#934A32] disabled:opacity-50"
+                      >
+                        <Camera size={15} />
+                        {profilePhotoUrl ? 'Ganti Foto' : 'Pilih Foto'}
+                      </button>
+                      {selectedPhoto && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleUploadPhoto}
+                            disabled={uploadingPhoto}
+                            className="min-h-9 rounded-lg bg-[#263451] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                          >
+                            {uploadingPhoto ? 'Mengunggah...' : 'Simpan Foto'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelPhoto}
+                            disabled={uploadingPhoto}
+                            className="min-h-9 rounded-lg border border-[#DCCFC5] px-3 py-2 text-xs font-semibold text-[#6B5A4F] disabled:opacity-50"
+                          >
+                            Batal
+                          </button>
+                        </>
+                      )}
+                      {profilePhotoUrl && !selectedPhoto && (
+                        <button
+                          type="button"
+                          onClick={handleRemovePhoto}
+                          disabled={removingPhoto || uploadingPhoto}
+                          className="min-h-9 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {removingPhoto ? 'Menghapus...' : 'Hapus Foto'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -498,6 +706,33 @@ export default function EditProfileModal({
           )}
         </div>
       </div>
+
+      {showPhotoPreview && (previewPhotoUrl || profilePhotoUrl) && (
+        <div
+          className="fixed inset-0 z-[120] flex cursor-zoom-out items-center justify-center bg-black/75 p-5 backdrop-blur-sm sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto profil diperbesar"
+          onClick={() => setShowPhotoPreview(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setShowPhotoPreview(false)}
+            aria-label="Tutup foto profil"
+            title="Klik untuk menutup"
+            className="group relative flex aspect-square w-[min(82vw,82vh,560px)] cursor-zoom-out items-center justify-center overflow-hidden rounded-full border-4 border-white/90 bg-[#F3E8DF] shadow-[0_25px_100px_rgba(0,0,0,0.45)] outline-none transition-transform duration-200 hover:scale-[1.02] focus-visible:ring-4 focus-visible:ring-[#C9A55E]"
+          >
+            <img
+              src={previewPhotoUrl || profilePhotoUrl || undefined}
+              alt={`Foto profil ${name || user?.name || 'pengguna'}`}
+              className="h-full w-full rounded-full object-cover"
+            />
+            <span className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-4 py-2 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 sm:text-sm">
+              Klik foto untuk menutup
+            </span>
+          </button>
+        </div>
+      )}
 
       {subjectToDelete && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && deletingSubjectId === null) setSubjectToDelete(null); }}>

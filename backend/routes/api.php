@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\ProfilePhotoController;
 use App\Http\Controllers\API\MyClassController;
 use App\Http\Controllers\API\ScheduleController;
 use App\Http\Controllers\API\ClassroomController;
@@ -102,6 +103,24 @@ Route::middleware('auth:sanctum')->group(
         Route::put(
             '/me',
             [AuthController::class, 'updateProfile']
+        );
+
+        /*
+         * Foto profil user (object storage MinIO).
+         */
+        Route::get(
+            '/me/profile-photo',
+            [ProfilePhotoController::class, 'show']
+        );
+
+        Route::post(
+            '/me/profile-photo',
+            [ProfilePhotoController::class, 'store']
+        );
+
+        Route::delete(
+            '/me/profile-photo',
+            [ProfilePhotoController::class, 'destroy']
         );
 
 

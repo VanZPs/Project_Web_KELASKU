@@ -23,6 +23,7 @@ import DaftarSiswa from './pages/Guru/DaftarSiswa';
 import Tugas from './pages/Guru/Tugas';
 import KelolaTugas from './pages/Guru/KelolaTugas';
 import Nilai from './pages/Guru/Nilai';
+import { GuruLayout } from './layouts/Guru/GuruLayout';
 
 
 /*
@@ -77,6 +78,12 @@ const getStoredUser = () => {
 | CLEAR AUTH
 |--------------------------------------------------------------------------
 */
+const getInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'GR';
+  return parts.slice(0, 2).map((part) => part[0].toUpperCase()).join('');
+};
+
 const clearAuth = () => {
   localStorage.removeItem(
     'token'
@@ -256,148 +263,32 @@ export default function App() {
         />
 
 
-        {/* ==================================================
-            GURU
+                {/* ==================================================
+            GURU - SHARED PERSISTENT LAYOUT
             ================================================== */}
-
-        {/* Dashboard Guru */}
 
         <Route
           path="/guru"
           element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <DashboardGuru />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Dashboard Guru - URL alternatif */}
-
-        <Route
-          path="/guru/dashboard"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <DashboardGuru />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Kelas Saya */}
-
-        <Route
-          path="/guru/kelas-saya"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <KelasSaya />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Tambah Kelas */}
-
-        <Route
-          path="/guru/kelas-saya/tambah"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <TambahKelas />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Daftar Siswa */}
-
-        <Route
-          path="/guru/siswa"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <DaftarSiswa />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Jurnal Mengajar */}
-
-        <Route
-          path="/guru/jurnal"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <JurnalKelas />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* ==================================================
-            TUGAS
-            ================================================== */}
-
-        {/* Daftar Tugas */}
-
-        <Route
-          path="/guru/tugas"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <Tugas />
-            </ProtectedRoute>
-          }
-        />
-
-
-        {/* Kelola Tugas berdasarkan Jadwal */}
-
-        <Route
-          path="/guru/tugas/kelola/:scheduleId"
-          element={
-            <ProtectedRoute
-              allowedRole="guru"
-            >
-              <KelolaTugas />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Nilai */}
-        <Route
-          path="/guru/nilai"
-          element={
             <ProtectedRoute allowedRole="guru">
-              <Nilai />
+              <GuruLayout getInitials={getInitials} />
             </ProtectedRoute>
           }
-        />
-
-
-        {/* Edit Profil sekarang dibuka sebagai modal dari Sidebar.
-            URL lama diarahkan kembali ke dashboard Guru. */}
-
-        <Route
-          path="/guru/profil"
-          element={
-            <ProtectedRoute allowedRole="guru">
-              <Navigate to="/guru/dashboard" replace />
-            </ProtectedRoute>
-          }
-        />
-
+        >
+          <Route index element={<DashboardGuru />} />
+          <Route path="dashboard" element={<DashboardGuru />} />
+          <Route path="kelas-saya" element={<KelasSaya />} />
+          <Route path="kelas-saya/tambah" element={<TambahKelas />} />
+          <Route path="siswa" element={<DaftarSiswa />} />
+          <Route path="jurnal" element={<JurnalKelas />} />
+          <Route path="tugas" element={<Tugas />} />
+          <Route path="tugas/kelola/:scheduleId" element={<KelolaTugas />} />
+          <Route path="nilai" element={<Nilai />} />
+          <Route
+            path="profil"
+            element={<Navigate to="/guru/dashboard" replace />}
+          />
+        </Route>
 
         {/* ==================================================
             SISWA

@@ -1,12 +1,13 @@
-import React, { useEffect, useState, type ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../../components/Guru/Sidebar';
 import EditProfileModal from '../../components/Guru/EditProfileModal';
 
 interface GuruLayoutProps {
-  children: ReactNode;
-  namaGuru: string;
-  mapelGuru: string;
-  getInitials: (name: string) => string;
+  children?: ReactNode;
+  namaGuru?: string;
+  mapelGuru?: string;
+  getInitials?: (name: string) => string;
   mainClassName?: string;
 }
 
@@ -14,44 +15,106 @@ interface UpdatedProfileUser {
   name?: string;
 }
 
+interface GuruLayoutContextValue {
+  isSharedLayout: true;
+  updateProfile: (name: string, subject: string) => void;
+}
+
+const GuruLayoutContext = createContext<GuruLayoutContextValue | null>(null);
+
+const getStoredProfile = () => {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return { name: 'Guru', subject: 'Guru Mata Pelajaran' };
+
+    const user = JSON.parse(raw) as Record<string, unknown>;
+    const name =
+      (typeof user.name === 'string' && user.name) ||
+      (typeof user.nama === 'string' && user.nama) ||
+      'Guru';
+
+    const subject =
+      (typeof user.mata_pelajaran === 'string' && user.mata_pelajaran) ||
+      (typeof user.subject === 'string' && user.subject) ||
+      (typeof user.subject_name === 'string' && user.subject_name) ||
+      (typeof user.mapel === 'string' && user.mapel) ||
+      'Guru Mata Pelajaran';
+
+    return { name, subject };
+  } catch {
+    return { name: 'Guru', subject: 'Guru Mata Pelajaran' };
+  }
+};
+
+const defaultGetInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'GR';
+  return parts.slice(0, 2).map((part) => part[0].toUpperCase()).join('');
+};
+
 export const GuruLayout: React.FC<GuruLayoutProps> = ({
   children,
   namaGuru,
   mapelGuru,
-  getInitials,
+  getInitials = defaultGetInitials,
   mainClassName = 'p-5 md:p-[26px_34px_60px]',
 }) => {
+  const parentLayout = useContext(GuruLayoutContext);
+  const storedProfile = useMemo(() => getStoredProfile(), []);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
-  const [displayName, setDisplayName] = useState(namaGuru);
+  const [displayName, setDisplayName] = useState(namaGuru || storedProfile.name);
+  const [displaySubject, setDisplaySubject] = useState(mapelGuru || storedProfile.subject);
 
-  // Sinkronkan nama dari halaman induk apabila nilainya berubah.
+  const updateProfile = useCallback((name: string, subject: string) => {
+    if (name.trim()) {
+      setDisplayName((current) => current === name ? current : name);
+    }
+    if (subject.trim()) {
+      setDisplaySubject((current) => current === subject ? current : subject);
+    }
+  }, []);
+
+  // Wrapper halaman yang sudah ada menyuplai nama/mapel setelah data API tersedia.
+  // Sinkronkan ke sidebar induk tanpa membuat ulang Sidebar.
   useEffect(() => {
-    setDisplayName(namaGuru);
-  }, [namaGuru]);
+    if (parentLayout?.isSharedLayout && namaGuru && mapelGuru) {
+      parentLayout.updateProfile(namaGuru, mapelGuru);
+    }
+  }, [parentLayout, namaGuru, mapelGuru]);
 
-  // Callback ini hanya membutuhkan nama untuk memperbarui sidebar.
-  const handleProfileUpdated = (updatedUser: UpdatedProfileUser) => {
+  const handleProfileUpdated = useCallback((updatedUser: UpdatedProfileUser) => {
     if (updatedUser.name) {
       setDisplayName(updatedUser.name);
     }
-  };
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({ isSharedLayout: true as const, updateProfile }),
+    [updateProfile],
+  );
+
+  if (parentLayout?.isSharedLayout) {
+    return <main className={mainClassName}>{children}</main>;
+  }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-[#F5F1E7] font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased md:grid-cols-[264px_1fr]">
-      <Sidebar
-        namaGuru={displayName}
-        mapelGuru={mapelGuru}
-        getInitials={getInitials}
-        onEditProfile={() => setIsEditProfileOpen(true)}
-      />
+    <GuruLayoutContext.Provider value={contextValue}>
+      <div className="grid min-h-screen grid-cols-1 bg-[#F5F1E7] font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased md:grid-cols-[264px_1fr]">
+        <Sidebar
+          namaGuru={displayName}
+          mapelGuru={displaySubject}
+          getInitials={getInitials}
+          onEditProfile={() => setIsEditProfileOpen(true)}
+        />
 
-      <main className={mainClassName}>{children}</main>
+        <div className="min-w-0">{children ?? <Outlet />}</div>
 
-      <EditProfileModal
-        isOpen={isEditProfileOpen}
-        onClose={() => setIsEditProfileOpen(false)}
-        onProfileUpdated={handleProfileUpdated}
-      />
-    </div>
+        <EditProfileModal
+          isOpen={isEditProfileOpen}
+          onClose={() => setIsEditProfileOpen(false)}
+          onProfileUpdated={handleProfileUpdated}
+        />
+      </div>
+    </GuruLayoutContext.Provider>
   );
 };
