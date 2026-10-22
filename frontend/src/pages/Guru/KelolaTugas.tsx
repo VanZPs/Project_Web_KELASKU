@@ -31,6 +31,7 @@ import {
 
 import api from '../../api/axios';
 import BuatTugasModal from '../../components/Guru/BuatTugasModal';
+import EditTugasModal from '../../components/Guru/EditTugasModal';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
 
 
@@ -2340,6 +2341,8 @@ export default function KelolaTugas() {
 
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
 
+  const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
+
   const [search, setSearch] =
     useState('');
 
@@ -2387,6 +2390,19 @@ export default function KelolaTugas() {
   ] = useState<number[]>([]);
 
   const [savingAnswerKey, setSavingAnswerKey] =
+    useState(false);
+
+  const [
+    editingQuestionId,
+    setEditingQuestionId,
+  ] = useState<number | null>(null);
+
+  const [
+    questionTextValue,
+    setQuestionTextValue,
+  ] = useState('');
+
+  const [savingQuestion, setSavingQuestion] =
     useState(false);
 
   const [toast, setToast] =
@@ -2479,6 +2495,11 @@ export default function KelolaTugas() {
         return;
       }
 
+      if (editTaskModalOpen) {
+        setEditTaskModalOpen(false);
+        return;
+      }
+
       if (
         selectedAssignment
       ) {
@@ -2499,6 +2520,7 @@ export default function KelolaTugas() {
     };
   }, [
     scoreModalOpen,
+    editTaskModalOpen,
     selectedAssignment,
   ]);
 
@@ -2966,6 +2988,141 @@ export default function KelolaTugas() {
 
   /*
   |--------------------------------------------------------------------------
+  | EDIT QUESTION TEXT
+  |--------------------------------------------------------------------------
+  */
+
+  function startEditQuestion(
+    question: AssignmentQuestion,
+  ) {
+    if (!question.id) {
+      showToast(
+        'error',
+        'ID soal tidak ditemukan.',
+      );
+      return;
+    }
+
+    // Jangan membuka dua mode edit sekaligus pada kartu soal yang sama.
+    cancelEditAnswerKey();
+    setEditingQuestionId(question.id);
+    setQuestionTextValue(question.question ?? '');
+  }
+
+  function cancelEditQuestion() {
+    setEditingQuestionId(null);
+    setQuestionTextValue('');
+  }
+
+  async function saveQuestionText(
+    question: AssignmentQuestion,
+  ) {
+    if (
+      !selectedAssignment ||
+      !question.id ||
+      savingQuestion
+    ) {
+      return;
+    }
+
+    const trimmedQuestion = questionTextValue.trim();
+
+    if (!trimmedQuestion) {
+      showToast(
+        'error',
+        'Teks soal tidak boleh kosong.',
+      );
+      return;
+    }
+
+    if (trimmedQuestion.length > 5000) {
+      showToast(
+        'error',
+        'Teks soal maksimal 5000 karakter.',
+      );
+      return;
+    }
+
+    try {
+      setSavingQuestion(true);
+
+      const response = await api.put(
+        `/guru/tugas/${selectedAssignment.id}/soal/${question.id}`,
+        {
+          question: trimmedQuestion,
+        },
+      );
+
+      const returnedAssignment =
+        response.data?.data as Assignment | undefined;
+
+      // Pertahankan data submission/komentar lokal yang mungkin tidak
+      // dikembalikan oleh endpoint edit teks soal.
+      const updatedAssignment: Assignment = returnedAssignment
+        ? {
+            ...selectedAssignment,
+            ...returnedAssignment,
+            submissions:
+              returnedAssignment.submissions ??
+              selectedAssignment.submissions,
+            comments:
+              returnedAssignment.comments ??
+              selectedAssignment.comments,
+          }
+        : {
+            ...selectedAssignment,
+            questions: (selectedAssignment.questions ?? []).map(
+              (item) =>
+                item.id === question.id
+                  ? {
+                      ...item,
+                      question: trimmedQuestion,
+                    }
+                  : item,
+            ),
+          };
+
+      setSelectedAssignment(updatedAssignment);
+
+      setAssignments((current) =>
+        current.map((assignment) => {
+          if (assignment.id !== selectedAssignment.id) {
+            return assignment;
+          }
+
+          return {
+            ...assignment,
+            ...updatedAssignment,
+            submissions:
+              updatedAssignment.submissions ??
+              assignment.submissions,
+            comments:
+              updatedAssignment.comments ??
+              assignment.comments,
+          };
+        }),
+      );
+
+      cancelEditQuestion();
+
+      showToast(
+        'success',
+        response.data?.message ||
+          'Teks soal berhasil diperbarui.',
+      );
+    } catch (err) {
+      showToast(
+        'error',
+        getErrorMessage(err),
+      );
+    } finally {
+      setSavingQuestion(false);
+    }
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
   | ANSWER KEY
   |--------------------------------------------------------------------------
   */
@@ -3190,6 +3347,7 @@ export default function KelolaTugas() {
       return;
     }
 
+    setEditTaskModalOpen(false);
     setSelectedAssignment(
       null,
     );
@@ -3200,6 +3358,7 @@ export default function KelolaTugas() {
     setCommentText('');
     setScoreModalOpen(false);
     cancelEditAnswerKey();
+    cancelEditQuestion();
   }
 
 
@@ -4156,26 +4315,36 @@ export default function KelolaTugas() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={
-                  closeTaskModal
-                }
-                className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border"
-                style={{
-                  borderColor:
-                    COLORS.line,
-                  backgroundColor:
-                    COLORS.paper,
-                  color:
-                    COLORS.inkSoft,
-                }}
-                title="Tutup"
-              >
-                <X
-                  size={15}
-                />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {!selectedSubmission && getAssignmentType(selectedAssignment) !== 'info' && (
+                  <button
+                    type="button"
+                    onClick={() => setEditTaskModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[11.5px] font-bold transition hover:opacity-80"
+                    style={{
+                      borderColor: COLORS.goldSoft,
+                      backgroundColor: '#FBF4DF',
+                      color: '#7A5A20',
+                    }}
+                  >
+                    <Pencil size={13} />
+                    Edit Tugas
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={closeTaskModal}
+                  className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border"
+                  style={{
+                    borderColor: COLORS.line,
+                    backgroundColor: COLORS.paper,
+                    color: COLORS.inkSoft,
+                  }}
+                  title="Tutup"
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
 
@@ -4325,6 +4494,10 @@ export default function KelolaTugas() {
                                 editingAnswerKeyQuestionId ===
                                 question.id;
 
+                              const isEditingQuestion =
+                                editingQuestionId ===
+                                question.id;
+
                               const correctOptions =
                                 (question.options ?? [])
                                   .filter(
@@ -4385,15 +4558,81 @@ export default function KelolaTugas() {
                                         />
                                       </div>
 
-                                      <div
-                                        className="min-w-0 flex-1 text-[13.5px] font-semibold leading-[1.75]"
-                                        style={{
-                                          color:
-                                            COLORS.navyDeep,
-                                        }}
-                                      >
-                                        {question.question ||
-                                          'Tidak ada informasi.'}
+                                      <div className="min-w-0 flex-1">
+                                        {isEditingQuestion ? (
+                                          <div className="space-y-2.5">
+                                            <textarea
+                                              value={questionTextValue}
+                                              onChange={(event) =>
+                                                setQuestionTextValue(
+                                                  event.target.value,
+                                                )
+                                              }
+                                              rows={4}
+                                              maxLength={5000}
+                                              autoFocus
+                                              disabled={savingQuestion}
+                                              className="w-full resize-y rounded-[9px] border px-3 py-2.5 text-[13px] leading-[1.7] outline-none focus:ring-2 focus:ring-amber-200"
+                                              style={{
+                                                borderColor: COLORS.gold,
+                                                backgroundColor: COLORS.paper,
+                                                color: COLORS.ink,
+                                              }}
+                                              aria-label="Edit teks catatan informasi"
+                                            />
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                              <span className="text-[10.5px]" style={{ color: COLORS.inkSoft }}>
+                                                {questionTextValue.length}/5000 karakter
+                                              </span>
+                                              <div className="flex items-center gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={cancelEditQuestion}
+                                                  disabled={savingQuestion}
+                                                  className="rounded-[8px] border px-3 py-2 text-[10.5px] font-bold disabled:opacity-50"
+                                                  style={{
+                                                    borderColor: COLORS.line,
+                                                    backgroundColor: COLORS.paper,
+                                                    color: COLORS.ink,
+                                                  }}
+                                                >
+                                                  Batal
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => saveQuestionText(question)}
+                                                  disabled={savingQuestion}
+                                                  className="rounded-[8px] px-3 py-2 text-[10.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                                  style={{ backgroundColor: COLORS.navy }}
+                                                >
+                                                  {savingQuestion ? 'Menyimpan...' : 'Simpan Soal'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div
+                                              className="min-w-0 flex-1 text-[13.5px] font-semibold leading-[1.75]"
+                                              style={{ color: COLORS.navyDeep }}
+                                            >
+                                              {question.question || 'Tidak ada informasi.'}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => startEditQuestion(question)}
+                                              className="flex shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[10.5px] font-bold transition hover:opacity-80"
+                                              style={{
+                                                borderColor: COLORS.line,
+                                                backgroundColor: COLORS.paper,
+                                                color: COLORS.navy,
+                                              }}
+                                            >
+                                              <Pencil size={12} />
+                                              Edit Informasi
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   ) : (
@@ -4411,17 +4650,83 @@ export default function KelolaTugas() {
                                             {index + 1}
                                           </div>
 
-                                          <div
-                                            className="text-[12.5px] font-semibold leading-[1.5]"
-                                            style={{
-                                              color:
-                                                COLORS.navyDeep,
-                                            }}
-                                          >
-                                            {question.question ||
-                                              `Soal ${index + 1}`}
-                                          </div>
+                                          {isEditingQuestion ? (
+                                            <div className="mt-2 space-y-2.5">
+                                              <textarea
+                                                value={questionTextValue}
+                                                onChange={(event) =>
+                                                  setQuestionTextValue(
+                                                    event.target.value,
+                                                  )
+                                                }
+                                                rows={3}
+                                                maxLength={5000}
+                                                autoFocus
+                                                disabled={savingQuestion}
+                                                className="w-full resize-y rounded-[8px] border px-3 py-2.5 text-[12.5px] leading-[1.6] outline-none focus:ring-2 focus:ring-amber-200"
+                                                style={{
+                                                  borderColor: COLORS.gold,
+                                                  backgroundColor: COLORS.paper,
+                                                  color: COLORS.ink,
+                                                }}
+                                                aria-label={`Edit teks soal ${index + 1}`}
+                                              />
+                                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <span className="text-[10px]" style={{ color: COLORS.inkSoft }}>
+                                                  {questionTextValue.length}/5000 karakter
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                  <button
+                                                    type="button"
+                                                    onClick={cancelEditQuestion}
+                                                    disabled={savingQuestion}
+                                                    className="rounded-[8px] border px-3 py-2 text-[10.5px] font-bold disabled:opacity-50"
+                                                    style={{
+                                                      borderColor: COLORS.line,
+                                                      backgroundColor: COLORS.paper,
+                                                      color: COLORS.ink,
+                                                    }}
+                                                  >
+                                                    Batal
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => saveQuestionText(question)}
+                                                    disabled={savingQuestion}
+                                                    className="rounded-[8px] px-3 py-2 text-[10.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                                    style={{ backgroundColor: COLORS.navy }}
+                                                  >
+                                                    {savingQuestion ? 'Menyimpan...' : 'Simpan Soal'}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div
+                                              className="text-[12.5px] font-semibold leading-[1.5]"
+                                              style={{ color: COLORS.navyDeep }}
+                                            >
+                                              {question.question || `Soal ${index + 1}`}
+                                            </div>
+                                          )}
                                         </div>
+
+                                        <div className="flex shrink-0 flex-col items-end gap-2">
+                                          {!isEditingQuestion && (
+                                            <button
+                                              type="button"
+                                              onClick={() => startEditQuestion(question)}
+                                              className="flex items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[10.5px] font-bold transition hover:opacity-80"
+                                              style={{
+                                                borderColor: COLORS.line,
+                                                backgroundColor: COLORS.paper,
+                                                color: COLORS.navy,
+                                              }}
+                                            >
+                                              <Pencil size={12} />
+                                              Edit Soal
+                                            </button>
+                                          )}
 
                                         {autoGrading && (
                                           <span
@@ -4436,6 +4741,7 @@ export default function KelolaTugas() {
                                             Auto Grading
                                           </span>
                                         )}
+                                      </div>
                                       </div>
 
                                       {autoGrading && (
@@ -5405,6 +5711,20 @@ export default function KelolaTugas() {
           </div>
         )}
       </div>
+      {selectedAssignment && (
+        <EditTugasModal
+          open={editTaskModalOpen}
+          assignment={selectedAssignment}
+          onClose={() => setEditTaskModalOpen(false)}
+          onSaved={async (updatedAssignment) => {
+            setSelectedAssignment(updatedAssignment);
+            setEditTaskModalOpen(false);
+            await loadManageData(numericScheduleId);
+            showToast('success', 'Detail tugas berhasil diperbarui.');
+          }}
+        />
+      )}
+
       <BuatTugasModal
         open={createTaskModalOpen}
         initialScheduleId={

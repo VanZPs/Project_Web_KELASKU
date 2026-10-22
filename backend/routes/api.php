@@ -347,6 +347,11 @@ Route::middleware('auth:sanctum')->group(
                 [AssignmentController::class, 'updateAnswerKey']
             );
 
+        Route::put(
+            '/guru/tugas/{assignment}/soal/{question}',
+            [AssignmentController::class, 'updateQuestion']
+        );
+
         /*Submission Tugas untuk Siswa*/    
         Route::get('/siswa/tugas', [SubmissionController::class, 'index']);
         
