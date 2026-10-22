@@ -1084,11 +1084,13 @@ function TaskCard({
   assignment,
   schedule,
   onOpen,
+  onOpenDiscussion,
   onDownloadFile,
 }: {
   assignment: Assignment;
   schedule?: Schedule;
   onOpen: () => void;
+  onOpenDiscussion: () => void;
   onDownloadFile: (
     file: AssignmentFile,
   ) => void;
@@ -1140,25 +1142,6 @@ function TaskCard({
   const comments =
     assignment.comments ??
     [];
-
-  const visibleComments =
-    comments.slice(-2);
-
-  const hiddenCommentCount =
-    Math.max(
-      0,
-      comments.length - 2,
-    );
-
-  const [
-    showPreviousComments,
-    setShowPreviousComments,
-  ] = useState(false);
-
-  const commentsToRender =
-    showPreviousComments
-      ? comments
-      : visibleComments;
 
   return (
     <div
@@ -1534,66 +1517,105 @@ function TaskCard({
           </div>
         )}
 
-      {visibleComments.length >
-        0 && (
-        <div
-          className="border-t px-5"
-          style={{
-            borderColor:
-              COLORS.line,
-          }}
-        >
-          <div
-            className="flex items-center gap-1.5 pt-3 text-[11.5px] font-bold"
-            style={{
-              color:
-                COLORS.navy,
-            }}
-          >
-            <MessageCircle
-              size={14}
-            />
-            Diskusi tugas ini (
-            {comments.length})
-          </div>
-
-          {hiddenCommentCount >
-            0 && (
-            <button
-              type="button"
-              onClick={() =>
-                setShowPreviousComments(
-                  (current) => !current,
-                )
-              }
-              className="block py-2 text-left text-[11px] font-semibold transition hover:underline"
-              style={{
-                color:
-                  COLORS.gold,
-              }}
-            >
-              {showPreviousComments
-                ? 'Sembunyikan komentar sebelumnya'
-                : `Lihat ${hiddenCommentCount} komentar sebelumnya`}
-            </button>
-          )}
-
-          <div className="pb-1">
-            {commentsToRender.map(
-              (comment) => (
-                <CommentRow
-                  key={
-                    comment.id
-                  }
-                  comment={
-                    comment
-                  }
-                />
-              ),
-            )}
-          </div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpenDiscussion}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpenDiscussion();
+          }
+        }}
+        className="cursor-pointer border-t px-5 py-3 transition hover:bg-[#FBF8EF] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+        style={{
+          borderColor: COLORS.line,
+          color: COLORS.navy,
+        }}
+        aria-label={`Buka diskusi tugas ${assignment.title ?? ''}, ${comments.length} komentar`}
+      >
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] font-bold">
+          <MessageCircle size={14} />
+          Diskusi tugas ini ({comments.length})
         </div>
-      )}
+
+        {comments.length === 0 ? (
+          <div
+            className="py-2 text-[11.5px]"
+            style={{ color: COLORS.inkSoft }}
+          >
+            Belum ada komentar. Klik untuk memulai diskusi.
+          </div>
+        ) : (
+          comments.map((comment) => {
+            const commenterName = comment.user?.name || 'Pengguna';
+            const commenterRole =
+              comment.user?.role === 'guru' ? 'Guru' : 'Siswa';
+
+            return (
+              <div
+                key={comment.id}
+                className="flex gap-3 py-1.5"
+              >
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                  style={{
+                    backgroundColor:
+                      commenterRole === 'Guru'
+                        ? COLORS.navy
+                        : COLORS.goldSoft,
+                    color:
+                      commenterRole === 'Guru'
+                        ? '#fff'
+                        : '#7A5A20',
+                  }}
+                >
+                  {getInitials(commenterName)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className="text-[13px] font-bold"
+                      style={{ color: COLORS.navyDeep }}
+                    >
+                      {commenterName}
+                    </span>
+                    <span
+                      className="rounded-full px-1.5 py-[2px] text-[9px] font-bold"
+                      style={{
+                        backgroundColor:
+                          commenterRole === 'Guru'
+                            ? COLORS.blueBg
+                            : COLORS.goldSoft,
+                        color:
+                          commenterRole === 'Guru'
+                            ? COLORS.blue
+                            : '#7A5A20',
+                      }}
+                    >
+                      {commenterRole}
+                    </span>
+                    <span
+                      className="text-[10.5px]"
+                      style={{ color: COLORS.inkSoft }}
+                    >
+                      {formatRelativeTime(comment.created_at)}
+                    </span>
+                  </div>
+
+                  <div
+                    className="mt-1 text-[13px] leading-[1.6]"
+                    style={{ color: COLORS.ink }}
+                  >
+                    {comment.comment}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -2351,6 +2373,9 @@ export default function KelolaTugas() {
       null,
     );
 
+  const [discussionAssignment, setDiscussionAssignment] =
+    useState<Assignment | null>(null);
+
   const [selectedSubmission, setSelectedSubmission] =
     useState<Submission | null>(
       null,
@@ -2810,7 +2835,7 @@ export default function KelolaTugas() {
 
   async function submitComment() {
     if (
-      !selectedAssignment ||
+      !discussionAssignment ||
       !commentText.trim() ||
       currentClassroomId === null
     ) {
@@ -2818,72 +2843,69 @@ export default function KelolaTugas() {
     }
 
     try {
-      setSendingComment(
-        true,
+      setSendingComment(true);
+
+      const response = await api.post(
+        `/guru/tugas/${discussionAssignment.id}/komentar`,
+        {
+          classroom_id: currentClassroomId,
+          comment: commentText.trim(),
+        },
       );
 
-      const response =
-        await api.post(
-          `/guru/tugas/${selectedAssignment.id}/komentar`,
-          {
-            classroom_id:
-              currentClassroomId,
-            comment:
-              commentText.trim(),
-          },
-        );
-
       const createdComment =
-        response.data?.data as
-          | TaskComment
-          | undefined;
+        response.data?.data as TaskComment | undefined;
 
       if (createdComment) {
-        setSelectedAssignment(
-          (current) => {
-            if (!current) {
-              return current;
-            }
+        setDiscussionAssignment((current) =>
+          current
+            ? {
+                ...current,
+                comments: [
+                  ...(current.comments ?? []),
+                  createdComment,
+                ],
+              }
+            : current,
+        );
 
-            return {
-              ...current,
-              comments: [
-                ...(current.comments ?? []),
-                createdComment,
-              ],
-            };
-          },
+        setAssignments((current) =>
+          current.map((assignment) =>
+            assignment.id === discussionAssignment.id
+              ? {
+                  ...assignment,
+                  comments: [
+                    ...(assignment.comments ?? []),
+                    createdComment,
+                  ],
+                }
+              : assignment,
+          ),
+        );
+
+        setSelectedAssignment((current) =>
+          current?.id === discussionAssignment.id
+            ? {
+                ...current,
+                comments: [
+                  ...(current.comments ?? []),
+                  createdComment,
+                ],
+              }
+            : current,
         );
       }
 
       setCommentText('');
-
-      await loadManageData(
-        numericScheduleId,
-      );
-
-      showToast(
-        'success',
-        'Komentar berhasil dikirim.',
-      );
+      await loadManageData(numericScheduleId);
+      showToast('success', 'Komentar berhasil dikirim.');
     } catch (err) {
-      showToast(
-        'error',
-        getErrorMessage(err),
-      );
+      showToast('error', getErrorMessage(err));
     } finally {
-      setSendingComment(
-        false,
-      );
+      setSendingComment(false);
     }
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | SAVE AS DRAFT
-  |--------------------------------------------------------------------------
-  */
 
   async function saveAssignmentAsDraft() {
     if (!selectedAssignment) {
@@ -3359,6 +3381,23 @@ export default function KelolaTugas() {
     setScoreModalOpen(false);
     cancelEditAnswerKey();
     cancelEditQuestion();
+  }
+
+
+  function openDiscussionModal(
+    assignment: Assignment,
+  ) {
+    setDiscussionAssignment(assignment);
+    setCommentText('');
+  }
+
+  function closeDiscussionModal() {
+    if (sendingComment) {
+      return;
+    }
+
+    setDiscussionAssignment(null);
+    setCommentText('');
   }
 
 
@@ -4174,6 +4213,9 @@ export default function KelolaTugas() {
                       openTaskModal(
                         assignment,
                       )
+                    }
+                    onOpenDiscussion={() =>
+                      openDiscussionModal(assignment)
                     }
                     onDownloadFile={
                       downloadAssignmentFile
@@ -5213,133 +5255,7 @@ export default function KelolaTugas() {
                   </div>
                   )}
 
-                  {/* COMMENTS */}
 
-                  <div>
-                    <div
-                      className="mb-3 flex items-center gap-1.5 text-[13px] font-bold"
-                      style={{
-                        color:
-                          COLORS.navyDeep,
-                      }}
-                    >
-                      <MessageCircle
-                        size={15}
-                      />
-                      Diskusi tugas ini (
-                      {
-                        selectedAssignment
-                          .comments
-                          ?.length ??
-                        0
-                      })
-                    </div>
-
-                    <div
-                      className="rounded-[11px] border px-3.5"
-                      style={{
-                        borderColor:
-                          COLORS.line,
-                        backgroundColor:
-                          COLORS.paper,
-                      }}
-                    >
-                      {(selectedAssignment.comments ??
-                        []
-                      ).length ===
-                      0 ? (
-                        <div
-                          className="py-5 text-center text-[11.5px]"
-                          style={{
-                            color:
-                              COLORS.inkSoft,
-                          }}
-                        >
-                          Belum ada
-                          komentar.
-                        </div>
-                      ) : (
-                        (
-                          selectedAssignment.comments ??
-                          []
-                        )
-                          .slice(
-                            -2,
-                          )
-                          .map(
-                            (
-                              comment,
-                            ) => (
-                              <CommentRow
-                                key={
-                                  comment.id
-                                }
-                                comment={
-                                  comment
-                                }
-                              />
-                            ),
-                          )
-                      )}
-                    </div>
-
-                    <div
-                      className="mt-3 flex items-end gap-2"
-                    >
-                      <textarea
-                        value={
-                          commentText
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          setCommentText(
-                            event
-                              .target
-                              .value,
-                          )
-                        }
-                        placeholder="Tulis komentar untuk kelas ini..."
-                        rows={2}
-                        maxLength={2000}
-                        className="min-h-[70px] flex-1 resize-none rounded-[10px] border px-3 py-2.5 text-[12.5px] outline-none"
-                        style={{
-                          borderColor:
-                            COLORS.line,
-                          backgroundColor:
-                            COLORS.paper,
-                          color:
-                            COLORS.ink,
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        disabled={
-                          sendingComment ||
-                          !commentText.trim()
-                        }
-                        onClick={
-                          submitComment
-                        }
-                        className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] px-3.5 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{
-                          backgroundColor:
-                            COLORS.navy,
-                        }}
-                      >
-                        {sendingComment ? (
-                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        ) : (
-                          <Send
-                            size={14}
-                          />
-                        )}
-
-                        Kirim
-                      </button>
-                    </div>
-                  </div>
                 </div>
               ) : (
                 <StudentAnswerDetail
@@ -5471,6 +5387,152 @@ export default function KelolaTugas() {
           </ModalShell>
         )}
 
+
+        {/* =======================================================
+            TASK DISCUSSION MODAL
+        ======================================================== */}
+
+        {discussionAssignment && (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(20,17,10,0.48)' }}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeDiscussionModal();
+              }
+            }}
+          >
+            <div
+              className="flex w-full max-w-[680px] flex-col overflow-hidden rounded-[18px]"
+              style={{
+                maxHeight: 'calc(100vh - 32px)',
+                backgroundColor: COLORS.paper,
+                boxShadow: '0 24px 60px -20px rgba(20,17,10,0.45)',
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="task-discussion-title"
+            >
+              <div
+                className="flex shrink-0 items-start justify-between gap-4 border-b px-6 py-5"
+                style={{ borderColor: COLORS.line }}
+              >
+                <div className="min-w-0">
+                  <h2
+                    id="task-discussion-title"
+                    className="truncate text-[19px] font-semibold"
+                    style={{
+                      color: COLORS.navyDeep,
+                      fontFamily: '"Fraunces", serif',
+                    }}
+                  >
+                    Diskusi Tugas
+                  </h2>
+                  <p
+                    className="mt-1 text-[12px]"
+                    style={{ color: COLORS.inkSoft }}
+                  >
+                    {discussionAssignment.title} · {discussionAssignment.comments?.length ?? 0} komentar
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeDiscussionModal}
+                  disabled={sendingComment}
+                  className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border disabled:opacity-50"
+                  style={{
+                    borderColor: COLORS.line,
+                    backgroundColor: COLORS.paper,
+                    color: COLORS.inkSoft,
+                  }}
+                  aria-label="Tutup diskusi"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+                <div
+                  className="rounded-[12px] border px-4"
+                  style={{
+                    borderColor: COLORS.line,
+                    backgroundColor: '#FFFCF6',
+                  }}
+                >
+                  {(discussionAssignment.comments ?? []).length === 0 ? (
+                    <div
+                      className="py-8 text-center text-[12px]"
+                      style={{ color: COLORS.inkSoft }}
+                    >
+                      Belum ada komentar. Mulai diskusi dengan menulis komentar di bawah.
+                    </div>
+                  ) : (
+                    (discussionAssignment.comments ?? []).map((comment) => (
+                      <CommentRow key={comment.id} comment={comment} />
+                    ))
+                  )}
+                </div>
+
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitComment();
+                  }}
+                  className="flex items-end gap-2"
+                >
+                  <textarea
+                    value={commentText}
+                    onChange={(event) => setCommentText(event.target.value)}
+                    placeholder="Tulis komentar untuk kelas ini..."
+                    rows={3}
+                    maxLength={2000}
+                    className="min-h-[84px] flex-1 resize-none rounded-[10px] border px-3 py-2.5 text-[12.5px] outline-none"
+                    style={{
+                      borderColor: COLORS.line,
+                      backgroundColor: COLORS.paper,
+                      color: COLORS.ink,
+                    }}
+                    disabled={sendingComment}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={sendingComment || !commentText.trim()}
+                    className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[10px] px-4 text-[12px] font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ backgroundColor: COLORS.navy }}
+                  >
+                    {sendingComment ? 'Mengirim...' : (
+                      <>
+                        <Send size={14} />
+                        Kirim
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              <div
+                className="flex shrink-0 justify-end border-t px-6 py-4"
+                style={{ borderColor: COLORS.line }}
+              >
+                <button
+                  type="button"
+                  onClick={closeDiscussionModal}
+                  disabled={sendingComment}
+                  className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold disabled:opacity-50"
+                  style={{
+                    backgroundColor: COLORS.paper,
+                    borderColor: COLORS.line,
+                    color: COLORS.ink,
+                  }}
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* =======================================================
             SCORE EDIT MODAL
