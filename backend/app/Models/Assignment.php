@@ -16,6 +16,8 @@ class Assignment extends Model
         'description',
         'start_date',
         'due_date',
+        'activation_at',
+        'activation_processed_at',
         'submission_mode',
         'status',
         'is_published',
@@ -26,6 +28,8 @@ class Assignment extends Model
         return [
             'start_date' => 'datetime',
             'due_date' => 'datetime',
+            'activation_at' => 'datetime',
+            'activation_processed_at' => 'datetime',
             'is_published' => 'boolean',
         ];
     }

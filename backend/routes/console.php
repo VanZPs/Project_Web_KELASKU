@@ -16,3 +16,25 @@ Schedule::command('journals:generate-empty')
     ->everyMinute()
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping();
+
+// Publikasikan tugas yang telah mencapai waktu aktivasi terjadwal.
+Artisan::command('assignments:activate-scheduled', function () {
+    $now = now('UTC');
+
+    $activated = \App\Models\Assignment::query()
+        ->whereNotNull('activation_at')
+        ->whereNull('activation_processed_at')
+        ->where('activation_at', '<=', $now)
+        ->update([
+            'is_published' => true,
+            'activation_processed_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+    $this->info("Tugas yang diaktifkan otomatis: {$activated}.");
+})->purpose('Aktifkan tugas saat jadwal aktivasi tercapai');
+
+Schedule::command('assignments:activate-scheduled')
+    ->everyMinute()
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping();

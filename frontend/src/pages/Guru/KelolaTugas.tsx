@@ -8,6 +8,7 @@ import {
   AlertCircle,
   ArrowLeft,
   BookOpen,
+  Calendar,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -52,6 +53,7 @@ type AssignmentType =
 
 type AssignmentStatus =
   | 'active'
+  | 'inactive'
   | 'scheduled'
   | 'closed'
   | 'draft';
@@ -200,6 +202,9 @@ interface Assignment {
   student_count?: number;
   submission_mode?: SubmissionMode;
   status?: AssignmentStatus | string;
+  is_published?: boolean;
+  activation_at?: string | null;
+  activation_processed_at?: string | null;
   schedule_id?: number | null;
 
   schedule?: Schedule;
@@ -630,6 +635,14 @@ function getAnswerText(
 //   return `Soal ${index + 1}`;
 // }
 
+function formatDateTimeLocal(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (number: number) => String(number).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function getAssignmentStatus(
   assignment: Assignment,
 ): AssignmentStatus {
@@ -637,6 +650,12 @@ function getAssignmentStatus(
     assignment.status === 'draft'
   ) {
     return 'draft';
+  }
+
+  // Status publikasi diprioritaskan agar card langsung menampilkan
+  // Tidak Aktif ketika guru menyembunyikan tugas dari siswa.
+  if (assignment.is_published === false) {
+    return 'inactive';
   }
 
   const now =
@@ -686,6 +705,9 @@ function getStatusLabel(
     case 'draft':
       return 'Draft';
 
+    case 'inactive':
+      return 'Tidak Aktif';
+
     case 'active':
     default:
       return 'Aktif';
@@ -715,6 +737,12 @@ function getStatusClasses(
         backgroundColor:
           '#EFE9DB',
         color: COLORS.inkSoft,
+      };
+
+    case 'inactive':
+      return {
+        backgroundColor: COLORS.rustBg,
+        color: COLORS.rust,
       };
 
     case 'active':
@@ -2458,6 +2486,10 @@ export default function KelolaTugas() {
 
   const [deletingAssignment, setDeletingAssignment] = useState(false);
 
+  const [savingPublication, setSavingPublication] = useState(false);
+  const [activationDateDraft, setActivationDateDraft] = useState('');
+  const [savingActivation, setSavingActivation] = useState(false);
+
   const [search, setSearch] =
     useState('');
 
@@ -2465,6 +2497,10 @@ export default function KelolaTugas() {
     useState<Assignment | null>(
       null,
     );
+
+  useEffect(() => {
+    setActivationDateDraft(formatDateTimeLocal(selectedAssignment?.activation_at));
+  }, [selectedAssignment?.id, selectedAssignment?.activation_at]);
 
   const [discussionAssignment, setDiscussionAssignment] =
     useState<Assignment | null>(null);
@@ -2587,6 +2623,16 @@ export default function KelolaTugas() {
   ]);
 
 
+  // Sinkronkan status kartu dengan aktivasi otomatis yang dijalankan backend.
+  useEffect(() => {
+    if (!Number.isFinite(numericScheduleId) || numericScheduleId <= 0) return;
+    const intervalId = window.setInterval(() => {
+      void loadManageData(numericScheduleId, true);
+    }, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [numericScheduleId]);
+
+
   /*
   |--------------------------------------------------------------------------
   | ESCAPE KEY
@@ -2651,10 +2697,13 @@ export default function KelolaTugas() {
 
   async function loadManageData(
     id: number,
+    silent = false,
   ) {
     try {
-      setLoading(true);
-      setError('');
+      if (!silent) {
+        setLoading(true);
+        setError('');
+      }
 
       const response =
         await api.get(
@@ -2711,9 +2760,10 @@ export default function KelolaTugas() {
             ?.schedule;
       }
 
-      setAssignments(
-        loadedAssignments,
-      );
+      setAssignments(loadedAssignments);
+      setSelectedAssignment(current => current
+        ? loadedAssignments.find(item => item.id === current.id) ?? current
+        : current);
 
       if (loadedSchedule) {
         setSchedule(
@@ -2737,13 +2787,12 @@ export default function KelolaTugas() {
         }
       }
     } catch (err) {
-      setAssignments([]);
-
-      setError(
-        getErrorMessage(err),
-      );
+      if (!silent) {
+        setAssignments([]);
+        setError(getErrorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -2999,6 +3048,120 @@ export default function KelolaTugas() {
     }
   }
 
+
+  async function toggleAssignmentPublication() {
+    if (!selectedAssignment || savingPublication) {
+      return;
+    }
+
+    const assignmentId = selectedAssignment.id;
+    const previousValue = selectedAssignment.is_published ?? true;
+    const nextValue = !previousValue;
+
+    // Perbarui modal dan card secara optimistis agar perubahan langsung terlihat.
+    const applyPublicationState = (isPublished: boolean) => {
+      setSelectedAssignment((current) =>
+        current?.id === assignmentId
+          ? { ...current, is_published: isPublished }
+          : current,
+      );
+      setAssignments((current) =>
+        current.map((assignment) =>
+          assignment.id === assignmentId
+            ? { ...assignment, is_published: isPublished }
+            : assignment,
+        ),
+      );
+    };
+
+    applyPublicationState(nextValue);
+    setSavingPublication(true);
+
+    try {
+      const response = await api.put(
+        `/guru/tugas/${assignmentId}`,
+        { is_published: nextValue },
+      );
+
+      const payload = response.data?.data ?? response.data;
+      const confirmedValue =
+        typeof payload?.is_published === 'boolean'
+          ? payload.is_published
+          : nextValue;
+
+      applyPublicationState(confirmedValue);
+      showToast(
+        'success',
+        confirmedValue
+          ? 'Tugas berhasil diaktifkan dan ditampilkan kepada siswa.'
+          : 'Tugas berhasil dinonaktifkan dan disembunyikan dari siswa.',
+      );
+    } catch (err) {
+      applyPublicationState(previousValue);
+      showToast('error', getErrorMessage(err));
+    } finally {
+      setSavingPublication(false);
+    }
+  }
+
+
+
+  async function saveAssignmentActivationSchedule() {
+    if (!selectedAssignment || savingActivation) return;
+
+    const assignmentId = selectedAssignment.id;
+    const previousActivation = selectedAssignment.activation_at ?? null;
+    const previousPublished = selectedAssignment.is_published ?? true;
+    const activationDate = activationDateDraft
+      ? new Date(activationDateDraft)
+      : null;
+
+    if (activationDateDraft && (!activationDate || Number.isNaN(activationDate.getTime()))) {
+      showToast('error', 'Tanggal aktivasi tidak valid.');
+      return;
+    }
+
+    const nextActivation = activationDate ? activationDate.toISOString() : null;
+    const nextPublished = activationDate && activationDate.getTime() > Date.now()
+      ? false
+      : activationDate
+        ? true
+        : previousPublished;
+
+    const applySchedule = (activationAt: string | null, isPublished: boolean) => {
+      setSelectedAssignment(current => current?.id === assignmentId
+        ? { ...current, activation_at: activationAt, is_published: isPublished }
+        : current);
+      setAssignments(current => current.map(item => item.id === assignmentId
+        ? { ...item, activation_at: activationAt, is_published: isPublished }
+        : item));
+    };
+
+    applySchedule(nextActivation, nextPublished);
+    setSavingActivation(true);
+
+    try {
+      const response = await api.put(`/guru/tugas/${assignmentId}`, {
+        activation_at: nextActivation,
+      });
+      const payload = response.data?.data ?? response.data;
+      const confirmedActivation = payload?.activation_at ?? nextActivation;
+      const confirmedPublished = typeof payload?.is_published === 'boolean'
+        ? payload.is_published
+        : nextPublished;
+      applySchedule(confirmedActivation, confirmedPublished);
+      setActivationDateDraft(formatDateTimeLocal(confirmedActivation));
+      showToast('success', confirmedActivation
+        ? 'Jadwal aktivasi tugas berhasil disimpan.'
+        : 'Jadwal aktivasi tugas berhasil dihapus.');
+    } catch (err) {
+      applySchedule(previousActivation, previousPublished);
+      setActivationDateDraft(formatDateTimeLocal(previousActivation));
+      showToast('error', getErrorMessage(err));
+    } finally {
+      setSavingActivation(false);
+    }
+  }
 
   async function saveAssignmentAsDraft() {
     if (!selectedAssignment) {
@@ -4637,6 +4800,113 @@ export default function KelolaTugas() {
                     </div>
                   </div>
                   )}
+
+                  {/* STATUS PUBLIKASI: langsung tersimpan saat switch diubah */}
+                  <div
+                    className="flex items-center justify-between gap-4 rounded-[12px] border px-4 py-3.5"
+                    style={{
+                      borderColor:
+                        selectedAssignment.is_published === false
+                          ? COLORS.rustLine
+                          : '#C9DCCF',
+                      backgroundColor:
+                        selectedAssignment.is_published === false
+                          ? '#FCF2EE'
+                          : '#F0F7F1',
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="text-[13px] font-bold"
+                          style={{ color: COLORS.navyDeep }}
+                        >
+                          {selectedAssignment.is_published === false
+                            ? 'Tugas tidak aktif'
+                            : 'Tugas aktif'}
+                        </span>
+                        {savingPublication && (
+                          <span
+                            className="text-[10.5px] font-medium"
+                            style={{ color: COLORS.inkSoft }}
+                          >
+                            Menyimpan status...
+                          </span>
+                        )}
+                      </div>
+                      <p
+                        className="mt-1 text-[11.5px] leading-[1.5]"
+                        style={{ color: COLORS.inkSoft }}
+                      >
+                        {selectedAssignment.is_published === false
+                          ? 'Tugas disembunyikan dan tidak dapat diakses siswa.'
+                          : 'Tugas ditampilkan dan dapat diakses siswa sesuai jadwal.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={selectedAssignment.is_published ?? true}
+                      aria-label="Aktifkan atau nonaktifkan tugas untuk siswa"
+                      onClick={() => void toggleAssignmentPublication()}
+                      disabled={savingPublication}
+                      className="relative h-[28px] w-[48px] shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{
+                        backgroundColor:
+                          selectedAssignment.is_published === false
+                            ? '#B8B4AA'
+                            : COLORS.green,
+                      }}
+                    >
+                      <span
+                        className="absolute top-[4px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                        style={{
+                          left:
+                            selectedAssignment.is_published === false
+                              ? '4px'
+                              : '24px',
+                        }}
+                      />
+                    </button>
+                  </div>
+
+                  {/* JADWAL AKTIVASI: opsional, dapat diubah dari detail tugas */}
+                  <div className="rounded-[12px] border px-4 py-3.5" style={{ borderColor: COLORS.line, backgroundColor: '#FBF8EF' }}>
+                    <div className="mb-2 text-[13px] font-bold" style={{ color: COLORS.navyDeep }}>
+                      Jadwal aktivasi tugas <span className="text-[11px] font-medium" style={{ color: COLORS.inkSoft }}>(opsional)</span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-[10px] border px-3" style={{ borderColor: COLORS.line, backgroundColor: '#FFFDF8' }}>
+                      <Calendar size={16} style={{ color: COLORS.inkSoft }} />
+                      <input
+                        type="datetime-local"
+                        aria-label="Jadwal aktivasi tugas"
+                        value={activationDateDraft}
+                        onChange={event => setActivationDateDraft(event.target.value)}
+                        disabled={savingActivation}
+                        className="min-w-0 flex-1 bg-transparent py-2.5 text-[12.5px] outline-none"
+                        style={{ color: COLORS.ink }}
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[11px] leading-[1.5]" style={{ color: COLORS.inkSoft }}>
+                        {selectedAssignment.activation_at
+                          ? `Dijadwalkan: ${new Date(selectedAssignment.activation_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`
+                          : 'Belum ada jadwal. Kosongkan untuk menonaktifkan penjadwalan.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void saveAssignmentActivationSchedule()}
+                        disabled={savingActivation}
+                        className="rounded-[9px] border px-3 py-2 text-[11.5px] font-bold disabled:opacity-60"
+                        style={{ borderColor: COLORS.line, backgroundColor: '#FFFDF8', color: COLORS.navy }}
+                      >
+                        {savingActivation ? 'Menyimpan...' : 'Simpan Jadwal'}
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-[1.5]" style={{ color: COLORS.inkSoft }}>
+                      Jadwal mendatang akan membuat tugas tidak aktif sampai waktu aktivasi. Switch di atas tetap dapat diubah secara manual.
+                    </p>
+                  </div>
 
                   {/* QUESTIONS */}
 

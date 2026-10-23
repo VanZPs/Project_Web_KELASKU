@@ -155,6 +155,13 @@ class AssignmentController extends Controller
                 'date',
             ],
 
+            // Jadwal aktivasi opsional; tugas akan dipublikasikan otomatis pada waktu ini.
+            'activation_at' => [
+                'sometimes',
+                'nullable',
+                'date',
+            ],
+
             /**
              * Mode pengumpulan tugas:
              *
@@ -473,15 +480,26 @@ class AssignmentController extends Controller
              * Jika submission_mode tidak dikirim,
              * gunakan "once" sebagai default.
              */
+            $activationAt = !empty($validated['activation_at'])
+                ? \Carbon\Carbon::parse($validated['activation_at'])
+                : null;
+            $activationIsFuture = $activationAt && $activationAt->isFuture();
+
             $assignment = Assignment::create([
                 'title' => $validated['title'],
                 'description' => $validated['description'] ?? '',
                 'start_date' => $validated['start_date'] ?? null,
                 'due_date' => $validated['due_date'] ?? null,
+                'activation_at' => $activationAt,
+                'activation_processed_at' => $activationAt && !$activationIsFuture
+                    ? now() : null,
                 'submission_mode' => $validated['submission_mode']
                     ?? 'once',
                 'status' => 'active',
-                'is_published' => $validated['is_published'] ?? true,
+                // Jadwal aktivasi masa depan selalu membuat tugas tidak aktif terlebih dahulu.
+                'is_published' => $activationIsFuture
+                    ? false
+                    : ($validated['is_published'] ?? true),
             ]);
 
             /**
@@ -752,6 +770,12 @@ class AssignmentController extends Controller
                 'date',
             ],
 
+            'activation_at' => [
+                'sometimes',
+                'nullable',
+                'date',
+            ],
+
             /**
              * Mode pengumpulan:
              * once = satu kali, multiple = boleh memperbarui kiriman.
@@ -830,6 +854,24 @@ class AssignmentController extends Controller
         });
 
         $validated = $validator->validate();
+
+        // Jika jadwal aktivasi diubah/dihapus, izinkan scheduler memproses jadwal baru.
+        if (array_key_exists('activation_at', $validated)) {
+            $activationAt = !empty($validated['activation_at'])
+                ? \Carbon\Carbon::parse($validated['activation_at'])
+                : null;
+
+            $validated['activation_processed_at'] = $activationAt && !$activationAt->isFuture()
+                ? now()
+                : null;
+
+            // Waktu aktivasi di masa depan menonaktifkan tugas sampai waktunya tiba.
+            if ($activationAt && $activationAt->isFuture()) {
+                $validated['is_published'] = false;
+            } elseif ($activationAt && !$activationAt->isFuture()) {
+                $validated['is_published'] = true;
+            }
+        }
 
         /**
          * Pastikan jadwal/kelas baru yang dikirim benar-benar
@@ -1603,6 +1645,9 @@ class AssignmentController extends Controller
                     'description' => $assignment->description,
                     'start_date' => $assignment->start_date,
                     'due_date' => $assignment->due_date,
+                    'activation_at' => $assignment->activation_at,
+                    'activation_processed_at' => $assignment->activation_processed_at,
+                    'is_published' => $assignment->is_published,
                     'status' => $assignment->status,
 
                     'submission_mode' =>

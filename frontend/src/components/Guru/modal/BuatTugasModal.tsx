@@ -26,6 +26,42 @@ import {
 
 import api from '../../../api/axios';
 
+// Cache daftar jadwal agar modal tidak meminta /schedules setiap kali dibuka.
+// Komponen BuatTugasModal tetap terpasang pada halaman Kelola Tugas meskipun modal tertutup,
+// sehingga daftar jadwal dapat dimuat lebih awal di latar belakang.
+let schedulesCache: Schedule[] | null = null;
+let schedulesRequest: Promise<Schedule[]> | null = null;
+
+async function fetchSchedulesOnce(): Promise<Schedule[]> {
+  if (schedulesCache !== null) return schedulesCache;
+
+  if (!schedulesRequest) {
+    schedulesRequest = api.get('/schedules')
+      .then((response) => {
+        const payload = response.data;
+        let result: Schedule[] = [];
+
+        if (Array.isArray(payload)) {
+          result = payload;
+        } else if (Array.isArray(payload?.data)) {
+          result = payload.data;
+        } else if (Array.isArray(payload?.schedules)) {
+          result = payload.schedules;
+        }
+
+        schedulesCache = result;
+        return result;
+      })
+      .catch((error) => {
+        // Jangan cache kegagalan agar permintaan berikutnya bisa mencoba kembali.
+        schedulesRequest = null;
+        throw error;
+      });
+  }
+
+  return schedulesRequest;
+}
+
 /*
 |--------------------------------------------------------------------------
 | TYPES
@@ -140,8 +176,9 @@ interface TaskForm {
   questionCount: string;
   startDate: string;
   dueDate: string;
-  submissionMode: SubmissionMode;
+  activationAt: string;
   isPublished: boolean;
+  submissionMode: SubmissionMode;
 }
 
 
@@ -302,8 +339,9 @@ export default function BuatTugasModal({
       questionCount: '',
       startDate: '',
       dueDate: '',
-      submissionMode: 'once',
+      activationAt: '',
       isPublished: true,
+      submissionMode: 'once',
     });
 
   const [questions, setQuestions] =
@@ -324,30 +362,20 @@ export default function BuatTugasModal({
     } | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-
     let cancelled = false;
 
     async function loadSchedules() {
+      // Gunakan cache seketika jika data sudah pernah dimuat.
+      if (schedulesCache !== null) {
+        setSchedules(schedulesCache);
+        setScheduleLoading(false);
+        return;
+      }
+
       try {
+        // Hanya tampilkan loading saat data memang belum tersedia.
         setScheduleLoading(true);
-
-        const response =
-          await api.get('/schedules');
-
-        const payload = response.data;
-
-        let result: Schedule[] = [];
-
-        if (Array.isArray(payload)) {
-          result = payload;
-        } else if (Array.isArray(payload?.data)) {
-          result = payload.data;
-        } else if (Array.isArray(payload?.schedules)) {
-          result = payload.schedules;
-        }
+        const result = await fetchSchedulesOnce();
 
         if (!cancelled) {
           setSchedules(result);
@@ -363,12 +391,13 @@ export default function BuatTugasModal({
       }
     }
 
-    loadSchedules();
+    // Preload saat komponen dipasang, bukan menunggu modal dibuka.
+    void loadSchedules();
 
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -737,8 +766,9 @@ export default function BuatTugasModal({
       questionCount: '',
       startDate: '',
       dueDate: '',
-      submissionMode: 'once',
+      activationAt: '',
       isPublished: true,
+      submissionMode: 'once',
     });
     setQuestions([]);
     setTaskFiles([]);
@@ -1536,6 +1566,13 @@ export default function BuatTugasModal({
         'is_published',
         taskForm.isPublished ? '1' : '0',
       );
+
+      if (taskForm.activationAt) {
+        const activationDate = new Date(taskForm.activationAt);
+        if (!Number.isNaN(activationDate.getTime())) {
+          formData.append('activation_at', activationDate.toISOString());
+        }
+      }
 
       if (
         taskForm.type !== 'info'
@@ -3261,6 +3298,77 @@ export default function BuatTugasModal({
                     </div>
                   </div>
 
+                  {/* VISIBILITAS DAN JADWAL AKTIVASI */}
+                  <div
+                    className="mb-[14px] rounded-[12px] border px-4 py-3.5"
+                    style={{
+                      borderColor: taskForm.isPublished ? '#C9DCCF' : '#E3DACB',
+                      backgroundColor: taskForm.isPublished ? '#F0F7F1' : '#FBF9F3',
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-bold" style={{ color: '#141C30' }}>
+                          Tampilkan kepada siswa
+                        </div>
+                        <p className="mt-1 text-[11.5px] leading-[1.5]" style={{ color: '#6B7080' }}>
+                          {taskForm.activationAt
+                            ? 'Tugas dijadwalkan aktif pada waktu yang ditentukan.'
+                            : taskForm.isPublished
+                              ? 'Tugas akan terlihat kepada siswa setelah disimpan.'
+                              : 'Tugas disembunyikan dari halaman siswa sampai diaktifkan.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={taskForm.isPublished}
+                        aria-label="Tampilkan tugas kepada siswa"
+                        onClick={() => setTaskForm(current => ({ ...current, isPublished: !current.isPublished }))}
+                        className="relative h-[26px] w-[46px] shrink-0 rounded-full transition-colors"
+                        style={{ backgroundColor: taskForm.isPublished ? '#4C7A5E' : '#B8B4AA' }}
+                      >
+                        <span
+                          className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                          style={{ left: taskForm.isPublished ? '23px' : '3px' }}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-[18px]">
+                    <label className="mb-2 block text-[13px] font-bold" style={{ color: '#141C30' }}>
+                      Jadwal aktivasi tugas <span className="text-[11.5px] font-medium" style={{ color: '#6B7080' }}>(opsional)</span>
+                    </label>
+                    <div
+                      className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
+                      style={{ borderColor: '#E3DACB', backgroundColor: '#FFFDF8' }}
+                      onClick={event => {
+                        if ((event.target as HTMLElement).closest('button')) return;
+                        const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
+                        try { input?.showPicker?.(); } catch { input?.focus(); }
+                      }}
+                    >
+                      <Calendar size={16} style={{ color: '#6B7080' }} />
+                      <input
+                        type="datetime-local"
+                        value={taskForm.activationAt}
+                        onChange={event => setTaskForm(current => ({ ...current, activationAt: event.target.value }))}
+                        className="w-full border-none bg-transparent py-[11px] text-[13.5px] outline-none"
+                        style={{ color: '#23283A' }}
+                        aria-label="Waktu aktivasi tugas"
+                      />
+                      {taskForm.activationAt && (
+                        <button type="button" onClick={() => setTaskForm(current => ({ ...current, activationAt: '' }))} className="text-[11px] font-semibold" style={{ color: '#6B7080' }}>
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11.5px] leading-[1.5]" style={{ color: '#6B7080' }}>
+                      Jika diatur ke waktu mendatang, tugas otomatis tidak aktif sampai waktu tersebut. Kosongkan jika tidak ingin menjadwalkan aktivasi.
+                    </p>
+                  </div>
+
                   {/* MODE PENGERJAAN */}
                   {taskForm.type &&
                     taskForm.type !== 'info' && (
@@ -3581,12 +3689,15 @@ export default function BuatTugasModal({
                           </label>
 
                           <div
-                            className="flex items-center gap-[9px] rounded-[10px] border px-[13px]"
+                            className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
                             style={{
-                              borderColor:
-                                '#E3DACB',
-                              backgroundColor:
-                                '#FFFDF8',
+                              borderColor: '#E3DACB',
+                              backgroundColor: '#FFFDF8',
+                            }}
+                            onClick={event => {
+                              if ((event.target as HTMLElement).closest('button')) return;
+                              const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
+                              try { input?.showPicker?.(); } catch { input?.focus(); }
                             }}
                           >
 
@@ -3663,14 +3774,15 @@ export default function BuatTugasModal({
                           </label>
 
                           <div
-                            className="flex items-center gap-[9px] rounded-[10px] border px-[13px]"
+                            className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
                             style={{
-                              borderColor:
-                                dateRangeInvalid
-                                  ? '#E4BCA9'
-                                  : '#E3DACB',
-                              backgroundColor:
-                                '#FFFDF8',
+                              borderColor: dateRangeInvalid ? '#E4BCA9' : '#E3DACB',
+                              backgroundColor: '#FFFDF8',
+                            }}
+                            onClick={event => {
+                              if ((event.target as HTMLElement).closest('button')) return;
+                              const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
+                              try { input?.showPicker?.(); } catch { input?.focus(); }
                             }}
                           >
 
@@ -3735,50 +3847,6 @@ export default function BuatTugasModal({
                         </div>
                       </>
                     )}
-
-                  {/* VISIBILITAS TUGAS UNTUK SISWA */}
-                  <div
-                    className="mb-[18px] flex items-center justify-between gap-4 rounded-[12px] border px-4 py-3.5"
-                    style={{
-                      borderColor: taskForm.isPublished ? '#C9DCCF' : '#E3DACB',
-                      backgroundColor: taskForm.isPublished ? '#F0F7F1' : '#FBF9F3',
-                    }}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-bold" style={{ color: '#141C30' }}>
-                        Tampilkan kepada siswa
-                      </div>
-                      <p className="mt-1 text-[11.5px] leading-[1.5]" style={{ color: '#6B7080' }}>
-                        {taskForm.isPublished
-                          ? 'Tugas akan terlihat di halaman siswa setelah disimpan.'
-                          : 'Tugas disimpan tetapi disembunyikan dari halaman siswa.'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={taskForm.isPublished}
-                      aria-label="Tampilkan tugas kepada siswa"
-                      onClick={() =>
-                        setTaskForm((current) => ({
-                          ...current,
-                          isPublished: !current.isPublished,
-                        }))
-                      }
-                      disabled={saving}
-                      className="relative h-[26px] w-[46px] shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                      style={{
-                        backgroundColor: taskForm.isPublished ? '#4C7A5E' : '#B8B4AA',
-                      }}
-                    >
-                      <span
-                        className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
-                        style={{
-                          left: taskForm.isPublished ? '23px' : '3px',
-                        }}
-                      />
-                    </button>
-                  </div>
 
                   {/* SELECTED CLASSES */}
                   {selectedClassrooms.length > 0 && (
