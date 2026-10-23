@@ -48,11 +48,15 @@ class SubmissionController extends Controller
             'questions.options',
         ]);
         /*
-         * Draft hanya dapat dilihat/dikelola oleh guru.
-         * Siswa tidak boleh melihat maupun mengakses assignment draft.
+         * Tugas draft maupun tugas yang dinonaktifkan publikasinya
+         * hanya dapat dilihat/dikelola oleh guru.
+         * Siswa tidak boleh melihatnya melalui daftar, detail,
+         * submission, maupun endpoint siswa lain yang memakai
+         * getAuthorizedAssignment().
          */
         abort_if(
-            $assignment->status === 'draft',
+            $assignment->status === 'draft'
+                || !$assignment->is_published,
             404,
             'Tugas tidak ditemukan.'
         );
@@ -896,8 +900,9 @@ class SubmissionController extends Controller
     /**
      * Daftar tugas yang dapat diakses siswa.
      *
-     * Assignment berstatus draft sengaja dikecualikan dari query,
-     * sehingga draft tidak pernah muncul pada daftar tugas siswa.
+     * Assignment berstatus draft dan tugas dengan is_published=false
+     * dikecualikan dari query, sehingga hanya tugas yang dipublikasikan
+     * yang muncul pada daftar tugas siswa.
      */
     public function index(Request $request)
     {
@@ -924,6 +929,7 @@ class SubmissionController extends Controller
             },
         ])
             ->where('status', '!=', 'draft')
+            ->where('is_published', true)
             ->whereHas(
                 'schedules',
                 function ($query) use ($classroomIds) {

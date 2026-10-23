@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { 
-    AlertCircle, 
-    Calendar, 
-    CheckCircle2, 
-    ChevronDown, 
-    FileText, 
-    GraduationCap, 
-    X 
-} from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle2, ChevronDown, FileText, GraduationCap, X } from 'lucide-react';
 import api from '../../../api/axios';
 
 type SubmissionMode = 'once' | 'multiple';
@@ -19,7 +11,7 @@ interface Schedule { id: number; classroom_id?: number; subject_id?: number; cla
 interface Question { id?: number; type: AssignmentType; question?: string; }
 interface Assignment {
   id: number; title: string; description?: string | null; start_date?: string | null; due_date?: string | null;
-  submission_mode?: SubmissionMode; questions?: Question[]; schedules?: Schedule[]; schedule?: Schedule;
+  submission_mode?: SubmissionMode; is_published?: boolean; questions?: Question[]; schedules?: Schedule[]; schedule?: Schedule;
 }
 interface EditTugasModalProps {
   open: boolean;
@@ -57,6 +49,7 @@ function EditTugasModal({ open, assignment, onClose, onSaved }: EditTugasModalPr
   const [title, setTitle] = useState(assignment.title || '');
   const [description, setDescription] = useState(assignment.description || '');
   const [submissionMode, setSubmissionMode] = useState<SubmissionMode>(assignment.submission_mode || 'once');
+  const [isPublished, setIsPublished] = useState<boolean>(assignment.is_published ?? true);
   const [startDate, setStartDate] = useState(toLocalDateTime(assignment.start_date));
   const [dueDate, setDueDate] = useState(toLocalDateTime(assignment.due_date));
   const [saving, setSaving] = useState(false);
@@ -76,6 +69,7 @@ function EditTugasModal({ open, assignment, onClose, onSaved }: EditTugasModalPr
     setTitle(assignment.title || '');
     setDescription(assignment.description || '');
     setSubmissionMode(assignment.submission_mode || 'once');
+    setIsPublished(assignment.is_published ?? true);
     setStartDate(toLocalDateTime(assignment.start_date));
     setDueDate(toLocalDateTime(assignment.due_date));
     setSelectedClassroomIds([...new Set(assignmentSchedules.map(item => Number(item.classroom_id ?? item.classroom?.id)).filter(id => Number.isFinite(id) && id > 0))]);
@@ -144,6 +138,7 @@ function EditTugasModal({ open, assignment, onClose, onSaved }: EditTugasModalPr
         title: title.trim(),
         description: description.trim() || null,
         submission_mode: submissionMode,
+        is_published: isPublished,
         start_date: startDate || null,
         due_date: dueDate || null,
         schedule_ids: selectedScheduleIds,
@@ -215,6 +210,27 @@ function EditTugasModal({ open, assignment, onClose, onSaved }: EditTugasModalPr
           <div>
             <label className="mb-2 block text-[12.5px] font-bold" style={{ color: colors.ink }}>Mode Pengerjaan <span style={{ color: '#A8503B' }}>*</span></label>
             <div className="relative"><select value={submissionMode} onChange={event => setSubmissionMode(event.target.value as SubmissionMode)} disabled={saving} className="w-full appearance-none rounded-[10px] border px-3.5 py-3 pr-10 text-[13px] outline-none focus:ring-2 focus:ring-amber-200" style={{ borderColor: colors.line, backgroundColor: colors.paper, color: colors.ink }}><option value="once">Sekali (Once) — siswa hanya dapat mengirim satu kali</option><option value="multiple">Berkali-kali (Multiple) — siswa dapat memperbarui pengumpulan</option></select><ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2" style={{ color: colors.muted }} /></div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-[12px] border px-4 py-3.5" style={{ borderColor: isPublished ? '#C9DCCF' : colors.line, backgroundColor: isPublished ? '#F0F7F1' : '#FBF9F3' }}>
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold" style={{ color: colors.navyDeep }}>Tampilkan kepada siswa</div>
+              <p className="mt-1 text-[11.5px] leading-[1.5]" style={{ color: colors.muted }}>
+                {isPublished ? 'Tugas terlihat di halaman siswa.' : 'Tugas disembunyikan dari halaman siswa.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isPublished}
+              aria-label="Tampilkan tugas kepada siswa"
+              onClick={() => setIsPublished(value => !value)}
+              disabled={saving}
+              className="relative h-[26px] w-[46px] shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ backgroundColor: isPublished ? colors.green : '#B8B4AA' }}
+            >
+              <span className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform" style={{ left: isPublished ? '23px' : '3px' }} />
+            </button>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

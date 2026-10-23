@@ -167,6 +167,12 @@ class AssignmentController extends Controller
                 'in:once,multiple',
             ],
 
+            'is_published' => [
+                'sometimes',
+                'required',
+                'boolean',
+            ],
+
             'questions' => [
                 'nullable',
                 'array',
@@ -475,6 +481,7 @@ class AssignmentController extends Controller
                 'submission_mode' => $validated['submission_mode']
                     ?? 'once',
                 'status' => 'active',
+                'is_published' => $validated['is_published'] ?? true,
             ]);
 
             /**
@@ -761,6 +768,12 @@ class AssignmentController extends Controller
                 'required',
                 'string',
                 'in:active,draft',
+            ],
+
+            'is_published' => [
+                'sometimes',
+                'required',
+                'boolean',
             ],
         ]);
 

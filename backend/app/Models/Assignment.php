@@ -18,6 +18,7 @@ class Assignment extends Model
         'due_date',
         'submission_mode',
         'status',
+        'is_published',
     ];
 
     protected function casts(): array
@@ -25,15 +26,10 @@ class Assignment extends Model
         return [
             'start_date' => 'datetime',
             'due_date' => 'datetime',
+            'is_published' => 'boolean',
         ];
     }
 
-    /**
-     * Assignment -> Schedule
-     *
-     * Satu tugas dapat diberikan kepada banyak jadwal
-     * yang mewakili guru, kelas, dan mata pelajaran.
-     */
     public function schedules(): BelongsToMany
     {
         return $this->belongsToMany(
@@ -42,48 +38,24 @@ class Assignment extends Model
         )->withTimestamps();
     }
 
-    /**
-     * Assignment -> Submission
-     *
-     * Satu tugas dapat memiliki banyak submission
-     * dari siswa.
-     */
     public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class);
     }
 
-    /**
-     * Assignment -> AssignmentFile
-     *
-     * Satu tugas dapat memiliki banyak file materi/lampiran.
-     */
     public function files(): HasMany
     {
         return $this->hasMany(AssignmentFile::class);
     }
 
-    /**
-     * Assignment -> AssignmentQuestion
-     *
-     * Satu tugas dapat memiliki banyak pertanyaan.
-     */
     public function questions(): HasMany
     {
         return $this->hasMany(AssignmentQuestion::class)
             ->orderBy('order');
     }
 
-    /**
-     * Assignment -> TaskComment
-     *
-     * Satu tugas dapat memiliki banyak komentar
-     * dari guru maupun siswa.
-     */
     public function comments(): HasMany
     {
-        return $this->hasMany(
-            TaskComment::class
-        );
+        return $this->hasMany(TaskComment::class);
     }
 }

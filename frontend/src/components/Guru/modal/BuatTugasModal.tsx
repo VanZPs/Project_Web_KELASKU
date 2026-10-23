@@ -141,6 +141,7 @@ interface TaskForm {
   startDate: string;
   dueDate: string;
   submissionMode: SubmissionMode;
+  isPublished: boolean;
 }
 
 
@@ -302,6 +303,7 @@ export default function BuatTugasModal({
       startDate: '',
       dueDate: '',
       submissionMode: 'once',
+      isPublished: true,
     });
 
   const [questions, setQuestions] =
@@ -736,6 +738,7 @@ export default function BuatTugasModal({
       startDate: '',
       dueDate: '',
       submissionMode: 'once',
+      isPublished: true,
     });
     setQuestions([]);
     setTaskFiles([]);
@@ -1527,6 +1530,11 @@ export default function BuatTugasModal({
       formData.append(
         'description',
         taskForm.description.trim(),
+      );
+
+      formData.append(
+        'is_published',
+        taskForm.isPublished ? '1' : '0',
       );
 
       if (
@@ -3727,6 +3735,50 @@ export default function BuatTugasModal({
                         </div>
                       </>
                     )}
+
+                  {/* VISIBILITAS TUGAS UNTUK SISWA */}
+                  <div
+                    className="mb-[18px] flex items-center justify-between gap-4 rounded-[12px] border px-4 py-3.5"
+                    style={{
+                      borderColor: taskForm.isPublished ? '#C9DCCF' : '#E3DACB',
+                      backgroundColor: taskForm.isPublished ? '#F0F7F1' : '#FBF9F3',
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-bold" style={{ color: '#141C30' }}>
+                        Tampilkan kepada siswa
+                      </div>
+                      <p className="mt-1 text-[11.5px] leading-[1.5]" style={{ color: '#6B7080' }}>
+                        {taskForm.isPublished
+                          ? 'Tugas akan terlihat di halaman siswa setelah disimpan.'
+                          : 'Tugas disimpan tetapi disembunyikan dari halaman siswa.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={taskForm.isPublished}
+                      aria-label="Tampilkan tugas kepada siswa"
+                      onClick={() =>
+                        setTaskForm((current) => ({
+                          ...current,
+                          isPublished: !current.isPublished,
+                        }))
+                      }
+                      disabled={saving}
+                      className="relative h-[26px] w-[46px] shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{
+                        backgroundColor: taskForm.isPublished ? '#4C7A5E' : '#B8B4AA',
+                      }}
+                    >
+                      <span
+                        className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                        style={{
+                          left: taskForm.isPublished ? '23px' : '3px',
+                        }}
+                      />
+                    </button>
+                  </div>
 
                   {/* SELECTED CLASSES */}
                   {selectedClassrooms.length > 0 && (
