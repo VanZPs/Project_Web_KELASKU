@@ -19,7 +19,7 @@ import {
 import api from '../../api/axios';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
 import { useNavigate } from 'react-router-dom';
-import BuatTugasModal from '../../components/Guru/BuatTugasModal';
+import BuatTugasModal from '../../components/Guru/modal/BuatTugasModal';
 
 
 /*

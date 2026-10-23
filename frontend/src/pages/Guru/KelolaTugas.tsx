@@ -30,8 +30,8 @@ import {
 } from 'react-router-dom';
 
 import api from '../../api/axios';
-import BuatTugasModal from '../../components/Guru/BuatTugasModal';
-import EditTugasModal from '../../components/Guru/EditTugasModal';
+import BuatTugasModal from '../../components/Guru/modal/BuatTugasModal';
+import EditTugasModal from '../../components/Guru/modal/EditTugasModal';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
 
 

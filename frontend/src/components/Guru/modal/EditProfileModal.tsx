@@ -12,7 +12,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import api from '../../api/axios';
+import api from '../../../api/axios';
 
 interface UserData {
   id?: number;

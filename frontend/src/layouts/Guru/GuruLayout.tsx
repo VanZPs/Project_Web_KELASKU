@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '../../components/Guru/Sidebar';
-import EditProfileModal from '../../components/Guru/EditProfileModal';
+import EditProfileModal from '../../components/Guru/modal/EditProfileModal';
 
 interface GuruLayoutProps {
   children?: ReactNode;

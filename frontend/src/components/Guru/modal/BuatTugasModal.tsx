@@ -24,7 +24,7 @@ import {
   X,
 } from 'lucide-react';
 
-import api from '../../api/axios';
+import api from '../../../api/axios';
 
 /*
 |--------------------------------------------------------------------------

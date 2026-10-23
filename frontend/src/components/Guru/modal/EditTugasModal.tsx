@@ -8,7 +8,7 @@ import {
     GraduationCap, 
     X 
 } from 'lucide-react';
-import api from '../../api/axios';
+import api from '../../../api/axios';
 
 type SubmissionMode = 'once' | 'multiple';
 type AssignmentType = 'short' | 'paragraph' | 'multiple' | 'checkbox' | 'upload' | 'info';
