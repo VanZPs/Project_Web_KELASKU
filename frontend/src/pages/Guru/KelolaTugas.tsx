@@ -1093,6 +1093,7 @@ function TaskCard({
   onOpenDiscussion: () => void;
   onDownloadFile: (
     file: AssignmentFile,
+    assignmentId: number,
   ) => void;
 }) {
   const type =
@@ -1487,11 +1488,13 @@ function TaskCard({
 
                       <button
                         type="button"
-                        onClick={() =>
-                          onDownloadFile(
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onDownloadFile(
                             file,
-                          )
-                        }
+                            assignment.id,
+                          );
+                        }}
                         className="flex shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 py-1.5 text-[10.5px] font-bold transition hover:opacity-80"
                         style={{
                           backgroundColor:
@@ -3423,31 +3426,36 @@ export default function KelolaTugas() {
 
   async function downloadAssignmentFile(
     file: AssignmentFile,
+    assignmentId?: number,
   ) {
-    if (
-      !selectedAssignment?.id ||
-      !file.id
-    ) {
+    // Saat diunduh dari preview card, selectedAssignment belum tentu terisi.
+    // Gunakan ID tugas dari card; pada modal detail, gunakan tugas terpilih.
+    const targetAssignmentId =
+      assignmentId ??
+      selectedAssignment?.id ??
+      file.assignment_id;
+
+    if (!targetAssignmentId || !file.id) {
+      showToast(
+        'error',
+        'Data tugas atau file tidak ditemukan.',
+      );
       return;
     }
 
     try {
-      const response =
-        await api.get(
-          `/guru/tugas/${selectedAssignment.id}/file/${file.id}`,
-          {
-            responseType: 'blob',
-          },
-        );
+      const response = await api.get(
+        `/guru/tugas/${targetAssignmentId}/file/${file.id}`,
+        {
+          responseType: 'blob',
+        },
+      );
 
-      const blobUrl =
-        window.URL.createObjectURL(
-          response.data,
-        );
+      const blobUrl = window.URL.createObjectURL(
+        response.data,
+      );
 
-      const anchor =
-        document.createElement('a');
-
+      const anchor = document.createElement('a');
       anchor.href = blobUrl;
       anchor.download =
         file.original_name ||
@@ -3455,15 +3463,14 @@ export default function KelolaTugas() {
         file.filename ||
         'materi';
 
-      document.body.appendChild(
-        anchor,
-      );
+      document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
 
-      window.URL.revokeObjectURL(
-        blobUrl,
-      );
+      // Beri browser waktu untuk mulai memproses unduhan sebelum URL dicabut.
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1000);
     } catch (err) {
       showToast(
         'error',
@@ -5512,24 +5519,6 @@ export default function KelolaTugas() {
                 </form>
               </div>
 
-              <div
-                className="flex shrink-0 justify-end border-t px-6 py-4"
-                style={{ borderColor: COLORS.line }}
-              >
-                <button
-                  type="button"
-                  onClick={closeDiscussionModal}
-                  disabled={sendingComment}
-                  className="rounded-[10px] border px-5 py-[10px] text-[13px] font-bold disabled:opacity-50"
-                  style={{
-                    backgroundColor: COLORS.paper,
-                    borderColor: COLORS.line,
-                    color: COLORS.ink,
-                  }}
-                >
-                  Tutup
-                </button>
-              </div>
             </div>
           </div>
         )}
