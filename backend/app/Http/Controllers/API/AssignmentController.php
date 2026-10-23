@@ -17,7 +17,9 @@ use Illuminate\Support\Str;
 
 class AssignmentController extends Controller
 {
-    // Memastikan user yang login adalah guru.
+    /**
+     * Memastikan user yang login adalah guru.
+     */
     private function ensureTeacher(Request $request)
     {
         $user = $request->user();
@@ -33,6 +35,7 @@ class AssignmentController extends Controller
 
     /**
      * Memastikan seluruh schedule merupakan milik guru yang sedang login.
+     *
      * Digunakan ketika membuat tugas dengan beberapa schedule sekaligus.
      */
     private function getTeacherSchedules(
@@ -235,13 +238,17 @@ class AssignmentController extends Controller
             ],
         ]);
 
-        // Validasi tambahan setelah validasi dasar.
+        /**
+         * Validasi tambahan setelah validasi dasar.
+         */
         $validator->after(function ($validator) use ($request) {
             $startDate = $request->input('start_date');
             $dueDate = $request->input('due_date');
             $questions = $request->input('questions', []);
 
-            // start_date tidak boleh lebih besar dari due_date.
+            /**
+             * start_date tidak boleh lebih besar dari due_date.
+             */
             if ($startDate && $dueDate) {
                 try {
                     $start = \Carbon\Carbon::parse($startDate);
@@ -259,12 +266,18 @@ class AssignmentController extends Controller
                 }
             }
 
-            // Jika tidak ada questions, tidak perlu validasi struktur soal.
+            /**
+             * Jika tidak ada questions, tidak perlu validasi
+             * struktur soal.
+             */
             if (empty($questions)) {
                 return;
             }
 
-            // Semua questions dalam satu assignment harus memiliki tipe yang sama.
+            /**
+             * Semua questions dalam satu assignment
+             * harus memiliki tipe yang sama.
+             */
             $types = collect($questions)
                 ->pluck('type')
                 ->filter()
@@ -282,7 +295,11 @@ class AssignmentController extends Controller
 
             $type = $types->first();
 
-            // Info tidak membutuhkan tanggal mulai maupun tenggat.
+
+            /**
+             * Info tidak membutuhkan tanggal mulai
+             * maupun tenggat.
+             */
             if ($type === 'info') {
                 if ($startDate || $dueDate) {
                     $validator->errors()->add(
@@ -292,7 +309,9 @@ class AssignmentController extends Controller
                 }
             }
 
-            // Upload hanya membutuhkan satu pertanyaan/instruksi.
+            /**
+             * Upload hanya membutuhkan satu pertanyaan/instruksi.
+             */
             if ($type === 'upload' && count($questions) !== 1) {
                 $validator->errors()->add(
                     'questions',
@@ -300,7 +319,9 @@ class AssignmentController extends Controller
                 );
             }
 
-            // Validasi tipe short dan paragraph.
+            /**
+             * Validasi tipe short dan paragraph.
+             */
             if (
                 in_array($type, ['short', 'paragraph'], true) &&
                 count($questions) < 1
@@ -359,7 +380,9 @@ class AssignmentController extends Controller
                     );
                 }
 
-                // Multiple dan checkbox harus memiliki options.
+                /**
+                 * Multiple dan checkbox harus memiliki options.
+                 */
                 if (
                     in_array(
                         $questionType,
@@ -403,7 +426,10 @@ class AssignmentController extends Controller
                     }
                 }
 
-                // Tipe selain multiple/checkbox tidak boleh memiliki pilihan jawaban.
+                /**
+                 * Tipe selain multiple/checkbox tidak boleh
+                 * memiliki pilihan jawaban.
+                 */
                 if (
                     !in_array(
                         $questionType,
@@ -422,7 +448,9 @@ class AssignmentController extends Controller
 
         $validated = $validator->validate();
 
-        // Pastikan seluruh schedule memang milik guru yang sedang login.
+        /**
+         * Pastikan seluruh schedule memang milik guru yang sedang login.
+         */
         $schedules = $this->getTeacherSchedules(
             $request,
             $validated['schedule_ids']
@@ -457,7 +485,9 @@ class AssignmentController extends Controller
                 $schedules->pluck('id')->all()
             );
 
-            // Simpan questions dan options.
+            /**
+             * Simpan questions dan options.
+             */
             if (!empty($validated['questions'])) {
                 foreach (
                     array_values($validated['questions'])
@@ -521,7 +551,9 @@ class AssignmentController extends Controller
                 }
             }
 
-            // Upload file tugas ke MinIO.
+            /**
+             * Upload file tugas ke MinIO.
+             */
             if ($request->hasFile('files')) {
                 foreach ($request->file('files') as $file) {
                     $extension = strtolower(
@@ -558,7 +590,9 @@ class AssignmentController extends Controller
 
             DB::commit();
 
-            // Load seluruh relationship untuk response.
+            /**
+             * Load seluruh relationship untuk response.
+             */
             $assignment->load([
                 'schedules.classroom',
                 'schedules.subject',
@@ -589,7 +623,9 @@ class AssignmentController extends Controller
         }
     }
 
-    // Menampilkan detail tugas.
+    /**
+     * Menampilkan detail tugas.
+     */
     public function show(
         Request $request,
         Assignment $assignment
@@ -601,16 +637,26 @@ class AssignmentController extends Controller
             'schedules.subject',
             'questions.options',
 
-            // Data siswa yang mengumpulkan tugas.
+            /**
+             * Data siswa yang mengumpulkan tugas.
+             */
             'submissions.student.user',
 
-            // File yang dikumpulkan oleh siswa.
+            /**
+             * File yang dikumpulkan oleh siswa.
+             */
             'submissions.files',
 
-            // Jawaban siswa beserta pilihan yang dipilih.
+
+            /**
+             * Jawaban siswa beserta pilihan yang dipilih.
+             */
             'submissions.answers.selectedOptions.option',
 
-            // File yang dilampirkan guru pada tugas.
+
+            /**
+             * File yang dilampirkan guru pada tugas.
+             */
             'files',
         ]);
 
@@ -916,7 +962,9 @@ class AssignmentController extends Controller
 
         $validated = $validator->validate();
 
-        // Pastikan question memang bagian dari assignment.
+        /**
+         * Pastikan question memang bagian dari assignment.
+         */
         $question = $assignment->questions()
             ->with('options')
             ->whereKey($validated['question_id'])
@@ -928,7 +976,10 @@ class AssignmentController extends Controller
             'Soal tidak ditemukan pada tugas ini.'
         );
 
-        // Hanya tipe soal yang memiliki auto grading yang boleh mengubah kunci jawaban.
+        /**
+         * Hanya tipe soal yang memiliki auto grading
+         * yang boleh mengubah kunci jawaban.
+         */
         abort_unless(
             in_array(
                 $question->type,
@@ -950,7 +1001,9 @@ class AssignmentController extends Controller
             ->unique()
             ->values();
 
-        // Validasi kunci berdasarkan tipe soal.
+        /**
+         * Validasi kunci berdasarkan tipe soal.
+         */
         if ($question->type === 'short') {
             $correctAnswer = trim(
                 (string) (
@@ -981,8 +1034,10 @@ class AssignmentController extends Controller
                 true
             )
         ) {
-
-            // Multiple dan checkbox tidak menggunakan correct_answer.
+            /**
+             * Multiple dan checkbox tidak menggunakan
+             * correct_answer.
+             */
             abort_if(
                 isset($validated['correct_answer']) &&
                 trim(
@@ -994,7 +1049,10 @@ class AssignmentController extends Controller
                 'Soal pilihan tidak menggunakan correct_answer.'
             );
 
-            // Pastikan semua option yang dikirim memang milik question tersebut.
+            /**
+             * Pastikan semua option yang dikirim memang
+             * milik question tersebut.
+             */
             $availableOptionIds = $question->options
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
@@ -1009,7 +1067,10 @@ class AssignmentController extends Controller
                 'Salah satu pilihan jawaban tidak valid.'
             );
 
-            // Pilihan ganda harus memiliki tepat satu jawaban benar.
+            /**
+             * Pilihan ganda harus memiliki tepat satu
+             * jawaban benar.
+             */
             if (
                 $question->type === 'multiple'
                 && $correctOptionIds->count() !== 1
@@ -1020,7 +1081,10 @@ class AssignmentController extends Controller
                 );
             }
 
-            // Checkbox harus memiliki minimal satu jawaban benar.
+            /**
+             * Checkbox harus memiliki minimal satu
+             * jawaban benar.
+             */
             if (
                 $question->type === 'checkbox'
                 && $correctOptionIds->isEmpty()
@@ -1209,6 +1273,13 @@ class AssignmentController extends Controller
     /**
      * Menghapus tugas beserta file-file yang tersimpan di MinIO.
      */
+    /**
+     * Menghapus tugas beserta data terkait dan file pada penyimpanan.
+     *
+     * Penghapusan database dilakukan terlebih dahulu dalam transaksi.
+     * Setelah commit berhasil, file materi dan file pengumpulan siswa
+     * dihapus dari storage agar tidak terhapus jika transaksi database gagal.
+     */
     public function destroy(
         Request $request,
         Assignment $assignment
@@ -1218,6 +1289,7 @@ class AssignmentController extends Controller
         $assignment->load([
             'schedules',
             'files',
+            'submissions.files',
         ]);
 
         abort_unless(
@@ -1229,32 +1301,48 @@ class AssignmentController extends Controller
             'Anda tidak memiliki akses ke tugas ini.'
         );
 
-        DB::beginTransaction();
+        $objectKeys = collect();
 
-        try {
-            foreach ($assignment->files as $file) {
-                if (
-                    $file->object_key &&
-                    Storage::disk('s3')->exists($file->object_key)
-                ) {
-                    Storage::disk('s3')->delete(
-                        $file->object_key
-                    );
+        foreach ($assignment->files as $file) {
+            if ($file->object_key) {
+                $objectKeys->push($file->object_key);
+            }
+        }
+
+        foreach ($assignment->submissions as $submission) {
+            foreach ($submission->files as $file) {
+                if ($file->object_key) {
+                    $objectKeys->push($file->object_key);
                 }
             }
 
-            $assignment->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Tugas berhasil dihapus.',
-            ]);
-
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
+            // Dukungan untuk pengumpulan lama yang menyimpan file_path.
+            if ($submission->file_path) {
+                $objectKeys->push($submission->file_path);
+            }
         }
+
+        $objectKeys = $objectKeys
+            ->filter(fn ($key) => is_string($key) && trim($key) !== '')
+            ->unique()
+            ->values();
+
+        DB::transaction(function () use ($assignment) {
+            $assignment->delete();
+        });
+
+        // File storage dihapus setelah transaksi database berhasil.
+        foreach ($objectKeys as $objectKey) {
+            try {
+                Storage::disk('s3')->delete($objectKey);
+            } catch (\Throwable $storageException) {
+                report($storageException);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Tugas dan data terkait berhasil dihapus.',
+        ]);
     }
 
     /**
@@ -1280,7 +1368,9 @@ class AssignmentController extends Controller
     ) {
         $user = $this->ensureTeacher($request);
 
-        // Pastikan schedule memang milik guru yang login.
+        /**
+         * Pastikan schedule memang milik guru yang login.
+         */
         abort_unless(
             (int) $schedule->teacher_id ===
                 (int) $user->id,
@@ -1288,7 +1378,9 @@ class AssignmentController extends Controller
             'Anda tidak memiliki akses ke kelas ini.'
         );
 
-        // Load informasi schedule.
+        /**
+         * Load informasi schedule.
+         */
         $schedule->load([
             'classroom.users',
             'subject',
@@ -1381,13 +1473,16 @@ class AssignmentController extends Controller
             ->get();
 
         /**
-         * Bentuk data assignment agar frontend tidak perlu melakukan terlalu banyak
+         * Bentuk data assignment agar frontend
+         * tidak perlu melakukan terlalu banyak
          * transformasi.
          */
         $assignments = $assignments
             ->map(function ($assignment) use ($students) {
 
-                // Semua submission assignment.
+                /**
+                 * Semua submission assignment.
+                 */
                 $allSubmissions = $assignment->submissions;
 
                 /**
@@ -1425,7 +1520,8 @@ class AssignmentController extends Controller
 
                 /**
                  * Apakah tugas memiliki submission?
-                 * (info tidak membutuhkan submission.)
+                 *
+                 * info tidak membutuhkan submission.
                  */
 
                 $type = $assignment->questions
@@ -1441,7 +1537,8 @@ class AssignmentController extends Controller
                     : $representativeSubmissions->count();
 
                 /**
-                 * Hitung submission yang masih perlu dinilai secara manual.
+                 * Hitung submission yang masih perlu
+                 * dinilai secara manual.
                  */
                 $needsGradingCount = 0;
 
@@ -1452,7 +1549,8 @@ class AssignmentController extends Controller
                     ) {
 
                         /**
-                         * Jika belum memiliki grade, berarti masih perlu dinilai.
+                         * Jika belum memiliki grade,
+                         * berarti masih perlu dinilai.
                          */
                         if ($submission->grade === null) {
                             $needsGradingCount++;
@@ -1468,7 +1566,8 @@ class AssignmentController extends Controller
                     ->count();
 
                 /**
-                 * Tambahkan roster sederhana untuk kebutuhan frontend.
+                 * Tambahkan roster sederhana
+                 * untuk kebutuhan frontend.
                  */
                 $roster = $students
                     ->map(function ($student) use (
@@ -1605,8 +1704,11 @@ class AssignmentController extends Controller
         ]);
     }
 
-    /**
+/**
      * Memperbarui nilai submission siswa.
+     *
+     * PUT
+     * /api/guru/tugas/{assignment}/submission/{submission}/nilai
      */
     public function updateSubmissionGrade(
         Request $request,

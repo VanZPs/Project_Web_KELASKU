@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Send,
+  Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -975,6 +976,105 @@ function ModalShell({
   );
 }
 
+function ProfileAvatar({
+  userId,
+  name,
+  role,
+  className,
+  textClassName,
+}: {
+  userId?: number;
+  name: string;
+  role: 'Guru' | 'Siswa';
+  className: string;
+  textClassName: string;
+}) {
+  const [avatarUrl, setAvatarUrl] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    async function loadProfilePhoto() {
+      if (!userId) {
+        setAvatarUrl(null);
+        return;
+      }
+
+      try {
+        const response = await api.get(
+          `/users/${userId}/profile-photo`,
+          { responseType: 'blob' },
+        );
+
+        if (
+          response.status === 204 ||
+          !(response.data instanceof Blob) ||
+          response.data.size === 0
+        ) {
+          if (!cancelled) {
+            setAvatarUrl(null);
+          }
+          return;
+        }
+
+        objectUrl = window.URL.createObjectURL(
+          response.data,
+        );
+
+        if (!cancelled) {
+          setAvatarUrl(objectUrl);
+        } else {
+          window.URL.revokeObjectURL(objectUrl);
+        }
+      } catch {
+        if (!cancelled) {
+          setAvatarUrl(null);
+        }
+      }
+    }
+
+    void loadProfilePhoto();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [userId]);
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-[10px] font-bold ${className}`}
+      style={{
+        backgroundColor:
+          role === 'Guru'
+            ? COLORS.navy
+            : COLORS.goldSoft,
+        color:
+          role === 'Guru'
+            ? '#fff'
+            : '#7A5A20',
+      }}
+      aria-label={`Foto profil ${name}`}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={`Foto profil ${name}`}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span className={textClassName}>
+          {getInitials(name)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function CommentRow({
   comment,
 }: {
@@ -983,6 +1083,8 @@ function CommentRow({
   const name =
     comment.user?.name ||
     'Pengguna';
+
+  const userId = comment.user?.id ?? comment.user_id;
 
   const role =
     comment.user?.role ===
@@ -998,21 +1100,13 @@ function CommentRow({
           COLORS.line,
       }}
     >
-      <div
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
-        style={{
-          backgroundColor:
-            role === 'Guru'
-              ? COLORS.navy
-              : COLORS.goldSoft,
-          color:
-            role === 'Guru'
-              ? '#fff'
-              : '#7A5A20',
-        }}
-      >
-        {getInitials(name)}
-      </div>
+      <ProfileAvatar
+        userId={userId}
+        name={name}
+        role={role}
+        className="h-8 w-8"
+        textClassName="text-[10px]"
+      />
 
       <div
         className="min-w-0 flex-1"
@@ -1560,21 +1654,13 @@ function TaskCard({
                 key={comment.id}
                 className="flex gap-3 py-1.5"
               >
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                  style={{
-                    backgroundColor:
-                      commenterRole === 'Guru'
-                        ? COLORS.navy
-                        : COLORS.goldSoft,
-                    color:
-                      commenterRole === 'Guru'
-                        ? '#fff'
-                        : '#7A5A20',
-                  }}
-                >
-                  {getInitials(commenterName)}
-                </div>
+                <ProfileAvatar
+                  userId={comment.user?.id ?? comment.user_id}
+                  name={commenterName}
+                  role={commenterRole}
+                  className="h-10 w-10"
+                  textClassName="text-[11px]"
+                />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2367,6 +2453,10 @@ export default function KelolaTugas() {
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
 
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const [deletingAssignment, setDeletingAssignment] = useState(false);
 
   const [search, setSearch] =
     useState('');
@@ -3347,6 +3437,44 @@ export default function KelolaTugas() {
   }
 
 
+  async function confirmDeleteAssignment() {
+    if (!selectedAssignment || deletingAssignment) {
+      return;
+    }
+
+    const assignmentId = selectedAssignment.id;
+    const assignmentTitle = selectedAssignment.title;
+
+    try {
+      setDeletingAssignment(true);
+
+      const response = await api.delete(
+        `/guru/tugas/${assignmentId}`,
+      );
+
+      setDeleteConfirmOpen(false);
+      setEditTaskModalOpen(false);
+      setSelectedAssignment(null);
+      setSelectedSubmission(null);
+      setDiscussionAssignment((current) =>
+        current?.id === assignmentId ? null : current,
+      );
+      setCommentText('');
+
+      await loadManageData(numericScheduleId);
+
+      showToast(
+        'success',
+        response.data?.message || `Tugas "${assignmentTitle}" berhasil dihapus.`,
+      );
+    } catch (err) {
+      showToast('error', getErrorMessage(err));
+    } finally {
+      setDeletingAssignment(false);
+    }
+  }
+
+
   /*
   |--------------------------------------------------------------------------
   | OPEN / CLOSE MODAL
@@ -3373,6 +3501,7 @@ export default function KelolaTugas() {
     }
 
     setEditTaskModalOpen(false);
+    setDeleteConfirmOpen(false);
     setSelectedAssignment(
       null,
     );
@@ -5311,6 +5440,23 @@ export default function KelolaTugas() {
               </div>
 
               <div className="flex items-center gap-2.5">
+                {!selectedSubmission && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-[10px] border px-4 py-[10px] text-[13px] font-bold transition hover:opacity-80"
+                    style={{
+                      borderColor: COLORS.rustLine,
+                      backgroundColor: COLORS.rustBg,
+                      color: COLORS.rust,
+                    }}
+                    title="Hapus tugas"
+                  >
+                    <Trash2 size={14} />
+                    Hapus Tugas
+                  </button>
+                )}
+
                 {!selectedSubmission &&
                   getAssignmentStatus(
                     selectedAssignment,
@@ -5394,6 +5540,144 @@ export default function KelolaTugas() {
           </ModalShell>
         )}
 
+
+        {/* =======================================================
+            DELETE ASSIGNMENT CONFIRMATION MODAL
+        ======================================================== */}
+
+        {deleteConfirmOpen && selectedAssignment && (
+          <div
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(20,17,10,0.58)' }}
+            onMouseDown={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                !deletingAssignment
+              ) {
+                setDeleteConfirmOpen(false);
+              }
+            }}
+          >
+            <div
+              className="w-full max-w-[460px] overflow-hidden rounded-[18px] border"
+              style={{
+                backgroundColor: COLORS.paper,
+                borderColor: COLORS.line,
+                boxShadow: '0 24px 60px -20px rgba(20,17,10,0.5)',
+              }}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="delete-assignment-title"
+              aria-describedby="delete-assignment-description"
+            >
+              <div className="px-6 pb-5 pt-6">
+                <div
+                  className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: COLORS.rustBg,
+                    color: COLORS.rust,
+                  }}
+                >
+                  <Trash2 size={22} />
+                </div>
+
+                <h2
+                  id="delete-assignment-title"
+                  className="text-center text-[19px] font-semibold"
+                  style={{
+                    color: COLORS.navyDeep,
+                    fontFamily: '"Fraunces", serif',
+                  }}
+                >
+                  Hapus tugas ini?
+                </h2>
+
+                <p
+                  className="mt-2 text-center text-[12.5px] leading-[1.7]"
+                  style={{ color: COLORS.inkSoft }}
+                >
+                  Anda akan menghapus tugas{' '}
+                  <strong style={{ color: COLORS.navyDeep }}>
+                    “{selectedAssignment.title}”
+                  </strong>
+                  .
+                </p>
+
+                <div
+                  id="delete-assignment-description"
+                  className="mt-4 rounded-[11px] border p-3.5 text-[12px] leading-[1.7]"
+                  style={{
+                    backgroundColor: '#FFF3EF',
+                    borderColor: COLORS.rustLine,
+                    color: '#873D2E',
+                  }}
+                >
+                  <div className="mb-1 flex items-center gap-2 font-bold">
+                    <AlertCircle size={15} />
+                    Peringatan: tindakan ini permanen
+                  </div>
+                  Jika tugas ini dihapus, seluruh pengumpulan siswa, jawaban,
+                  nilai, umpan balik, komentar diskusi, soal, dan lampiran yang
+                  terkait dapat ikut terhapus. Jika tugas diberikan ke beberapa
+                  kelas, penghapusan berlaku untuk semua kelas penerima. Data
+                  tersebut tidak dapat dipulihkan melalui halaman ini.
+                </div>
+
+                {(selectedAssignment.submissions?.length ?? 0) > 0 && (
+                  <p
+                    className="mt-3 text-[11.5px] font-semibold"
+                    style={{ color: COLORS.rust }}
+                  >
+                    Tugas ini sudah memiliki {selectedAssignment.submissions?.length} pengumpulan siswa.
+                    Pastikan Anda benar-benar ingin menghapusnya.
+                  </p>
+                )}
+              </div>
+
+              <div
+                className="flex justify-end gap-2.5 border-t px-6 py-4"
+                style={{ borderColor: COLORS.line }}
+              >
+                <button
+                  type="button"
+                  disabled={deletingAssignment}
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  className="rounded-[10px] border px-4 py-[10px] text-[12.5px] font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{
+                    backgroundColor: COLORS.paper,
+                    borderColor: COLORS.line,
+                    color: COLORS.ink,
+                  }}
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="button"
+                  disabled={deletingAssignment}
+                  onClick={() => void confirmDeleteAssignment()}
+                  className="inline-flex items-center gap-2 rounded-[10px] border px-4 py-[10px] text-[12.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    backgroundColor: COLORS.rust,
+                    borderColor: COLORS.rust,
+                  }}
+                >
+                  {deletingAssignment ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Menghapus...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} />
+                      Hapus Tugas
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* =======================================================
             TASK DISCUSSION MODAL

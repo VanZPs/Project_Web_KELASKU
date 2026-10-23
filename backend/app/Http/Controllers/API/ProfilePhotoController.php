@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -10,19 +11,44 @@ use Throwable;
 
 class ProfilePhotoController extends Controller
 {
+    /**
+     * Menampilkan foto profil user yang sedang login.
+     */
     public function show(Request $request)
     {
-        $key = $request->user()?->profile_photo_key;
+        return $this->photoResponse($request->user());
+    }
 
-        // Pengguna yang belum mengatur foto adalah kondisi normal, bukan error.
+    /**
+     * Menampilkan foto profil user lain untuk avatar pada diskusi.
+     * Route ini tetap berada di dalam middleware auth:sanctum.
+     */
+    public function showUser(Request $request, User $user)
+    {
+        abort_unless(
+            $request->user(),
+            401,
+            'Anda harus login untuk melihat foto profil.'
+        );
+
+        return $this->photoResponse($user);
+    }
+
+    /**
+     * Mengembalikan file foto profil dari object storage.
+     * Jika foto tidak tersedia, gunakan respons 204 agar frontend
+     * dapat menampilkan avatar inisial sebagai fallback.
+     */
+    private function photoResponse(?User $user)
+    {
+        $key = $user?->profile_photo_key;
+
         if (empty($key)) {
             return response()->noContent();
         }
 
         $disk = Storage::disk('s3');
 
-        // Jika referensi database ada tetapi object sudah tidak ditemukan,
-        // kembalikan respons kosong agar frontend tetap memakai avatar inisial.
         if (!$disk->exists($key)) {
             return response()->noContent();
         }

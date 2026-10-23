@@ -123,6 +123,11 @@ Route::middleware('auth:sanctum')->group(
             [ProfilePhotoController::class, 'destroy']
         );
 
+        Route::get(
+            '/users/{user}/profile-photo',
+            [ProfilePhotoController::class, 'showUser']
+        );
+
 
         /*
          * ======================================================
