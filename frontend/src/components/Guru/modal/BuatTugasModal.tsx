@@ -14,6 +14,8 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   FileText,
   GraduationCap,
@@ -288,6 +290,225 @@ function TypeIcon({
       size={size}
       strokeWidth={1.8}
     />
+  );
+}
+
+
+
+interface IndonesianDateTimePickerProps {
+  value: string;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  placeholder?: string;
+}
+
+function parseLocalDateTime(value: string): Date | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return null;
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+  );
+}
+
+function formatLocalDateTime(value: string): string {
+  const date = parseLocalDateTime(value);
+  if (!date) return '';
+  return `${date.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })} · ${String(date.getHours()).padStart(2, '0')}.${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function IndonesianDateTimePicker({
+  value,
+  onChange,
+  ariaLabel,
+  placeholder = 'Pilih tanggal dan waktu',
+}: IndonesianDateTimePickerProps) {
+  const selectedDate = parseLocalDateTime(value);
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(
+    () => selectedDate
+      ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
+
+  useEffect(() => {
+    if (selectedDate && !isOpen) {
+      setVisibleMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    }
+  }, [value, isOpen]);
+
+  const selectedHour = selectedDate ? String(selectedDate.getHours()).padStart(2, '0') : '00';
+  const selectedMinute = selectedDate ? String(selectedDate.getMinutes()).padStart(2, '0') : '00';
+
+  function updateDateTime(date: Date, hour = selectedHour, minute = selectedMinute) {
+    const localValue = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${hour}:${minute}`;
+    onChange(localValue);
+  }
+
+  function updateTime(hour: string, minute: string) {
+    const baseDate = selectedDate ?? new Date();
+    updateDateTime(baseDate, hour, minute);
+  }
+
+  const firstDayOffset = (new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1).getDay() + 6) % 7;
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        onClick={() => {
+          if (!isOpen && selectedDate) {
+            setVisibleMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+          }
+          setIsOpen(current => !current);
+        }}
+        aria-label={ariaLabel}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-[9px] rounded-[10px] border px-[13px] py-[11px] pr-[68px] text-left transition-colors"
+        style={{ borderColor: '#E3DACB', backgroundColor: '#FFFDF8', color: value ? '#23283A' : '#8A806F' }}
+      >
+        <Calendar size={16} className="shrink-0" style={{ color: '#6B7080' }} />
+        <span className="min-w-0 flex-1 text-[13.5px]">
+          {value ? formatLocalDateTime(value) : placeholder}
+        </span>
+        <ChevronDown size={15} className="shrink-0" style={{ color: '#6B7080' }} />
+      </button>
+      {value && (
+        <button
+          type="button"
+          aria-label={`Hapus ${ariaLabel.toLowerCase()}`}
+          onClick={() => {
+            onChange('');
+            setIsOpen(false);
+          }}
+          className="absolute right-9 top-1/2 -translate-y-1/2 rounded px-1 text-[11px] font-semibold"
+          style={{ color: '#6B7080' }}
+        >
+          Hapus
+        </button>
+      )}
+
+      {isOpen && (
+        <div
+          className="mt-2 rounded-[12px] border p-3"
+          style={{ borderColor: '#E3DACB', backgroundColor: '#FFFDF8' }}
+        >
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-label="Bulan sebelumnya"
+              onClick={() => setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border"
+              style={{ borderColor: '#E3DACB', color: '#23283A' }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div className="text-[13px] font-bold capitalize" style={{ color: '#141C30' }}>
+              {visibleMonth.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+            </div>
+            <button
+              type="button"
+              aria-label="Bulan berikutnya"
+              onClick={() => setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border"
+              style={{ borderColor: '#E3DACB', color: '#23283A' }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(day => (
+              <div key={day} className="py-1 text-[10px] font-bold" style={{ color: '#6B7080' }}>{day}</div>
+            ))}
+            {Array.from({ length: 42 }, (_, index) => {
+              const date = new Date(
+                visibleMonth.getFullYear(),
+                visibleMonth.getMonth(),
+                index - firstDayOffset + 1,
+              );
+              const inCurrentMonth = date.getMonth() === visibleMonth.getMonth();
+              const isSelected = !!selectedDate &&
+                date.getFullYear() === selectedDate.getFullYear() &&
+                date.getMonth() === selectedDate.getMonth() &&
+                date.getDate() === selectedDate.getDate();
+              const isToday = date.toDateString() === new Date().toDateString();
+
+              return (
+                <button
+                  key={`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
+                  type="button"
+                  onClick={() => updateDateTime(date)}
+                  className="h-8 rounded-md text-[11px] transition-colors"
+                  style={{
+                    backgroundColor: isSelected ? '#23283A' : 'transparent',
+                    color: isSelected ? '#FFFFFF' : inCurrentMonth ? '#23283A' : '#AAA59A',
+                    border: isToday && !isSelected ? '1px solid #B98A3E' : '1px solid transparent',
+                  }}
+                >
+                  {date.getDate()}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 border-t pt-3" style={{ borderColor: '#E3DACB' }}>
+            <div className="mb-2 text-[12px] font-bold" style={{ color: '#141C30' }}>
+              Waktu (format 24 jam)
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex flex-1 flex-col gap-1 text-[10px]" style={{ color: '#6B7080' }}>
+                Jam
+                <select
+                  aria-label={`Jam ${ariaLabel}`}
+                  value={selectedHour}
+                  onChange={event => updateTime(event.target.value, selectedMinute)}
+                  className="rounded-lg border px-2 py-2 text-[13px]"
+                  style={{ borderColor: '#E3DACB', backgroundColor: '#FFFFFF', color: '#23283A' }}
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={String(hour).padStart(2, '0')}>{String(hour).padStart(2, '0')}</option>
+                  ))}
+                </select>
+              </label>
+              <span className="mt-4 text-[14px] font-bold" style={{ color: '#23283A' }}>:</span>
+              <label className="flex flex-1 flex-col gap-1 text-[10px]" style={{ color: '#6B7080' }}>
+                Menit
+                <select
+                  aria-label={`Menit ${ariaLabel}`}
+                  value={selectedMinute}
+                  onChange={event => updateTime(selectedHour, event.target.value)}
+                  className="rounded-lg border px-2 py-2 text-[13px]"
+                  style={{ borderColor: '#E3DACB', backgroundColor: '#FFFFFF', color: '#23283A' }}
+                >
+                  {Array.from({ length: 60 }, (_, minute) => (
+                    <option key={minute} value={String(minute).padStart(2, '0')}>{String(minute).padStart(2, '0')}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg px-3 py-2 text-[11px] font-bold text-white"
+                style={{ backgroundColor: '#23283A' }}
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3340,30 +3561,11 @@ export default function BuatTugasModal({
                     <label className="mb-2 block text-[13px] font-bold" style={{ color: '#141C30' }}>
                       Jadwal aktivasi tugas <span className="text-[11.5px] font-medium" style={{ color: '#6B7080' }}>(opsional)</span>
                     </label>
-                    <div
-                      className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
-                      style={{ borderColor: '#E3DACB', backgroundColor: '#FFFDF8' }}
-                      onClick={event => {
-                        if ((event.target as HTMLElement).closest('button')) return;
-                        const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
-                        try { input?.showPicker?.(); } catch { input?.focus(); }
-                      }}
-                    >
-                      <Calendar size={16} style={{ color: '#6B7080' }} />
-                      <input
-                        type="datetime-local"
-                        value={taskForm.activationAt}
-                        onChange={event => setTaskForm(current => ({ ...current, activationAt: event.target.value }))}
-                        className="w-full border-none bg-transparent py-[11px] text-[13.5px] outline-none"
-                        style={{ color: '#23283A' }}
-                        aria-label="Waktu aktivasi tugas"
-                      />
-                      {taskForm.activationAt && (
-                        <button type="button" onClick={() => setTaskForm(current => ({ ...current, activationAt: '' }))} className="text-[11px] font-semibold" style={{ color: '#6B7080' }}>
-                          Hapus
-                        </button>
-                      )}
-                    </div>
+                    <IndonesianDateTimePicker
+                      value={taskForm.activationAt}
+                      onChange={value => setTaskForm(current => ({ ...current, activationAt: value }))}
+                      ariaLabel="Waktu aktivasi tugas"
+                    />
                     <p className="mt-1.5 text-[11.5px] leading-[1.5]" style={{ color: '#6B7080' }}>
                       Jika diatur ke waktu mendatang, tugas otomatis tidak aktif sampai waktu tersebut. Kosongkan jika tidak ingin menjadwalkan aktivasi.
                     </p>
@@ -3688,54 +3890,11 @@ export default function BuatTugasModal({
                             </span>
                           </label>
 
-                          <div
-                            className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
-                            style={{
-                              borderColor: '#E3DACB',
-                              backgroundColor: '#FFFDF8',
-                            }}
-                            onClick={event => {
-                              if ((event.target as HTMLElement).closest('button')) return;
-                              const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
-                              try { input?.showPicker?.(); } catch { input?.focus(); }
-                            }}
-                          >
-
-                            <Calendar
-                              size={16}
-                              style={{
-                                color:
-                                  '#6B7080',
-                              }}
-                            />
-
-                            <input
-                              type="datetime-local"
-                              value={
-                                taskForm.startDate
-                              }
-                              onChange={(
-                                event,
-                              ) =>
-                                setTaskForm(
-                                  (
-                                    current,
-                                  ) => ({
-                                    ...current,
-                                    startDate:
-                                      event
-                                        .target
-                                        .value,
-                                  }),
-                                )
-                              }
-                              className="w-full border-none bg-transparent py-[11px] text-[13.5px] outline-none"
-                              style={{
-                                color:
-                                  '#23283A',
-                              }}
-                            />
-                          </div>
+                          <IndonesianDateTimePicker
+                            value={taskForm.startDate}
+                            onChange={value => setTaskForm(current => ({ ...current, startDate: value }))}
+                            ariaLabel="Tanggal mulai dikerjakan"
+                          />
 
                           <div
                             className="mt-1.5 text-[11.5px] leading-[1.5]"
@@ -3773,54 +3932,11 @@ export default function BuatTugasModal({
                             </span>
                           </label>
 
-                          <div
-                            className="flex cursor-pointer items-center gap-[9px] rounded-[10px] border px-[13px]"
-                            style={{
-                              borderColor: dateRangeInvalid ? '#E4BCA9' : '#E3DACB',
-                              backgroundColor: '#FFFDF8',
-                            }}
-                            onClick={event => {
-                              if ((event.target as HTMLElement).closest('button')) return;
-                              const input = event.currentTarget.querySelector('input[type="datetime-local"]') as HTMLInputElement | null;
-                              try { input?.showPicker?.(); } catch { input?.focus(); }
-                            }}
-                          >
-
-                            <Calendar
-                              size={16}
-                              style={{
-                                color:
-                                  '#6B7080',
-                              }}
-                            />
-
-                            <input
-                              type="datetime-local"
-                              value={
-                                taskForm.dueDate
-                              }
-                              onChange={(
-                                event,
-                              ) =>
-                                setTaskForm(
-                                  (
-                                    current,
-                                  ) => ({
-                                    ...current,
-                                    dueDate:
-                                      event
-                                        .target
-                                        .value,
-                                  }),
-                                )
-                              }
-                              className="w-full border-none bg-transparent py-[11px] text-[13.5px] outline-none"
-                              style={{
-                                color:
-                                  '#23283A',
-                              }}
-                            />
-                          </div>
+                          <IndonesianDateTimePicker
+                            value={taskForm.dueDate}
+                            onChange={value => setTaskForm(current => ({ ...current, dueDate: value }))}
+                            ariaLabel="Tenggat pengumpulan"
+                          />
 
                           {dateRangeInvalid && (
                             <div

@@ -1486,7 +1486,7 @@ function TaskCard({
                       </div>
 
                       <p
-                        className="line-clamp-3 min-w-0 text-[12px] leading-[1.6]"
+                        className="min-w-0 whitespace-pre-wrap break-words text-[12px] leading-[1.6]"
                         style={{
                           color:
                             COLORS.ink,
@@ -2489,6 +2489,33 @@ export default function KelolaTugas() {
   const [savingPublication, setSavingPublication] = useState(false);
   const [activationDateDraft, setActivationDateDraft] = useState('');
   const [savingActivation, setSavingActivation] = useState(false);
+  const [activationPickerOpen, setActivationPickerOpen] = useState(false);
+  const [activationPickerMonth, setActivationPickerMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+
+  const activationDraftParts = activationDateDraft.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  const activationDraftDate = activationDraftParts
+    ? new Date(Number(activationDraftParts[1]), Number(activationDraftParts[2]) - 1, Number(activationDraftParts[3]))
+    : null;
+  const activationHour = activationDraftParts?.[4] ?? '09';
+  const activationMinute = activationDraftParts?.[5] ?? '00';
+
+  function openActivationDatePicker() {
+    if (savingActivation) return;
+    const baseDate = activationDraftDate ?? new Date();
+    setActivationPickerMonth(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1));
+    setActivationPickerOpen(value => !value);
+  }
+
+  function updateActivationDatePart(date: Date) {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    setActivationDateDraft(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${activationHour}:${activationMinute}`);
+  }
+
+  function updateActivationTimePart(hour: string, minute: string) {
+    const baseDate = activationDraftDate ?? new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+    setActivationDateDraft(`${baseDate.getFullYear()}-${pad(baseDate.getMonth() + 1)}-${pad(baseDate.getDate())}T${hour}:${minute}`);
+  }
 
   const [search, setSearch] =
     useState('');
@@ -4875,18 +4902,60 @@ export default function KelolaTugas() {
                     <div className="mb-2 text-[13px] font-bold" style={{ color: COLORS.navyDeep }}>
                       Jadwal aktivasi tugas <span className="text-[11px] font-medium" style={{ color: COLORS.inkSoft }}>(opsional)</span>
                     </div>
-                    <div className="flex items-center gap-2 rounded-[10px] border px-3" style={{ borderColor: COLORS.line, backgroundColor: '#FFFDF8' }}>
-                      <Calendar size={16} style={{ color: COLORS.inkSoft }} />
-                      <input
-                        type="datetime-local"
-                        aria-label="Jadwal aktivasi tugas"
-                        value={activationDateDraft}
-                        onChange={event => setActivationDateDraft(event.target.value)}
-                        disabled={savingActivation}
-                        className="min-w-0 flex-1 bg-transparent py-2.5 text-[12.5px] outline-none"
-                        style={{ color: COLORS.ink }}
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={openActivationDatePicker}
+                      disabled={savingActivation}
+                      aria-expanded={activationPickerOpen}
+                      aria-label="Pilih tanggal dan waktu aktivasi"
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-[10px] border px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ borderColor: COLORS.line, backgroundColor: '#FFFDF8', color: COLORS.ink }}
+                      title="Klik untuk memilih tanggal dan waktu aktivasi"
+                    >
+                      <Calendar size={16} className="shrink-0" style={{ color: COLORS.inkSoft }} />
+                      <span className="min-w-0 flex-1 text-[12.5px]">
+                        {activationDraftDate
+                          ? `${activationDraftDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} · ${activationHour}.${activationMinute}`
+                          : 'Pilih tanggal dan waktu aktivasi'}
+                      </span>
+                      <span className="text-[11px]" style={{ color: COLORS.inkSoft }}>Pilih</span>
+                    </button>
+                    {activationPickerOpen && (
+                      <div className="mt-2 rounded-[12px] border p-3" style={{ borderColor: COLORS.line, backgroundColor: '#FFFDF8' }}>
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <button type="button" aria-label="Bulan sebelumnya" onClick={() => setActivationPickerMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border" style={{ borderColor: COLORS.line, color: COLORS.navy }}><ChevronLeft size={16} /></button>
+                          <div className="text-[13px] font-bold capitalize" style={{ color: COLORS.navyDeep }}>{activationPickerMonth.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</div>
+                          <button type="button" aria-label="Bulan berikutnya" onClick={() => setActivationPickerMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border" style={{ borderColor: COLORS.line, color: COLORS.navy }}><ChevronRight size={16} /></button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 text-center">
+                          {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(day => <div key={day} className="py-1 text-[10px] font-bold" style={{ color: COLORS.inkSoft }}>{day}</div>)}
+                          {Array.from({ length: 42 }, (_, index) => {
+                            const firstDayOffset = (new Date(activationPickerMonth.getFullYear(), activationPickerMonth.getMonth(), 1).getDay() + 6) % 7;
+                            const date = new Date(activationPickerMonth.getFullYear(), activationPickerMonth.getMonth(), index - firstDayOffset + 1);
+                            const inCurrentMonth = date.getMonth() === activationPickerMonth.getMonth();
+                            const isSelected = !!activationDraftDate && date.getFullYear() === activationDraftDate.getFullYear() && date.getMonth() === activationDraftDate.getMonth() && date.getDate() === activationDraftDate.getDate();
+                            const isToday = date.toDateString() === new Date().toDateString();
+                            return <button key={`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`} type="button" onClick={() => updateActivationDatePart(date)} className="h-8 rounded-md text-[11px] transition-colors" style={{ backgroundColor: isSelected ? COLORS.navy : 'transparent', color: isSelected ? '#FFFFFF' : inCurrentMonth ? COLORS.ink : '#AAA59A', border: isToday && !isSelected ? `1px solid ${COLORS.gold}` : '1px solid transparent' }}>{date.getDate()}</button>;
+                          })}
+                        </div>
+                        <div className="mt-3 border-t pt-3" style={{ borderColor: COLORS.line }}>
+                          <div className="mb-2 text-[12px] font-bold" style={{ color: COLORS.navyDeep }}>Waktu (format 24 jam)</div>
+                          <div className="flex items-center gap-2">
+                            <label className="flex flex-1 flex-col gap-1 text-[10px]" style={{ color: COLORS.inkSoft }}>Jam
+                              <select aria-label="Jam aktivasi" value={activationHour} onChange={event => updateActivationTimePart(event.target.value, activationMinute)} className="rounded-lg border px-2 py-2 text-[13px]" style={{ borderColor: COLORS.line, backgroundColor: '#FFFFFF', color: COLORS.ink }}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={String(hour).padStart(2, '0')}>{String(hour).padStart(2, '0')}</option>)}</select>
+                            </label>
+                            <span className="mt-4 text-[14px] font-bold" style={{ color: COLORS.ink }}>:</span>
+                            <label className="flex flex-1 flex-col gap-1 text-[10px]" style={{ color: COLORS.inkSoft }}>Menit
+                              <select aria-label="Menit aktivasi" value={activationMinute} onChange={event => updateActivationTimePart(activationHour, event.target.value)} className="rounded-lg border px-2 py-2 text-[13px]" style={{ borderColor: COLORS.line, backgroundColor: '#FFFFFF', color: COLORS.ink }}>{Array.from({ length: 60 }, (_, minute) => <option key={minute} value={String(minute).padStart(2, '0')}>{String(minute).padStart(2, '0')}</option>)}</select>
+                            </label>
+                          </div>
+                          <div className="mt-3 flex flex-wrap justify-between gap-2">
+                            <button type="button" onClick={() => setActivationDateDraft('')} className="rounded-lg px-3 py-2 text-[11px] font-semibold" style={{ color: COLORS.rust }}>Hapus tanggal</button>
+                            <button type="button" onClick={() => setActivationPickerOpen(false)} className="rounded-lg px-3 py-2 text-[11px] font-bold text-white" style={{ backgroundColor: COLORS.navy }}>Selesai</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[11px] leading-[1.5]" style={{ color: COLORS.inkSoft }}>
                         {selectedAssignment.activation_at
@@ -5061,7 +5130,7 @@ export default function KelolaTugas() {
                                         ) : (
                                           <div className="flex items-start justify-between gap-3">
                                             <div
-                                              className="min-w-0 flex-1 text-[13.5px] font-semibold leading-[1.75]"
+                                              className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px] font-semibold leading-[1.75]"
                                               style={{ color: COLORS.navyDeep }}
                                             >
                                               {question.question || 'Tidak ada informasi.'}
