@@ -9,6 +9,7 @@ import { Archive } from 'lucide-react';
 
 import api from '../../api/axios';
 import { KelasSayaLayout } from '../../layouts/Guru/KelasSayaLayout';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 interface GuruData {
   nama: string;
@@ -509,17 +510,11 @@ export default function KelasSaya() {
         mapelGuru={mapelGuru}
         getInitials={getInitials}
       >
-        <div className="flex h-[60vh] items-center justify-center">
-          <div className="text-center">
-
-            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#E3DACB] border-t-[#1E2A47]" />
-
-            <div className="font-semibold text-[#1E2A47]">
-              Memuat data kelas...
-            </div>
-
-          </div>
-        </div>
+        <LoadingScreen
+          text="Memuat data kelas"
+          subtitle="Menyiapkan kelas dan aktivitas pembelajaran Anda."
+          className="min-h-[calc(100vh-2rem)]"
+        />
       </KelasSayaLayout>
     );
   }

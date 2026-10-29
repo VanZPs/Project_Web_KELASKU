@@ -24,6 +24,7 @@ import {
 
 import api from '../../api/axios';
 import { JurnalMengajarLayout } from '../../layouts/Guru/JurnalMengajarLayout';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 interface StoredUser {
   name?: string;
@@ -1869,7 +1870,14 @@ export default function JurnalKelas() {
       mapelGuru={mapelGuru}
       getInitials={getInitials}
     >
-      <div className="mx-auto w-full max-w-[1500px]">
+      {loading ? (
+        <LoadingScreen
+          text="Memuat jurnal mengajar"
+          subtitle="Menyiapkan jadwal kelas, catatan pembelajaran, dan data presensi siswa."
+          className="min-h-screen w-full bg-[#F5F1E7]"
+        />
+      ) : (
+        <div className="mx-auto w-full max-w-[1500px]">
 
         {/* =====================================================
             HEADER
@@ -2107,43 +2115,7 @@ export default function JurnalKelas() {
             CONTENT
         ====================================================== */}
 
-        {loading ? (
-          <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
-            {[1, 2, 3, 4].map(
-              (item) => (
-                <div
-                  key={item}
-                  className="overflow-hidden rounded-[14px] border border-[#E3DACB] bg-[#FFFDF8] p-5 shadow-[0_1px_2px_rgba(30,25,15,0.04)]"
-                >
-                  <div className="animate-pulse">
-                    <div className="mb-3 h-5 w-32 rounded-full bg-[#EAE4D8]" />
-
-                    <div className="h-7 w-40 rounded bg-[#EAE4D8]" />
-
-                    <div className="mt-2 h-4 w-48 rounded bg-[#EAE4D8]" />
-
-                    <div className="mt-5 grid grid-cols-3 gap-2">
-                      {[1, 2, 3].map(
-                        (stat) => (
-                          <div
-                            key={stat}
-                            className="h-[68px] rounded-[10px] bg-[#F4F0E7]"
-                          />
-                        )
-                      )}
-                    </div>
-
-                    <div className="mt-4 h-[105px] rounded-[11px] bg-[#F4F0E7]" />
-
-                    <div className="mt-5 h-2 rounded-full bg-[#EAE4D8]" />
-
-                    <div className="mt-5 h-10 rounded-lg bg-[#EAE4D8]" />
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        ) : filteredJurnal.length === 0 ? (
+        {filteredJurnal.length === 0 ? (
           <div className="rounded-[14px] border border-[#E3DACB] bg-[#FFFDF8] px-6 py-16 text-center shadow-[0_1px_2px_rgba(30,25,15,0.04),0_8px_24px_-12px_rgba(30,25,15,0.10)]">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#E7ECF4] text-[#1E2A47]">
               {searchQuery ? (
@@ -2779,6 +2751,7 @@ export default function JurnalKelas() {
           </div>
         )}
       </div>
+      )}
 
       {/* =========================================================
           MODAL MULAI KELAS

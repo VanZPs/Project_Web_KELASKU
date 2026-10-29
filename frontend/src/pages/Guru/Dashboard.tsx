@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { DashboardLayout } from '../../layouts/Guru/DashboardLayout';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 interface GuruData {
   nama: string;
@@ -91,7 +92,23 @@ export function Dashboard() {
   });
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-[#F5F1E7]">Memuat...</div>;
+    return (
+      <DashboardLayout
+        namaGuru={user.name || 'Guru'}
+        mapelGuru={user.mata_pelajaran || 'Guru Mata Pelajaran'}
+        getInitials={getInitials}
+        todayStr={todayStr}
+        hideHeader
+      >
+        <div className="flex min-h-[calc(100vh-52px)] items-center justify-center bg-[#F5F1E7]">
+          <LoadingScreen
+            text="Memuat dashboard"
+            subtitle="Menyiapkan data dashboard Anda."
+            className="min-h-[calc(100vh-52px)]"
+          />
+        </div>
+      </DashboardLayout>
+    );
   }
 
   const stat = data?.statistik || { kelas_diajar: 0, total_siswa: 0, tugas_menunggu: 0, kehadiran_hari_ini: '0%' };

@@ -34,6 +34,7 @@ import {
 import api from '../../api/axios';
 import BuatTugasModal from '../../components/Guru/modal/BuatTugasModal';
 import EditTugasModal from '../../components/Guru/modal/EditTugasModal';
+import LoadingScreen from '../../components/common/LoadingScreen';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
 
 
@@ -3985,40 +3986,17 @@ export default function KelolaTugas() {
         }
       mainClassName="overflow-hidden">
         <div
-          className="min-h-screen"
+          className="flex min-h-screen w-full items-center justify-center"
           style={{
             backgroundColor:
               COLORS.bg,
           }}
         >
-          <div className="mx-auto w-full max-w-[1248px] px-[34px] pb-[60px] pt-[26px]">
-            <div
-              className="flex min-h-[420px] items-center justify-center"
-            >
-              <div className="text-center">
-                <div
-                  className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-                  style={{
-                    borderColor:
-                      COLORS.navy,
-                    borderTopColor:
-                      'transparent',
-                  }}
-                />
-
-                <div
-                  className="text-[13px]"
-                  style={{
-                    color:
-                      COLORS.inkSoft,
-                  }}
-                >
-                  Memuat halaman
-                  Kelola Tugas...
-                </div>
-              </div>
-            </div>
-          </div>
+          <LoadingScreen
+            text="Memuat halaman Kelola Tugas"
+            subtitle="Menyiapkan data tugas dan pengumpulan siswa Anda."
+            className="min-h-screen"
+          />
         </div>
       </GuruLayout>
     );

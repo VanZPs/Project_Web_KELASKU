@@ -20,6 +20,7 @@ import api from '../../api/axios';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
 import { useNavigate } from 'react-router-dom';
 import BuatTugasModal from '../../components/Guru/modal/BuatTugasModal';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 
 /*
@@ -1081,6 +1082,18 @@ export default function Tugas() {
       getInitials={getInitials}
       mainClassName="overflow-hidden"
     >
+      {loading ? (
+        <div
+          className="flex min-h-screen w-full items-center justify-center"
+          style={{ backgroundColor: '#F5F1E7' }}
+        >
+          <LoadingScreen
+            text="Memuat data tugas"
+            subtitle="Menyiapkan mata pelajaran, kelas, dan tugas yang Anda ajar."
+            className="min-h-screen"
+          />
+        </div>
+      ) : (
       <div
         className="min-h-screen"
         style={{
@@ -1530,14 +1543,7 @@ export default function Tugas() {
           {/* =====================================================
               PILIH MATA PELAJARAN / PILIH KELAS
           ====================================================== */}
-          {loading ? (
-            <div className="grid grid-cols-1 gap-[18px] xl:grid-cols-2">
-              {[1, 2, 3, 4].map((item) => (
-                <div key={item} className="h-[235px] animate-pulse rounded-[14px] border"
-                  style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }} />
-              ))}
-            </div>
-          ) : error ? (
+          {error ? (
             <div className="rounded-[14px] border px-6 py-16 text-center"
               style={{ backgroundColor: '#FFFDF8', borderColor: '#E3DACB' }}>
               <AlertCircle className="mx-auto text-[#A8503B]" size={25} />
@@ -1709,6 +1715,7 @@ export default function Tugas() {
           }}
         />
       </div>
+      )}
     </GuruLayout>
   );
 }

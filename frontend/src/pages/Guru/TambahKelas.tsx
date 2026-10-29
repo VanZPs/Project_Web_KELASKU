@@ -5,6 +5,7 @@ import type {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
+import LoadingScreen from '../../components/common/LoadingScreen';
 import {
   KelasSayaLayout,
 } from '../../layouts/Guru/KelasSayaLayout';
@@ -1509,20 +1510,11 @@ export default function TambahKelas() {
         }
         getInitials={getInitials}
       >
-        <div className="flex min-h-[65vh] items-center justify-center">
-          <div className="text-center">
-            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-[#E3DACB] border-t-[#1E2A47]" />
-
-            <div className="font-semibold text-[#1E2A47]">
-              Memuat data jadwal...
-            </div>
-
-            <div className="mt-1 text-[12px] text-[#8A8F9D]">
-              Menyiapkan kelas dan kalender
-              mengajar Anda.
-            </div>
-          </div>
-        </div>
+        <LoadingScreen
+          text="Memuat data jadwal"
+          subtitle="Menyiapkan kelas dan kalender mengajar Anda."
+          className="min-h-[calc(100vh-3rem)]"
+        />
       </KelasSayaLayout>
     );
   }
@@ -1557,7 +1549,7 @@ export default function TambahKelas() {
                   '/guru/kelas-saya'
                 )
               }
-              className="mb-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#777B88] transition hover:text-[#1E2A47]"
+              className="mb-3 inline-flex items-center gap-2 rounded-[10px] border border-[#E3DACB] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#1E2A47] shadow-[0_1px_3px_rgba(30,25,15,0.08)] transition-all duration-200 hover:border-[#D6A64F] hover:shadow-[0_0_0_2px_rgba(214,166,79,0.22),0_2px_6px_rgba(30,25,15,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D6A64F]/50"
             >
               <span className="text-[15px]">
                 ←

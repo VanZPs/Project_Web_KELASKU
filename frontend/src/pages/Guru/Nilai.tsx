@@ -20,6 +20,7 @@ import * as XLSX from 'xlsx';
 
 import api from '../../api/axios';
 import { GuruLayout } from '../../layouts/Guru/GuruLayout';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 const KKM = 75;
 
@@ -793,6 +794,15 @@ export default function Nilai() {
       getInitials={getInitials}
       mainClassName="min-w-0 px-5 py-6 pb-14 sm:px-8"
     >
+      {loading ? (
+        <div className="flex min-h-[calc(100vh-3rem)] w-full items-center justify-center">
+          <LoadingScreen
+            text="Memuat data nilai"
+            subtitle="Menyiapkan mata pelajaran, data siswa, dan rekap nilai Anda."
+            className="!min-h-0 w-full"
+          />
+        </div>
+      ) : (
       <div className={"mx-auto max-w-[1248px] min-w-0 font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased"}>
         <header className="mb-5">
           {currentSubject && (
@@ -873,10 +883,11 @@ export default function Nilai() {
         </section>
 
         {loading ? (
-          <div className="col-span-full flex flex-col items-center justify-center gap-3 py-12 text-sm text-[#6B7080]">
-            <LoaderCircle className="animate-spin text-[#1E2A47]" size={27} />
-            <p>Memuat data nilai...</p>
-          </div>
+          <LoadingScreen
+            text="Memuat data nilai"
+            subtitle="Menyiapkan mata pelajaran, data siswa, dan rekap nilai Anda."
+            className="min-h-[35vh]"
+          />
         ) : error ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-sm text-[#A8503B]">
             <p>{error}</p>
@@ -1445,6 +1456,7 @@ export default function Nilai() {
             )}
 
       </div>
+      )}
     </GuruLayout>
   );
 }

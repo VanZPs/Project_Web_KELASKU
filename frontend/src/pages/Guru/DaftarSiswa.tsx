@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 
 import api from '../../api/axios';
 import { KelasSayaLayout } from '../../layouts/Guru/KelasSayaLayout';
+import LoadingScreen from '../../components/common/LoadingScreen';
 
 
 /*
@@ -987,7 +988,15 @@ export default function DaftarSiswa() {
       mapelGuru={guru.mata_pelajaran}
       getInitials={getInitials}
     >
-      <div className="min-h-full">
+      {loading ? (
+        <LoadingScreen
+          text="Memuat data siswa"
+          subtitle="Menyiapkan daftar siswa dan rekap presensi Anda."
+          className="min-h-[calc(100vh-2rem)]"
+        />
+      ) : (
+        <>
+          <div className="min-h-full">
 
         {/* ======================================================
             HEADER
@@ -1288,18 +1297,7 @@ export default function DaftarSiswa() {
             CLASS LIST
             ====================================================== */}
 
-        {loading ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map(
-              (item) => (
-                <div
-                  key={item}
-                  className="h-[245px] rounded-[14px] border border-[#E3DACB] bg-[#FFFDF8] animate-pulse"
-                />
-              )
-            )}
-          </div>
-        ) : filteredClasses.length ===
+        {filteredClasses.length ===
           0 ? (
           <EmptyState
             attention={
@@ -1435,6 +1433,8 @@ export default function DaftarSiswa() {
             saveAttendance
           }
         />
+      )}
+        </>
       )}
 
     </KelasSayaLayout>
