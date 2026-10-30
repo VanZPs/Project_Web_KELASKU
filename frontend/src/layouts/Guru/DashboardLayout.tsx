@@ -4,7 +4,7 @@ import { GuruLayout } from './GuruLayout';
 interface DashboardLayoutProps {
   children: ReactNode;
   namaGuru: string;
-  mapelGuru: string;
+  mapelGuru?: string;
   getInitials: (name: string) => string;
   todayStr: string;
   hideHeader?: boolean;
@@ -38,15 +38,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <rect x="3" y="4" width="18" height="18" rx="2" />
                 <path d="M16 2v4M8 2v4M3 10h18" />
               </svg>
-  
               <span>{todayStr}</span>
             </div>
-  
             <h1 className="font-['Fraunces',serif] font-semibold text-[26px] md:text-[28px] tracking-[-0.01em] text-[#141C30]">
               Selamat pagi, {namaGuru.split(' ')[0]} ✨
             </h1>
           </div>
-  
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="flex items-center gap-2 bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] p-[9px_13px] min-w-[230px] flex-1 md:flex-none shadow-sm">
               <svg
@@ -61,14 +58,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <circle cx="11" cy="11" r="7" />
                 <path d="M21 21l-4.3-4.3" />
               </svg>
-  
               <input
                 type="text"
                 placeholder="Cari siswa, kelas, atau tugas"
                 className="border-none outline-none bg-transparent font-inherit text-[13.5px] text-[#23283A] w-full"
               />
             </div>
-  
             <button
               type="button"
               className="w-[38px] h-[38px] flex items-center justify-center bg-[#FFFDF8] border border-[#E3DACB] rounded-[10px] relative text-[#23283A] shrink-0 cursor-pointer shadow-sm hover:bg-[#FAF6EC] transition-colors"
@@ -85,14 +80,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
             </button>
-  
             <div className="w-[38px] h-[38px] rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] flex items-center justify-center font-bold text-[14px] text-[#141C30] shrink-0 shadow-sm">
               {getInitials(namaGuru)}
             </div>
           </div>
         </div>
       )}
-
       {children}
     </GuruLayout>
   );

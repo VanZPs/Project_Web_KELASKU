@@ -76,9 +76,18 @@ class DashboardController extends Controller
          * DATA MATA PELAJARAN GURU
          * ==========================================================
          */
-        $mataPelajaran = $teacher->subjects
-            ->pluck('name')
-            ->join(', ');
+        // Gunakan mata pelajaran utama agar sidebar menampilkan satu mapel
+        // yang konsisten dengan pilihan utama pada relasi teacher_subject.
+        $mataPelajaranUtama = $teacher->subjects->first(
+            function ($subject) {
+                return (bool) $subject->pivot?->is_primary;
+            }
+        );
+
+        // Jika belum ada yang ditandai sebagai utama, gunakan mata pelajaran pertama.
+        $mataPelajaran = $mataPelajaranUtama?->name
+            ?? $teacher->subjects->first()?->name
+            ?? '';
 
         /*
          * ==========================================================

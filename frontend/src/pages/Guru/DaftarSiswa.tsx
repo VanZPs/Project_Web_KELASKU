@@ -142,34 +142,65 @@ const ATTENDANCE_CLASS: Record<AttendanceStatus, string> = {
 */
 
 const getStoredGuru = (): GuruData => {
-  const userData = localStorage.getItem('user');
-
-  if (!userData) {
-    return {
-      nama: 'Guru',
-      mata_pelajaran: 'Guru',
-    };
-  }
+  const fallback: GuruData = {
+    nama: 'Guru',
+    mata_pelajaran: 'Guru Mata Pelajaran',
+  };
 
   try {
+    const userData = localStorage.getItem('user');
+    if (!userData) return fallback;
+
     const user = JSON.parse(userData);
+    const subjects = Array.isArray(user?.teacher?.subjects)
+      ? user.teacher.subjects
+      : [];
+
+    // Utamakan mata pelajaran yang ditandai sebagai mapel utama.
+    const primarySubject = subjects.find((subject: any) =>
+      subject?.pivot?.is_primary === true ||
+      subject?.pivot?.is_primary === 1 ||
+      subject?.pivot?.is_primary === '1'
+    );
+
+    const subjectName = (subject: any): string =>
+      typeof subject === 'string'
+        ? subject.trim()
+        : String(subject?.name ?? subject?.nama ?? '').trim();
+
+    const nestedSubject =
+      subjectName(primarySubject) ||
+      subjectName(subjects[0]);
+
+    const storedSubject = String(
+      user?.mata_pelajaran ??
+      user?.subject_name ??
+      user?.subject ??
+      user?.mapel ??
+      ''
+    ).trim();
+
+    const genericSubjects = [
+      '',
+      'guru',
+      'guru mata pelajaran',
+    ];
+
+    const mataPelajaran =
+      nestedSubject ||
+      (!genericSubjects.includes(storedSubject.toLowerCase())
+        ? storedSubject
+        : '') ||
+      'Guru Mata Pelajaran';
 
     return {
       nama:
-        user?.name ??
-        user?.nama ??
+        String(user?.name ?? user?.nama ?? '').trim() ||
         'Guru',
-
-      mata_pelajaran:
-        user?.mata_pelajaran ??
-        user?.mapel ??
-        'Guru',
+      mata_pelajaran: mataPelajaran,
     };
   } catch {
-    return {
-      nama: 'Guru',
-      mata_pelajaran: 'Guru',
-    };
+    return fallback;
   }
 };
 

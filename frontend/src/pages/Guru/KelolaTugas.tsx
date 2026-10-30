@@ -66,8 +66,23 @@ type SubmissionMode =
 interface UserData {
   id?: number;
   name?: string;
+  nama?: string;
   email?: string;
   role?: string;
+  mata_pelajaran?: string;
+  subject?: string;
+  subject_name?: string;
+  mapel?: string;
+  teacher?: {
+    subjects?: Array<{
+      id?: number;
+      name?: string;
+      nama?: string;
+      pivot?: {
+        is_primary?: boolean | number | string;
+      };
+    }>;
+  };
 }
 
 interface Classroom {
@@ -2440,6 +2455,60 @@ function RosterSearch({
 |--------------------------------------------------------------------------
 */
 
+function getStoredUser(): UserData | null {
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) return null;
+
+    return JSON.parse(storedUser) as UserData;
+  } catch {
+    return null;
+  }
+}
+
+function getStoredSubjectName(user: UserData | null): string {
+  if (!user) return '';
+
+  const subjects = Array.isArray(user.teacher?.subjects)
+    ? user.teacher.subjects
+    : [];
+
+  const primarySubject = subjects.find((subject) =>
+    subject.pivot?.is_primary === true ||
+    subject.pivot?.is_primary === 1 ||
+    subject.pivot?.is_primary === '1'
+  );
+
+  const nestedSubject =
+    primarySubject?.name?.trim() ||
+    primarySubject?.nama?.trim() ||
+    subjects[0]?.name?.trim() ||
+    subjects[0]?.nama?.trim() ||
+    '';
+
+  const rootSubject = (
+    user.mata_pelajaran ||
+    user.subject_name ||
+    user.subject ||
+    user.mapel ||
+    ''
+  ).trim();
+
+  const genericValues = [
+    '',
+    'guru',
+    'mata pelajaran',
+    'guru mata pelajaran',
+  ];
+
+  if (nestedSubject) return nestedSubject;
+  if (!genericValues.includes(rootSubject.toLowerCase())) {
+    return rootSubject;
+  }
+
+  return '';
+}
+
 export default function KelolaTugas() {
   const navigate =
     useNavigate();
@@ -2453,9 +2522,11 @@ export default function KelolaTugas() {
   const numericScheduleId =
     Number(scheduleId);
 
-  const [user, setUser] =
+  // Baca profil secara sinkron agar identitas guru dan mapel
+  // sudah tersedia sejak render pertama, termasuk saat loading.
+  const [user] =
     useState<UserData | null>(
-      null,
+      () => getStoredUser(),
     );
 
   const [schedule, setSchedule] =
@@ -2594,34 +2665,6 @@ export default function KelolaTugas() {
         | 'error';
       message: string;
     } | null>(null);
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOAD USER
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
-    const storedUser =
-      localStorage.getItem(
-        'user',
-      );
-
-    if (!storedUser) {
-      return;
-    }
-
-    try {
-      setUser(
-        JSON.parse(
-          storedUser,
-        ) as UserData,
-      );
-    } catch {
-      setUser(null);
-    }
-  }, []);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -2832,9 +2875,12 @@ export default function KelolaTugas() {
   */
 
   const namaGuru =
-    user?.name ??
+    user?.name ||
+    user?.nama ||
     'Guru';
 
+  // Gunakan mapel dari jadwal setelah tersedia. Sebelum itu,
+  // gunakan mapel utama dari profil yang tersimpan saat login.
   const subjectName =
     schedule?.subject?.name ||
     assignments[0]
@@ -2846,7 +2892,8 @@ export default function KelolaTugas() {
     assignments[0]
       ?.schedule?.subject
       ?.name ||
-    'Mata pelajaran';
+    getStoredSubjectName(user) ||
+    'Guru Mata Pelajaran';
 
 
   const currentClassroomId =

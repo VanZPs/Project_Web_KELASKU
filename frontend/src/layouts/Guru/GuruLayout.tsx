@@ -15,6 +15,23 @@ interface UpdatedProfileUser {
   name?: string;
 }
 
+interface StoredUser {
+  name?: unknown;
+  nama?: unknown;
+  mata_pelajaran?: unknown;
+  subject?: unknown;
+  subject_name?: unknown;
+  mapel?: unknown;
+  teacher?: {
+    subjects?: Array<{
+      name?: unknown;
+      pivot?: {
+        is_primary?: unknown;
+      };
+    }>;
+  };
+}
+
 interface GuruLayoutContextValue {
   isSharedLayout: true;
   updateProfile: (name: string, subject: string) => void;
@@ -22,23 +39,47 @@ interface GuruLayoutContextValue {
 
 const GuruLayoutContext = createContext<GuruLayoutContextValue | null>(null);
 
+const isValidSubject = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.trim().length > 0 &&
+  value.trim().toLowerCase() !== 'guru mata pelajaran';
+
 const getStoredProfile = () => {
   try {
     const raw = localStorage.getItem('user');
     if (!raw) return { name: 'Guru', subject: 'Guru Mata Pelajaran' };
 
-    const user = JSON.parse(raw) as Record<string, unknown>;
+    const user = JSON.parse(raw) as StoredUser;
     const name =
       (typeof user.name === 'string' && user.name) ||
       (typeof user.nama === 'string' && user.nama) ||
       'Guru';
 
-    const subject =
-      (typeof user.mata_pelajaran === 'string' && user.mata_pelajaran) ||
-      (typeof user.subject === 'string' && user.subject) ||
-      (typeof user.subject_name === 'string' && user.subject_name) ||
-      (typeof user.mapel === 'string' && user.mapel) ||
-      'Guru Mata Pelajaran';
+    const subjects = Array.isArray(user.teacher?.subjects)
+      ? user.teacher.subjects
+      : [];
+
+    const primarySubject = subjects.find(
+      (subject) =>
+        subject.pivot?.is_primary === true ||
+        subject.pivot?.is_primary === 1 ||
+        subject.pivot?.is_primary === '1',
+    );
+
+    const nestedSubject = primarySubject?.name || subjects[0]?.name;
+
+    const rootSubject = [
+      user.mata_pelajaran,
+      user.subject,
+      user.subject_name,
+      user.mapel,
+    ].find(isValidSubject);
+
+    const subject = isValidSubject(rootSubject)
+      ? rootSubject.trim()
+      : isValidSubject(nestedSubject)
+        ? nestedSubject.trim()
+        : 'Guru Mata Pelajaran';
 
     return { name, subject };
   } catch {
@@ -63,21 +104,25 @@ export const GuruLayout: React.FC<GuruLayoutProps> = ({
   const storedProfile = useMemo(() => getStoredProfile(), []);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [displayName, setDisplayName] = useState(namaGuru || storedProfile.name);
-  const [displaySubject, setDisplaySubject] = useState(mapelGuru || storedProfile.subject);
+  const [displaySubject, setDisplaySubject] = useState(
+    mapelGuru && mapelGuru !== 'Guru Mata Pelajaran'
+      ? mapelGuru
+      : storedProfile.subject,
+  );
 
   const updateProfile = useCallback((name: string, subject: string) => {
     if (name.trim()) {
       setDisplayName((current) => current === name ? current : name);
     }
-    if (subject.trim()) {
+    if (subject.trim() && subject !== 'Guru Mata Pelajaran') {
       setDisplaySubject((current) => current === subject ? current : subject);
     }
   }, []);
 
   // Wrapper halaman yang sudah ada menyuplai nama/mapel setelah data API tersedia.
-  // Sinkronkan ke sidebar induk tanpa membuat ulang Sidebar.
+  // Jangan timpa mapel dari profil lokal dengan teks fallback saat data API belum tersedia.
   useEffect(() => {
-    if (parentLayout?.isSharedLayout && namaGuru && mapelGuru) {
+    if (parentLayout?.isSharedLayout && namaGuru && mapelGuru && mapelGuru !== 'Guru Mata Pelajaran') {
       parentLayout.updateProfile(namaGuru, mapelGuru);
     }
   }, [parentLayout, namaGuru, mapelGuru]);

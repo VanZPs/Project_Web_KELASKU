@@ -205,6 +205,45 @@ function getInitials(name?: string) {
     .toUpperCase();
 }
 
+function getStoredUser(): UserData | null {
+  try {
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getPrimaryTeacherSubject(user: any): string {
+  const directSubject =
+    user?.mata_pelajaran ??
+    user?.subject?.name ??
+    user?.subject_name ??
+    user?.mapel ??
+    user?.teacher?.subject?.name;
+
+  if (typeof directSubject === 'string' && directSubject.trim()) {
+    return directSubject.trim();
+  }
+
+  const subjects = Array.isArray(user?.teacher?.subjects)
+    ? user.teacher.subjects
+    : [];
+
+  const primarySubject = subjects.find((subject: any) =>
+    subject?.pivot?.is_primary === true ||
+    subject?.pivot?.is_primary === 1 ||
+    subject?.pivot?.is_primary === '1'
+  );
+
+  const selectedSubject = primarySubject ?? subjects[0];
+  const subjectName = selectedSubject?.name ?? selectedSubject?.subject_name;
+
+  return typeof subjectName === 'string' && subjectName.trim()
+    ? subjectName.trim()
+    : 'Guru Mata Pelajaran';
+}
+
 function getStudentCount(
   schedule?: Schedule,
   classroomStudentCounts?: Record<number, number>,
@@ -376,8 +415,9 @@ export default function Tugas() {
   | STATE
   |--------------------------------------------------------------------------
   */
-  const [user, setUser] =
-    useState<UserData | null>(null);
+  // Baca profil secara sinkron agar sidebar sudah memiliki nama dan mapel
+  // sejak render pertama, tanpa menunggu useEffect berjalan.
+  const [user] = useState<UserData | null>(() => getStoredUser());
 
   const [assignments, setAssignments] =
     useState<Assignment[]>([]);
@@ -427,29 +467,6 @@ export default function Tugas() {
   const [createTaskModalOpen, setCreateTaskModalOpen] =
     useState(false);
 
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOAD STORED USER
-  |--------------------------------------------------------------------------
-  */
-  useEffect(() => {
-    const storedUser =
-      localStorage.getItem('user');
-
-    if (!storedUser) {
-      return;
-    }
-
-    try {
-      setUser(
-        JSON.parse(storedUser),
-      );
-    } catch {
-      setUser(null);
-    }
-  }, []);
 
 
   /*
@@ -635,32 +652,20 @@ export default function Tugas() {
 
   const teacherSubject =
     useMemo(() => {
+      const subjectNames = schedules
+        .map((schedule) => schedule.subject?.name?.trim())
+        .filter(Boolean) as string[];
 
-      const subjectNames =
-        schedules
-          .map(
-            (schedule) =>
-              schedule.subject?.name,
-          )
-          .filter(
-            Boolean,
-          ) as string[];
+      const uniqueSubjects = [...new Set(subjectNames)];
 
-      const uniqueSubjects =
-        [
-          ...new Set(
-            subjectNames,
-          ),
-        ];
-
-      if (
-        uniqueSubjects.length ===
-        1
-      ) {
+      // Jika jadwal baru selesai dimuat dan hanya ada satu mapel,
+      // gunakan nama mapel dari jadwal. Sebelum itu, gunakan profil tersimpan.
+      if (uniqueSubjects.length === 1) {
         return uniqueSubjects[0];
       }
-      return 'Guru';
-    }, [schedules]);
+
+      return getPrimaryTeacherSubject(user);
+    }, [schedules, user]);
 
 /*
   |--------------------------------------------------------------------------

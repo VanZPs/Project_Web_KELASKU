@@ -140,6 +140,40 @@ function getStoredUser() {
   }
 }
 
+function getStoredTeacherSubject(user: Record<string, any>): string {
+  const teacher = user?.teacher;
+
+  // Data utama dapat tersimpan langsung pada profil user.
+  const directSubject =
+    user?.mata_pelajaran ??
+    user?.subject?.name ??
+    user?.subject_name ??
+    user?.mapel ??
+    teacher?.subject?.name;
+
+  if (typeof directSubject === 'string' && directSubject.trim()) {
+    return directSubject.trim();
+  }
+
+  // Relasi teacher.subjects merupakan array; prioritaskan mapel utama.
+  const subjects = Array.isArray(teacher?.subjects) ? teacher.subjects : [];
+  const primarySubject = subjects.find((subject: any) =>
+    subject?.pivot?.is_primary === true ||
+    subject?.pivot?.is_primary === 1 ||
+    subject?.pivot?.is_primary === '1'
+  );
+
+  const selectedSubject = primarySubject ?? subjects[0];
+  const subjectName =
+    selectedSubject?.name ??
+    selectedSubject?.subject_name ??
+    selectedSubject?.pivot?.subject_name;
+
+  return typeof subjectName === 'string' && subjectName.trim()
+    ? subjectName.trim()
+    : 'Guru Mata Pelajaran';
+}
+
 function getSemesterLabel() {
   const now = new Date();
   const year = now.getFullYear();
@@ -429,9 +463,8 @@ const primaryButtonClass =
 
 export default function Nilai() {
   const user = getStoredUser();
-  const namaGuru = user.name ?? 'Guru';
-  const mapelGuru =
-    user.subject?.name ?? user.teacher?.subject?.name ?? user.mapel ?? 'Guru';
+  const namaGuru = user.name ?? user.nama ?? 'Guru';
+  const mapelGuru = getStoredTeacherSubject(user);
 
   const [subjects, setSubjects] = useState<SubjectSummary[]>([]);
   const [loading, setLoading] = useState(true);

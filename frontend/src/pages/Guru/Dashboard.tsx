@@ -58,8 +58,15 @@ export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : { name: 'Guru' };
+  const user = (() => {
+    try {
+      const storedUser = localStorage.getItem('user');
+      return storedUser ? JSON.parse(storedUser) : { name: 'Guru' };
+    } catch (error) {
+      console.error('Gagal membaca data profil dari localStorage:', error);
+      return { name: 'Guru' };
+    }
+  })();
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -94,8 +101,7 @@ export function Dashboard() {
   if (loading) {
     return (
       <DashboardLayout
-        namaGuru={user.name || 'Guru'}
-        mapelGuru={user.mata_pelajaran || 'Guru Mata Pelajaran'}
+        namaGuru={user.name || user.nama || 'Guru'}
         getInitials={getInitials}
         todayStr={todayStr}
         hideHeader
@@ -116,7 +122,7 @@ export function Dashboard() {
   const jurnal = data?.jurnal_terbaru || [];
   const tugasMenunggu = data?.tugas_menunggu_dinilai || [];
   const rataKelas = data?.rata_rata_kelas || [];
-  const namaGuru = data?.guru?.nama || user.name;
+  const namaGuru = data?.guru?.nama || user.name || user.nama || 'Guru';
   const mapelGuru = data?.guru?.mata_pelajaran || 'Guru Mata Pelajaran';
 
   return (

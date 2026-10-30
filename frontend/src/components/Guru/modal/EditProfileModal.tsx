@@ -635,7 +635,7 @@ export default function EditProfileModal({
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F3E8DF] text-[#AE5A3E]"><BookOpen size={20} /></div>
                     <div>
                       <h3 className="font-bold text-[#3F3027]">Mata Pelajaran</h3>
-                      <p className="mt-1 text-xs leading-5 text-[#8A7A70]">Atur mata pelajaran utama dan tambahan.</p>
+                      <p className="mt-1 text-xs leading-5 text-[#8A7A70]">Atur mata pelajaran tambahan selain mata pelajaran utama.</p>
                     </div>
                   </div>
                   {!addingSubject && (
