@@ -4137,41 +4137,30 @@ export default function KelolaTugas() {
           ====================================================== */}
 
           <div
-            className="mb-6 flex items-start justify-between gap-5"
+            className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
           >
-            <div>
-              <div
-                className="mb-1 text-[11px] font-bold uppercase tracking-[0.05em]"
-                style={{
-                  color:
-                    COLORS.gold,
-                }}
-              >
-                {getSemesterLabel()}
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7080]">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#C69A4B]" />
+                <span>{getSemesterLabel()}</span>
               </div>
 
               <h1
-                className="text-[32px] font-semibold tracking-[-0.02em]"
-                style={{
-                  color:
-                    COLORS.navyDeep,
-                  fontFamily:
-                    '"Fraunces", serif',
-                }}
+                className="font-['Fraunces',serif] text-[32px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#141C30] sm:text-[36px]"
               >
                 {schedule?.classroom?.name ||
                   'Kelas'}
               </h1>
 
               <div
-                className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] font-semibold"
+                className="mt-3 flex flex-wrap items-center gap-2 text-[13px] font-medium"
                 style={{
                   color:
                     COLORS.inkSoft,
                 }}
               >
                 <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
                   style={{
                     backgroundColor:
                       COLORS.goldSoft,
@@ -4185,27 +4174,31 @@ export default function KelolaTugas() {
                   {subjectName}
                 </span>
 
-                <span>
-                  {totalStudents}{' '}
-                  siswa
-                </span>
+                <span>{totalStudents} siswa</span>
 
                 {schedule && (
                   <>
-                    <span>
-                      ·
-                    </span>
-
-                    <span>
-                      {getScheduleLabel(
-                        schedule,
-                      )}
-                    </span>
+                    <span>·</span>
+                    <span>{getScheduleLabel(schedule)}</span>
                   </>
                 )}
               </div>
             </div>
 
+            <div className="flex shrink-0 items-center gap-3 self-start rounded-[12px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-3 shadow-[0_4px_16px_-10px_rgba(30,25,15,0.2)] sm:self-auto">
+              <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[#F1E8D8] text-[#7A5A20]">
+                <Calendar size={17} strokeWidth={1.7} />
+              </div>
+
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8C94]">
+                  Tahun ajaran
+                </div>
+                <div className="mt-0.5 text-[12px] font-semibold text-[#1E2A47]">
+                  {getSemesterLabel().replace(/^Semester\s+/i, '')}
+                </div>
+              </div>
+            </div>
           </div>
 
 

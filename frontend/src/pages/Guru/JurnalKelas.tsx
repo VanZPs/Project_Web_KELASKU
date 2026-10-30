@@ -1888,7 +1888,6 @@ export default function JurnalKelas() {
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#C49A5A]" />
-
                 <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8A806F]">
                   Semester Ganjil 2026/2027
                 </span>
@@ -1901,6 +1900,39 @@ export default function JurnalKelas() {
               <p className="mt-2 max-w-[520px] text-[13px] leading-5 text-[#6B7080]">
                 Catat kegiatan pembelajaran dan presensi siswa.
               </p>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-[12px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-3 shadow-[0_4px_16px_-10px_rgba(30,25,15,0.2)]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[#F1E8D8] text-[#7A5A20]">
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                >
+                  <rect
+                    x="3"
+                    y="4"
+                    width="18"
+                    height="17"
+                    rx="2"
+                  />
+                  <path d="M16 2v4" />
+                  <path d="M8 2v4" />
+                  <path d="M3 10h18" />
+                </svg>
+              </div>
+
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8C94]">
+                  Tahun ajaran
+                </div>
+                <div className="mt-0.5 text-[12px] font-semibold text-[#1E2A47]">
+                  2026/2027 · Ganjil
+                </div>
+              </div>
             </div>
           </div>
         </div>

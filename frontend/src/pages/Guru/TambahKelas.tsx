@@ -1540,43 +1540,41 @@ export default function TambahKelas() {
             HEADER
             ===================================================== */}
 
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <button
-              type="button"
-              onClick={() =>
-                navigate(
-                  '/guru/kelas-saya'
-                )
-              }
-              className="mb-3 inline-flex items-center gap-2 rounded-[10px] border border-[#E3DACB] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#1E2A47] shadow-[0_1px_3px_rgba(30,25,15,0.08)] transition-all duration-200 hover:border-[#D6A64F] hover:shadow-[0_0_0_2px_rgba(214,166,79,0.22),0_2px_6px_rgba(30,25,15,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D6A64F]/50"
-            >
-              <span className="text-[15px]">
-                ←
-              </span>
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                '/guru/kelas-saya'
+              )
+            }
+            className="mb-4 inline-flex items-center gap-2 rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[14px] font-semibold text-[#1E2A47] shadow-[0_1px_3px_rgba(30,25,15,0.08)] transition-all duration-200 hover:border-[#D6A64F] hover:bg-[#FBF8EF] hover:shadow-[0_0_0_2px_rgba(214,166,79,0.22),0_2px_6px_rgba(30,25,15,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D6A64F]/50"
+          >
+            <span className="text-[15px]">
+              ←
+            </span>
+            Kembali ke Kelas Saya
+          </button>
 
-              Kembali ke Kelas Saya
-            </button>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7080]">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#C69A4B]" />
+                <span>Semester ganjil 2026/2027</span>
+              </div>
 
-            <div className="text-[13px] text-[#6B7080]">
-              Semester ganjil
-              2026/2027
+              <h1 className="font-['Fraunces',serif] text-[32px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#141C30] sm:text-[36px]">
+                Tambah kelas
+              </h1>
+
+              <p className="mt-2 max-w-[680px] text-[13px] leading-6 text-[#777B88]">
+                Atur kelas dan jadwal mengajar Anda untuk semester ini.
+              </p>
             </div>
 
-            <h1 className="mt-0.5 font-['Fraunces',serif] text-[27px] font-semibold tracking-[-0.01em] text-[#141C30]">
-              Tambah kelas
-            </h1>
+            {/* TOTAL JP */}
 
-            <p className="mt-1 max-w-[680px] text-[13px] leading-6 text-[#777B88]">
-              Atur kelas dan jadwal
-              mengajar Anda untuk
-              semester ini.
-            </p>
-          </div>
-
-          {/* TOTAL JP */}
-
-          <div className="flex items-center gap-3 rounded-[13px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-3 shadow-[0_1px_2px_rgba(30,25,15,0.04)]">
+            <div className="flex shrink-0 items-center gap-3 self-start rounded-[12px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-3 shadow-[0_4px_16px_-10px_rgba(30,25,15,0.2)] sm:self-auto">
             <div className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-[#E7ECF4] text-[#1E2A47]">
               <svg
                 width="17"
@@ -1614,6 +1612,7 @@ export default function TambahKelas() {
                   menit
                 </div>
               )}
+            </div>
             </div>
           </div>
         </div>
