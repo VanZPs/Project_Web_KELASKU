@@ -665,7 +665,7 @@ class AssignmentController extends Controller
             /**
              * Data siswa yang mengumpulkan tugas.
              */
-            'submissions.student.user',
+            'submissions.student',
 
             /**
              * File yang dikumpulkan oleh siswa.
@@ -1468,10 +1468,6 @@ class AssignmentController extends Controller
             })
             ->values();
 
-        $studentIds = $students
-            ->pluck('id')
-            ->values();
-
         /**
          * Ambil semua assignment yang diberikan
          * ke schedule ini.
@@ -1486,15 +1482,15 @@ class AssignmentController extends Controller
              * Submission hanya milik siswa
              * pada classroom ini.
              */
-            'submissions' => function ($query) use ($studentIds) {
+            'submissions' => function ($query) use ($studentUserIds) {
                 $query
                     ->whereIn(
                         'student_id',
-                        $studentIds
+                        $studentUserIds
                     )
 
                     ->with([
-                        'student.user',
+                        'student',
                         'files',
                         'answers.question',
                         'answers.selectedOptions.option',
@@ -1630,7 +1626,7 @@ class AssignmentController extends Controller
                     ) {
                         $submission =
                             $representativeSubmissions
-                                ->get($student->id);
+                                ->get($student->user_id);
 
                         return [
                             'student' => $student,
@@ -1843,7 +1839,7 @@ class AssignmentController extends Controller
          * Return submission terbaru.
          */
         $submission->load([
-            'student.user',
+            'student',
             'files',
             'answers.question',
             'answers.selectedOptions.option',

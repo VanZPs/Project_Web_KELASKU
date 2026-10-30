@@ -36,11 +36,15 @@ class Submission extends Model
     }
 
     /**
-     * Submission -> Student
+     * Submission -> User (Student)
      */
     public function student(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
+        return $this->belongsTo(
+            User::class,
+            'student_id',
+            'id'
+        );
     }
 
     /**
