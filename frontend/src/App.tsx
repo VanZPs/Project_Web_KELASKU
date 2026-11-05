@@ -24,6 +24,8 @@ import Tugas from './pages/Guru/Tugas';
 import KelolaTugas from './pages/Guru/KelolaTugas';
 import Nilai from './pages/Guru/Nilai';
 import { GuruLayout } from './layouts/Guru/GuruLayout';
+import { DashboardSiswa } from './pages/Siswa/Dashboard';
+import SiswaPagePlaceholder from './pages/Siswa/SiswaPagePlaceholder';
 
 
 /*
@@ -295,23 +297,26 @@ export default function App() {
             ================================================== */}
 
         <Route
-          path="/siswa/*"
+          path="/siswa"
           element={
-            <ProtectedRoute
-              allowedRole="siswa"
-            >
-              <div className="p-8">
-                <h1 className="text-2xl font-bold text-indigo-600">
-                  Dashboard Siswa - KELASKU
-                </h1>
-
-                <p className="mt-2 text-gray-600">
-                  SMA Kesatrian 1 Semarang
-                </p>
-              </div>
+            <ProtectedRoute allowedRole="siswa">
+              <Navigate to="/siswa/dashboard" replace />
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/siswa/dashboard"
+          element={
+            <ProtectedRoute allowedRole="siswa">
+              <DashboardSiswa />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/siswa/jadwal" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Jadwal Pelajaran" /></ProtectedRoute>} />
+        <Route path="/siswa/nilai" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Nilai" /></ProtectedRoute>} />
+        <Route path="/siswa/tugas" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Tugas" /></ProtectedRoute>} />
+        <Route path="/siswa/jurnal" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Jurnal Pembelajaran" /></ProtectedRoute>} />
+        <Route path="/siswa/kehadiran" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Kehadiran" /></ProtectedRoute>} />
 
 
         {/* ==================================================

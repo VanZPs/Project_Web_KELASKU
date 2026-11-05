@@ -17,6 +17,7 @@ use App\Http\Controllers\API\SubmissionController;
 use App\Http\Controllers\API\FileController;
 use App\Http\Controllers\API\TaskCommentController;
 use App\Http\Controllers\API\GradeController;
+use App\Http\Controllers\API\StudentDashboardController;
 
 
 /*
@@ -355,6 +356,14 @@ Route::middleware('auth:sanctum')->group(
         Route::put(
             '/guru/tugas/{assignment}/soal/{question}',
             [AssignmentController::class, 'updateQuestion']
+        );
+
+        /*
+         * Dashboard Siswa
+         */
+        Route::get(
+            '/siswa/dashboard',
+            [StudentDashboardController::class, 'index']
         );
 
         /*Submission Tugas untuk Siswa*/    
