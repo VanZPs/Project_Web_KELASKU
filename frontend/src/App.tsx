@@ -26,6 +26,7 @@ import Nilai from './pages/Guru/Nilai';
 import { GuruLayout } from './layouts/Guru/GuruLayout';
 import { DashboardSiswa } from './pages/Siswa/Dashboard';
 import SiswaPagePlaceholder from './pages/Siswa/SiswaPagePlaceholder';
+import JadwalSiswa from './pages/Siswa/Jadwal';
 
 
 /*
@@ -312,7 +313,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/siswa/jadwal" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Jadwal Pelajaran" /></ProtectedRoute>} />
+        <Route path="/siswa/jadwal" element={<ProtectedRoute allowedRole="siswa"><JadwalSiswa /></ProtectedRoute>} />
         <Route path="/siswa/nilai" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Nilai" /></ProtectedRoute>} />
         <Route path="/siswa/tugas" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Tugas" /></ProtectedRoute>} />
         <Route path="/siswa/jurnal" element={<ProtectedRoute allowedRole="siswa"><SiswaPagePlaceholder title="Jurnal Pembelajaran" /></ProtectedRoute>} />

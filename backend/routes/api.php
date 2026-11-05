@@ -366,6 +366,11 @@ Route::middleware('auth:sanctum')->group(
             [StudentDashboardController::class, 'index']
         );
 
+        Route::get(
+            '/siswa/jadwal',
+            [StudentDashboardController::class, 'schedule']
+        );
+
         /*Submission Tugas untuk Siswa*/    
         Route::get('/siswa/tugas', [SubmissionController::class, 'index']);
         

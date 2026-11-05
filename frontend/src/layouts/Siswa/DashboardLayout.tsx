@@ -8,6 +8,7 @@ interface DashboardLayoutProps {
   kelasSiswa?: string;
   todayStr: string;
   loading?: boolean;
+  showHeader?: boolean;
 }
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
@@ -16,6 +17,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   kelasSiswa = '',
   todayStr,
   loading = false,
+  showHeader = true,
 }) => {
   const initials = namaSiswa.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SW';
 
@@ -23,7 +25,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     <div className="grid min-h-screen grid-cols-1 bg-[#F5F1E7] font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased md:grid-cols-[264px_minmax(0,1fr)]">
       <SidebarSiswa namaSiswa={namaSiswa} kelasSiswa={kelasSiswa} />
       <main className="relative min-h-screen min-w-0 p-5 md:p-[26px_34px_60px]">
-        <header className="mb-[22px] flex flex-col justify-between gap-5 md:flex-row md:items-start">
+        {showHeader && <header className="mb-[22px] flex flex-col justify-between gap-5 md:flex-row md:items-start">
           <div className="flex flex-col gap-1.5">
             <div className="inline-flex items-center gap-2 self-start rounded-full border border-[#E3DACB] bg-[#FFFDF8] px-3 py-1 text-[12.5px] font-medium text-[#6B7080] shadow-[0_1px_2px_rgba(30,25,15,0.02)]">
               <svg
@@ -54,7 +56,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             </button>
             <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] text-[14px] font-bold text-[#141C30]">{initials}</div>
           </div>
-        </header>
+        </header>}
         {children}
         {loading && (
           <div className="fixed inset-0 z-[100] flex h-dvh items-center justify-center overflow-hidden bg-[#F5F1E7]/95 px-5 backdrop-blur-[2px] md:left-[264px]" role="status" aria-live="polite">

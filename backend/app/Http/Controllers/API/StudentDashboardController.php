@@ -302,4 +302,100 @@ class StudentDashboardController extends Controller
             ],
         ]);
     }
+
+    /**
+     * GET /api/siswa/jadwal
+     *
+     * Jadwal dan tenggat tugas hanya untuk kelas siswa yang login.
+     */
+    public function schedule(Request $request)
+    {
+        $student = $request->user();
+
+        abort_unless(
+            $student && $student->role === 'siswa',
+            403,
+            'Akses hanya untuk siswa.'
+        );
+
+        $student->load('classrooms:id,name');
+        $classroomIds = $student->classrooms->pluck('id');
+
+        $schedules = Schedule::query()
+            ->with([
+                'classroom:id,name',
+                'subject:id,name',
+                'teacher:id,name',
+            ])
+            ->whereIn('classroom_id', $classroomIds)
+            ->orderByRaw("CASE day
+                WHEN 'Senin' THEN 1
+                WHEN 'Selasa' THEN 2
+                WHEN 'Rabu' THEN 3
+                WHEN 'Kamis' THEN 4
+                WHEN 'Jumat' THEN 5
+                WHEN 'Sabtu' THEN 6
+                ELSE 7 END")
+            ->orderBy('start_time')
+            ->get();
+
+        $assignments = Assignment::query()
+            ->with([
+                'schedules:id,classroom_id,subject_id',
+                'schedules.subject:id,name',
+                'questions:id,assignment_id,type',
+            ])
+            ->where('status', '!=', 'draft')
+            ->where('is_published', true)
+            ->where(function ($query) {
+                $query->whereNull('start_date')
+                    ->orWhere('start_date', '<=', now());
+            })
+            ->whereNotNull('due_date')
+            ->whereHas('schedules', function ($query) use ($classroomIds) {
+                $query->whereIn('classroom_id', $classroomIds);
+            })
+            ->orderBy('due_date')
+            ->get()
+            ->filter(function (Assignment $assignment) use ($classroomIds) {
+                $schedule = $assignment->schedules->first(
+                    fn ($item) => $classroomIds->contains($item->classroom_id)
+                );
+
+                // Abaikan catatan informasi yang bukan tugas pengumpulan.
+                $isInformationOnly = $assignment->questions->isNotEmpty()
+                    && $assignment->questions->every(
+                        fn ($question) => $question->type === 'info'
+                    );
+
+                if (!$schedule || $isInformationOnly) {
+                    return false;
+                }
+
+                $assignment->setRelation('student_schedule', $schedule);
+                return true;
+            })
+            ->map(function (Assignment $assignment) {
+                return [
+                    'id' => $assignment->id,
+                    'title' => $assignment->title,
+                    'due_date' => $assignment->due_date?->toIso8601String(),
+                    'subject' => $assignment->student_schedule?->subject?->name,
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'student' => [
+                    'name' => $student->name,
+                    'classroom' => $student->classrooms->pluck('name')->implode(', '),
+                ],
+                'schedules' => $schedules,
+                'assignments' => $assignments,
+            ],
+        ]);
+    }
+
 }
