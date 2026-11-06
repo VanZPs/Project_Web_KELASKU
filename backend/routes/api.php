@@ -18,6 +18,7 @@ use App\Http\Controllers\API\FileController;
 use App\Http\Controllers\API\TaskCommentController;
 use App\Http\Controllers\API\GradeController;
 use App\Http\Controllers\API\StudentDashboardController;
+use App\Http\Controllers\API\AttendanceQrController;
 
 
 /*
@@ -285,6 +286,42 @@ Route::middleware('auth:sanctum')->group(
         Route::post(
             '/guru/jurnal/{schedule}/mulai',
             [JournalController::class, 'store']
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | PRESENSI QR CODE
+        |--------------------------------------------------------------------------
+        */
+
+        // Guru - Generate QR Code
+        Route::post(
+            '/guru/jurnal/{schedule}/qr-code',
+            [AttendanceQrController::class, 'generate']
+        );
+
+        // Guru - Ambil scan QR sementara untuk update realtime pada modal.
+        Route::get(
+            '/guru/jurnal/{schedule}/qr-code/scans',
+            [AttendanceQrController::class, 'pendingScans']
+        );
+
+        // Guru - Batalkan scan sementara ketika modal jurnal dibatalkan.
+        Route::post(
+            '/guru/jurnal/{schedule}/qr-code/discard',
+            [AttendanceQrController::class, 'discardPending']
+        );
+
+        // Guru - Set seluruh siswa hadir
+        Route::put(
+            '/guru/jurnal/{schedule}/presensi/hadir-semua',
+            [AttendanceQrController::class, 'markAllPresent']
+        );
+
+        // Siswa - Scan QR Code
+        Route::post(
+            '/siswa/absensi/scan',
+            [AttendanceQrController::class, 'scan']
         );
 
         /*

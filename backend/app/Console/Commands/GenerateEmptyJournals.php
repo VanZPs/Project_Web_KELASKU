@@ -13,16 +13,15 @@ use Illuminate\Support\Facades\Log;
 class GenerateEmptyJournals extends Command
 {
     protected $signature = 'journals:generate-empty {--date= : Tanggal YYYY-MM-DD}';
-    protected $description = 'Membuat jurnal kosong dan menyinkronkan presensi kelas setelah jadwal berakhir';
+    protected $description = 'Membuat jurnal kosong dan menetapkan presensi harian setelah seluruh jadwal selesai';
 
     private const EMPTY_TOPIC = 'Jurnal Kelas Kosong';
     private const EMPTY_DESCRIPTION = 'Guru belum mengisi jurnal kelas/kelas kosong';
-    private const SCHOOL_END_TIME = '15:15:00';
 
     public function handle(): int
     {
         $timezone = 'Asia/Jakarta';
-        $now = now($timezone);
+        $now = Carbon::now($timezone);
         $dateOption = $this->option('date');
 
         try {
@@ -41,9 +40,8 @@ class GenerateEmptyJournals extends Command
 
         $dateString = $date->toDateString();
         $day = $date->copy()->locale('id')->translatedFormat('l');
+        $isPastDate = $dateString < $now->toDateString();
         $currentTime = $now->format('H:i:s');
-        $endOfDay = $dateString < $now->toDateString()
-            || ($dateString === $now->toDateString() && $currentTime >= self::SCHOOL_END_TIME);
 
         $schedules = Schedule::with('classroom.users')
             ->where('day', $day)
@@ -55,12 +53,26 @@ class GenerateEmptyJournals extends Command
             return self::SUCCESS;
         }
 
-        $created = 0;
+        // Hari dianggap selesai setelah jadwal dengan waktu berakhir paling akhir selesai.
+        $lastEndTime = $schedules->max(fn ($schedule) => substr((string) $schedule->end_time, 0, 8));
+        $isEndOfDay = $isPastDate || ($dateString === $now->toDateString() && $currentTime >= $lastEndTime);
 
-        DB::transaction(function () use ($schedules, $dateString, $currentTime, $endOfDay, &$created) {
+        $created = 0;
+        $attendanceCreated = 0;
+
+        DB::transaction(function () use (
+            $schedules,
+            $dateString,
+            $currentTime,
+            $isPastDate,
+            $isEndOfDay,
+            &$created,
+            &$attendanceCreated
+        ) {
+            // Buat jurnal kosong hanya untuk jadwal yang sudah berakhir.
             foreach ($schedules as $schedule) {
                 $endTime = substr((string) $schedule->end_time, 0, 8);
-                if (!$endOfDay && $endTime > $currentTime) {
+                if (!$isPastDate && $endTime > $currentTime) {
                     continue;
                 }
 
@@ -84,78 +96,76 @@ class GenerateEmptyJournals extends Command
                 }
             }
 
+            // Jangan menetapkan Hadir/Alpa sebelum jadwal terakhir sekolah selesai.
+            if (!$isEndOfDay) {
+                return;
+            }
+
             foreach ($schedules->groupBy('classroom_id') as $classSchedules) {
                 $classSchedules = $classSchedules->sortBy('start_time')->values();
                 $scheduleIds = $classSchedules->pluck('id');
 
-                // Pilih jadwal paling awal yang jurnalnya diisi guru dan memiliki presensi.
-                $sourceAttendance = collect();
-                foreach ($classSchedules as $candidate) {
-                    $journal = Journal::where('schedule_id', $candidate->id)
-                        ->whereDate('date', $dateString)
-                        ->first();
+                // Jurnal guru yang valid: bukan jurnal kosong otomatis dan bukan jurnal libur.
+                $hasTeacherJournal = Journal::whereIn('schedule_id', $scheduleIds)
+                    ->whereDate('date', $dateString)
+                    ->where('topic', '!=', self::EMPTY_TOPIC)
+                    ->where('is_holiday', false)
+                    ->exists();
 
-                    if (!$journal || $journal->is_holiday || $journal->topic === self::EMPTY_TOPIC) {
-                        continue;
-                    }
+                $students = $classSchedules->first()->classroom?->users
+                    ?->where('role', 'siswa') ?? collect();
 
-                    $rows = Attendance::where('schedule_id', $candidate->id)
-                        ->whereDate('date', $dateString)
-                        ->orderBy('student_id')
-                        ->get();
-
-                    if ($rows->isNotEmpty()) {
-                        $sourceAttendance = $rows;
-                        break;
-                    }
-                }
-
-                $emptySchedules = $classSchedules->filter(fn ($schedule) =>
-                    Journal::where('schedule_id', $schedule->id)
-                        ->whereDate('date', $dateString)
-                        ->where('topic', self::EMPTY_TOPIC)
-                        ->exists()
-                );
-
-                if ($sourceAttendance->isNotEmpty()) {
-                    foreach ($emptySchedules as $emptySchedule) {
-                        foreach ($sourceAttendance as $source) {
-                            Attendance::updateOrCreate(
+                if (!$hasTeacherJournal) {
+                    // Tidak ada jurnal guru di kelas ini sepanjang hari.
+                    // Ini juga otomatis mencakup kondisi tidak ada jurnal di seluruh sekolah.
+                    foreach ($classSchedules as $schedule) {
+                        foreach ($students as $student) {
+                            $attendance = Attendance::firstOrCreate(
                                 [
-                                    'schedule_id' => $emptySchedule->id,
-                                    'student_id' => $source->student_id,
+                                    'schedule_id' => $schedule->id,
+                                    'student_id' => $student->id,
                                     'date' => $dateString,
                                 ],
-                                ['status' => $source->status, 'notes' => $source->notes]
+                                ['status' => 'hadir', 'notes' => null]
                             );
+
+                            if ($attendance->wasRecentlyCreated) {
+                                $attendanceCreated++;
+                            }
                         }
                     }
+
+                    Log::info('Presensi otomatis Hadir karena tidak ada jurnal guru seharian.', [
+                        'classroom_id' => $classSchedules->first()->classroom_id,
+                        'date' => $dateString,
+                        'schedule_ids' => $scheduleIds->all(),
+                    ]);
                     continue;
                 }
 
-                // Fallback akhir hari: hadir hanya jika tidak ada jurnal guru di kelas/tanggal itu.
-                if ($endOfDay) {
-                    $hasTeacherJournal = Journal::whereIn('schedule_id', $scheduleIds)
+                // Ada jurnal guru di kelas ini: pertemuan yang memiliki jurnal
+                // (termasuk jurnal kosong otomatis) mengikuti aturan normal.
+                foreach ($classSchedules as $schedule) {
+                    $journal = Journal::where('schedule_id', $schedule->id)
                         ->whereDate('date', $dateString)
-                        ->where('topic', '!=', self::EMPTY_TOPIC)
-                        ->where('is_holiday', false)
-                        ->exists();
+                        ->first();
 
-                    if (!$hasTeacherJournal) {
-                        $students = $classSchedules->first()->classroom?->users
-                            ?->where('role', 'siswa') ?? collect();
+                    if (!$journal || $journal->is_holiday) {
+                        continue;
+                    }
 
-                        foreach ($emptySchedules as $emptySchedule) {
-                            foreach ($students as $student) {
-                                Attendance::updateOrCreate(
-                                    [
-                                        'schedule_id' => $emptySchedule->id,
-                                        'student_id' => $student->id,
-                                        'date' => $dateString,
-                                    ],
-                                    ['status' => 'hadir', 'notes' => null]
-                                );
-                            }
+                    foreach ($students as $student) {
+                        $attendance = Attendance::firstOrCreate(
+                            [
+                                'schedule_id' => $schedule->id,
+                                'student_id' => $student->id,
+                                'date' => $dateString,
+                            ],
+                            ['status' => 'alpa', 'notes' => null]
+                        );
+
+                        if ($attendance->wasRecentlyCreated) {
+                            $attendanceCreated++;
                         }
                     }
                 }
@@ -164,6 +174,12 @@ class GenerateEmptyJournals extends Command
 
         $this->info("Tanggal: {$dateString}");
         $this->info("Jurnal kosong baru dibuat: {$created}");
+        if ($isEndOfDay) {
+            $this->info("Presensi otomatis baru dibuat: {$attendanceCreated}");
+        } else {
+            $this->info('Presensi akhir hari belum diproses karena masih ada jadwal sekolah yang berlangsung/akan dimulai.');
+        }
+
         return self::SUCCESS;
     }
 }

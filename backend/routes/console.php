@@ -38,3 +38,8 @@ Schedule::command('assignments:activate-scheduled')
     ->everyMinute()
     ->timezone('Asia/Jakarta')
     ->withoutOverlapping();
+
+Schedule::command('attendance:close-ended')
+    ->everyMinute()
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping();

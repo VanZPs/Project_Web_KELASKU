@@ -4,6 +4,8 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
+use App\Models\AttendanceQrScan;
+use App\Models\AttendanceSession;
 use App\Models\Journal;
 use App\Models\Schedule;
 use App\Services\HolidayService;
@@ -834,10 +836,10 @@ class JournalController extends Controller
                 'string',
             ],
 
+            // Boleh kosong jika presensi berasal dari scan QR pending.
             'attendances' => [
-                'required',
+                'nullable',
                 'array',
-                'min:1',
             ],
 
             'attendances.*.student_id' => [
@@ -847,7 +849,7 @@ class JournalController extends Controller
             ],
 
             'attendances.*.status' => [
-                'required',
+                'nullable',
                 Rule::in([
                     'hadir',
                     'izin',
@@ -863,6 +865,34 @@ class JournalController extends Controller
                 'max:255',
             ],
         ]);
+
+        // Ambil hasil scan QR sementara. Scan belum menjadi Attendance
+        // permanen sampai transaksi penyimpanan jurnal di bawah berhasil.
+        $pendingScans = AttendanceQrScan::where('schedule_id', $schedule->id)
+            ->whereDate('date', $validated['date'])
+            ->get();
+
+        $submittedAttendances = collect($validated['attendances'] ?? [])
+            ->keyBy('student_id');
+
+        foreach ($pendingScans as $pendingScan) {
+            if (!$submittedAttendances->has($pendingScan->student_id)) {
+                $submittedAttendances->put($pendingScan->student_id, [
+                    'student_id' => $pendingScan->student_id,
+                    'status' => 'hadir',
+                    'notes' => null,
+                ]);
+            }
+        }
+
+        $validated['attendances'] = $submittedAttendances->values()->all();
+
+        if (count($validated['attendances']) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Belum ada presensi. Silakan pilih status siswa atau lakukan scan QR.',
+            ], 422);
+        }
 
         /*
          * ============================================================
@@ -982,6 +1012,13 @@ class JournalController extends Controller
             }
 
             foreach ($validated['attendances'] as $attendance) {
+
+                // Siswa yang belum memiliki status
+                // tidak perlu dibuatkan data presensi.
+                if (empty($attendance['status'])) {
+                    continue;
+                }
+
                 Attendance::updateOrCreate(
                     [
                         'schedule_id' => $schedule->id,
@@ -1056,6 +1093,17 @@ class JournalController extends Controller
                     }
                 }
             }
+
+            // Setelah jurnal dan presensi tersimpan, hapus antrean scan sementara
+            // dan tutup seluruh QR session untuk jadwal/tanggal ini.
+            AttendanceQrScan::where('schedule_id', $schedule->id)
+                ->whereDate('date', $validated['date'])
+                ->delete();
+
+            AttendanceSession::where('schedule_id', $schedule->id)
+                ->whereDate('date', $validated['date'])
+                ->whereNull('closed_at')
+                ->update(['closed_at' => now('Asia/Jakarta')]);
 
             return $journal;
         });

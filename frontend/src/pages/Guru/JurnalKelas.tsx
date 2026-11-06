@@ -25,6 +25,7 @@ import {
 import api from '../../api/axios';
 import { JurnalMengajarLayout } from '../../layouts/Guru/JurnalMengajarLayout';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface StoredUser {
   name?: string;
@@ -243,6 +244,31 @@ const getToday = (): string => {
   ).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+};
+
+const parseLocalDate = (value: string): Date => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const formatDateInput = (value: string): string => {
+  if (!value) return 'Pilih tanggal pertemuan';
+  const date = parseLocalDate(value);
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(date);
+};
+
+const getCalendarDays = (month: Date): Date[] => {
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const mondayOffset = (firstDay.getDay() + 6) % 7;
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - mondayOffset);
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return date;
+  });
 };
 
 const getTodayName = (): string => {
@@ -569,18 +595,6 @@ const getWeeksOfMonth = (
   return weeks;
 };
 
-/*
- * Mengubah string tanggal
- * menjadi objek Date lokal.
- */
-const parseLocalDate = (
-  dateString: string
-): Date => {
-  return new Date(
-    `${dateString}T00:00:00`
-  );
-};
-
 export default function JurnalKelas() {
   const storedUser =
     getStoredUser();
@@ -660,6 +674,12 @@ export default function JurnalKelas() {
     setJournalDate,
   ] = useState(getToday());
 
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+
   const [
     saving,
     setSaving,
@@ -669,6 +689,18 @@ export default function JurnalKelas() {
     modalError,
     setModalError,
   ] = useState('');
+
+  // QR presensi
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrPayload, setQrPayload] = useState('');
+  const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
+  const [qrSecondsLeft, setQrSecondsLeft] = useState(0);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState('');
+  const [refreshingAttendance, setRefreshingAttendance] = useState(false);
+  const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [discardingCancel, setDiscardingCancel] = useState(false);
 
   /*
    * ============================================================
@@ -772,6 +804,72 @@ export default function JurnalKelas() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  // Hitung mundur QR berdasarkan waktu kedaluwarsa dari server.
+  useEffect(() => {
+    if (!showQrModal || !qrExpiresAt) {
+      setQrSecondsLeft(0);
+      return;
+    }
+
+    const updateCountdown = () => {
+      setQrSecondsLeft(
+        Math.max(0, Math.ceil((qrExpiresAt - Date.now()) / 1000))
+      );
+    };
+
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [showQrModal, qrExpiresAt]);
+
+  // Ambil hasil scan QR sementara secara berkala agar status Hadir
+  // langsung terlihat di modal guru tanpa menyimpan Attendance ke database.
+  useEffect(() => {
+    if (!showQrModal || !selectedScheduleId) return;
+
+    let cancelled = false;
+
+    const fetchPendingScans = async () => {
+      try {
+        const response = await api.get(
+          `/guru/jurnal/${selectedScheduleId}/qr-code/scans`
+        );
+        if (cancelled) return;
+
+        const scans = response.data?.data;
+        if (!Array.isArray(scans) || scans.length === 0) return;
+
+        const scannedIds = new Set(
+          scans.map((scan: { student_id: number }) => Number(scan.student_id))
+        );
+
+        setScheduleDetail((current) => {
+          if (!current) return current;
+
+          return {
+            ...current,
+            students: current.students.map((student) => (
+              scannedIds.has(Number(student.id)) && !student.status
+                ? { ...student, status: 'hadir' as AttendanceStatus }
+                : student
+            )),
+          };
+        });
+      } catch (error) {
+        // Polling bersifat silent; tombol Refresh tetap dapat digunakan manual.
+        console.error('Gagal mengambil scan QR sementara:', error);
+      }
+    };
+
+    fetchPendingScans();
+    const timer = window.setInterval(fetchPendingScans, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [showQrModal, selectedScheduleId]);
 
   /*
    * ============================================================
@@ -1213,6 +1311,11 @@ export default function JurnalKelas() {
     setTopic('');
     setDescription('');
     setJournalDate(getToday());
+    setShowQrModal(false);
+    setQrPayload('');
+    setQrExpiresAt(null);
+    setQrError('');
+    setShowCancelConfirm(false);
 
     try {
       const response =
@@ -1266,24 +1369,74 @@ export default function JurnalKelas() {
     }
   };
 
-  const closeStartModal = () => {
-    if (saving) {
+  const closeStartModal = (force = false) => {
+    if (saving && !force) {
       return;
     }
 
+    // Fungsi ini hanya membersihkan state modal.
+    // Scan QR sementara dibatalkan terlebih dahulu oleh requestCloseStartModal.
+    // Saat force=true setelah penyimpanan berhasil, backend sudah memfinalisasi scan.
+    setShowCancelConfirm(false);
+    setShowQrModal(false);
+    setQrPayload('');
+    setQrExpiresAt(null);
+    setQrError('');
     setShowStartModal(false);
 
     setSelectedSchedule(null);
-
     setSelectedScheduleId(null);
-
     setScheduleDetail(null);
-
     setTopic('');
-
     setDescription('');
-
     setModalError('');
+  };
+
+  const discardPendingScansAndClose = async () => {
+    if (saving || discardingCancel) {
+      return;
+    }
+
+    setDiscardingCancel(true);
+
+    try {
+      // Hanya panggil endpoint discard jika QR pernah dibuat.
+      // Jika belum ada QR, tidak ada antrean scan sementara yang perlu dibersihkan.
+      if (selectedScheduleId && qrPayload) {
+        await api.post(
+          `/guru/jurnal/${selectedScheduleId}/qr-code/discard`
+        );
+      }
+
+      closeStartModal(true);
+    } catch (error) {
+      console.error('Gagal membatalkan scan QR sementara:', error);
+      setModalError(
+        'Data scan QR sementara gagal dibatalkan. Periksa koneksi, lalu coba batalkan kembali.'
+      );
+      setShowCancelConfirm(false);
+    } finally {
+      setDiscardingCancel(false);
+    }
+  };
+
+  const requestCloseStartModal = () => {
+    if (saving || discardingCancel) {
+      return;
+    }
+
+    const hasAttendanceStatus = Boolean(
+      scheduleDetail?.students.some((student) => Boolean(student.status))
+    );
+
+    if (hasAttendanceStatus) {
+      setShowCancelConfirm(true);
+      return;
+    }
+
+    // Tidak ada status presensi yang dipilih: tutup langsung,
+    // tetapi tetap bersihkan antrean QR jika sebelumnya pernah dibuat.
+    void discardPendingScansAndClose();
   };
 
   /*
@@ -1291,6 +1444,122 @@ export default function JurnalKelas() {
    * ATTENDANCE
    * ============================================================
    */
+
+  const handleGenerateQr = async () => {
+    if (!selectedScheduleId || !selectedSchedule || !isWithinSchedule(selectedSchedule)) {
+      setQrError('QR Code hanya dapat dibuat selama jadwal pelajaran berlangsung.');
+      return;
+    }
+
+    try {
+      setQrLoading(true);
+      setQrError('');
+
+      const response = await api.post(
+        `/guru/jurnal/${selectedScheduleId}/qr-code`
+      );
+
+      const data = response.data?.data;
+      const payload = data?.qr_payload || data?.token;
+      const expiresIn = Number(data?.expires_in_seconds);
+
+      if (!payload || !Number.isFinite(expiresIn) || expiresIn <= 0) {
+        throw new Error('Respons QR Code dari server tidak lengkap.');
+      }
+
+      setQrPayload(payload);
+      setQrExpiresAt(Date.now() + expiresIn * 1000);
+      setQrSecondsLeft(expiresIn);
+      setShowQrModal(true);
+    } catch (err: any) {
+      console.error('Gagal membuat QR Code:', err);
+      setQrError(
+        err?.response?.data?.message ||
+        err?.message ||
+        'QR Code gagal dibuat. Silakan coba lagi.'
+      );
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handleRefreshAttendance = async () => {
+    if (!selectedScheduleId) return;
+
+    try {
+      setRefreshingAttendance(true);
+      const response = await api.get(
+        `/guru/jurnal/${selectedScheduleId}`
+      );
+      const detail = response.data?.data;
+
+      if (!detail || !Array.isArray(detail.students)) {
+        throw new Error('Data presensi tidak ditemukan.');
+      }
+
+      setScheduleDetail((current) => {
+        if (!current) return current;
+
+        const latestStudents = detail.students as StudentItem[];
+        const latestById = new Map(
+          latestStudents.map((student) => [student.id, student])
+        );
+
+        return {
+          ...current,
+          students: current.students.map((student) => {
+            const latest = latestById.get(student.id);
+            if (!latest) return student;
+
+            return {
+              ...student,
+              // Ambil status terbaru dari server agar hasil scan QR terlihat.
+              status: student.status ?? latest.status ?? null,
+              notes: latest.notes ?? student.notes ?? '',
+            };
+          }),
+        };
+      });
+      setModalError('');
+    } catch (err: any) {
+      console.error('Gagal memperbarui presensi:', err);
+      setModalError(
+        err?.response?.data?.message ||
+        'Data presensi gagal diperbarui. Silakan coba lagi.'
+      );
+    } finally {
+      setRefreshingAttendance(false);
+    }
+  };
+
+  // Terapkan pilihan Hadir hanya pada state formulir.
+  // Data baru dikirim ke backend ketika guru menekan Simpan pertemuan.
+  const handleMarkAllPresent = () => {
+    if (!selectedSchedule || !isWithinSchedule(selectedSchedule) || !scheduleDetail) {
+      return;
+    }
+
+    setScheduleDetail((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        students: current.students.map((student) => ({
+          ...student,
+          status: 'hadir' as AttendanceStatus,
+        })),
+      };
+    });
+
+    setModalError('');
+    setShowMarkAllConfirm(false);
+  };
+
+  const formatCountdown = (totalSeconds: number): string => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
 
   const changeAttendance = (
     studentId: number,
@@ -1304,18 +1573,15 @@ export default function JurnalKelas() {
 
         return {
           ...current,
-
-          students:
-            current.students.map(
-              (student) =>
-                student.id ===
-                studentId
-                  ? {
-                      ...student,
-                      status,
-                    }
-                  : student
-            ),
+          students: current.students.map((student) =>
+            student.id === studentId
+              ? {
+                  ...student,
+                  // Klik status yang sedang aktif akan membatalkan pilihan.
+                  status: student.status === status ? null : status,
+                }
+              : student
+          ),
         };
       }
     );
@@ -1407,15 +1673,17 @@ export default function JurnalKelas() {
         return;
       }
 
-      if (
-        scheduleDetail.students.some(
-          (student) => !student.status
-        )
-      ) {
-        setModalError(
-          'Pilih status presensi untuk setiap siswa sebelum menyimpan jurnal.'
-        );
+      // Backend saat ini masih mewajibkan minimal satu data presensi
+      // dan status untuk setiap baris yang dikirim. Karena itu, hanya
+      // siswa yang sudah memiliki status yang dikirim ke endpoint jurnal.
+      const recordedAttendances = scheduleDetail.students.filter(
+        (student) => Boolean(student.status)
+      );
 
+      if (recordedAttendances.length === 0) {
+        setModalError(
+          'Belum ada presensi yang tercatat. Silakan lakukan scan QR atau tentukan status minimal untuk satu siswa sebelum menyimpan jurnal.'
+        );
         return;
       }
 
@@ -1436,13 +1704,13 @@ export default function JurnalKelas() {
               null,
 
             attendances:
-              scheduleDetail.students.map(
+              recordedAttendances.map(
                 (student) => ({
                   student_id:
                     student.id,
 
                   status:
-                    student.status,
+                    student.status ?? null,
 
                   notes:
                     student.notes.trim() ||
@@ -1452,7 +1720,7 @@ export default function JurnalKelas() {
           }
         );
 
-        closeStartModal();
+        closeStartModal(true);
 
         await fetchJurnal();
       } catch (err: any) {
@@ -1863,6 +2131,12 @@ export default function JurnalKelas() {
    * RETURN
    * ============================================================
    */
+
+  const calendarDays = getCalendarDays(calendarMonth);
+  const todayDate = getToday();
+  const monthLabel = new Intl.DateTimeFormat('id-ID', {
+    month: 'long', year: 'numeric',
+  }).format(calendarMonth);
 
   return (
     <JurnalMengajarLayout
@@ -2799,7 +3073,7 @@ export default function JurnalKelas() {
               event.target ===
               event.currentTarget
             ) {
-              closeStartModal();
+              requestCloseStartModal();
             }
           }}
         >
@@ -2874,9 +3148,7 @@ export default function JurnalKelas() {
 
               <button
                 type="button"
-                onClick={
-                  closeStartModal
-                }
+                onClick={requestCloseStartModal}
                 disabled={saving}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -2930,24 +3202,81 @@ export default function JurnalKelas() {
                     </label>
 
                     <div className="relative">
-                      <CalendarDays
-                        size={16}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7080]"
-                      />
-
-                      <input
-                        type="date"
-                        value={
-                          journalDate
-                        }
-                        onChange={(
-                          event
-                        ) => setJournalDate(event.target.value)}
-                        min={getToday()}
-                        max={getToday()}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCalendarMonth(parseLocalDate(journalDate || todayDate));
+                          setDatePickerOpen((open) => !open);
+                        }}
                         disabled={saving || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
-                        className="h-[42px] w-full rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] pl-10 pr-3 text-[13px] text-[#23283A] outline-none transition focus:border-[#B98A3E] disabled:cursor-not-allowed disabled:opacity-60"
-                      />
+                        className={`flex h-[50px] w-full items-center justify-between rounded-[11px] border bg-[#FFFDF8] px-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${datePickerOpen ? 'border-[#C69A4B] ring-2 ring-[#C69A4B]/10' : 'border-[#E3DACB] hover:border-[#C9B58F]'}`}
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <CalendarDays size={17} className="shrink-0 text-[#7A8292]" />
+                          <span className={`text-[13.5px] ${journalDate ? 'text-[#23283A]' : 'text-[#9A8F7D]'}`}>
+                            {journalDate ? formatDateInput(journalDate) : 'Pilih tanggal pertemuan'}
+                          </span>
+                        </span>
+                        <ChevronDown size={17} className={`shrink-0 text-[#7A8292] transition-transform ${datePickerOpen ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {datePickerOpen && (
+                        <div className="absolute left-0 top-[calc(100%+9px)] z-[80] w-full max-w-[420px] rounded-[13px] border border-[#E3DACB] bg-[#FFFDF8] p-3.5 shadow-[0_14px_40px_-18px_rgba(20,28,48,0.35)] sm:p-4">
+                          <div className="mb-4 flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                              className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[#E3DACB] text-[#344563] transition hover:border-[#C69A4B] hover:bg-[#FBF6EA]"
+                              aria-label="Bulan sebelumnya"
+                            >
+                              <ChevronLeft size={17} />
+                            </button>
+                            <h3 className="text-[14px] font-bold capitalize text-[#23283A]">{monthLabel}</h3>
+                            <button
+                              type="button"
+                              onClick={() => setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                              className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[#E3DACB] text-[#344563] transition hover:border-[#C69A4B] hover:bg-[#FBF6EA]"
+                              aria-label="Bulan berikutnya"
+                            >
+                              <ChevronRight size={17} />
+                            </button>
+                          </div>
+
+                          <div className="mb-2 grid grid-cols-7 gap-1">
+                            {[ 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min' ].map((day) => (
+                              <div key={day} className="py-1.5 text-center text-[11px] font-bold text-[#85899A]">{day}</div>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-7 gap-1">
+                            {calendarDays.map((date) => {
+                              const year = date.getFullYear();
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              const day = String(date.getDate()).padStart(2, '0');
+                              const dateValue = `${year}-${month}-${day}`;
+                              const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
+                              const isToday = dateValue === todayDate;
+                              const isSelected = dateValue === journalDate;
+                              const isDisabled = dateValue !== todayDate;
+                              return (
+                                <button
+                                  key={dateValue}
+                                  type="button"
+                                  disabled={isDisabled}
+                                  onClick={() => { setJournalDate(dateValue); setDatePickerOpen(false); setModalError(''); }}
+                                  className={`flex aspect-square items-center justify-center rounded-[8px] text-[12.5px] transition ${
+                                    isSelected ? 'border border-[#C58B32] bg-[#FFF9ED] font-bold text-[#7A5A20] shadow-[inset_0_0_0_1px_rgba(197,139,50,0.12)]' :
+                                    isToday ? 'border border-[#D8C39D] text-[#344563] hover:bg-[#FBF6EA]' :
+                                    isCurrentMonth ? 'text-[#B7B0A5]' : 'text-[#D0C9BD]'
+                                  } disabled:cursor-not-allowed`}
+                                >
+                                  {date.getDate()}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -3020,20 +3349,55 @@ export default function JurnalKelas() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#6B7080]">
-                        <UserCheck
-                          size={14}
-                        />
-
-                        {
-                          scheduleDetail
-                            ?.students
-                            .length ??
-                          0
-                        }{' '}
-                        siswa
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#6B7080]">
+                          <UserCheck size={14} />
+                          {scheduleDetail?.students.length ?? 0} siswa
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRefreshAttendance}
+                          disabled={refreshingAttendance || loadingDetail || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#E3DACB] bg-[#FFFDF8] px-2.5 py-2 text-[11px] font-bold text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <History size={13} className={refreshingAttendance ? 'animate-spin' : ''} />
+                          {refreshingAttendance ? 'Memuat...' : 'Refresh'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleGenerateQr}
+                          disabled={qrLoading || loadingDetail || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#1E2A47] bg-[#1E2A47] px-2.5 py-2 text-[11px] font-bold text-white transition hover:bg-[#141C30] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {qrLoading ? (
+                            <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                          ) : (
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <rect x="3" y="3" width="7" height="7" rx="1" />
+                              <rect x="14" y="3" width="7" height="7" rx="1" />
+                              <rect x="3" y="14" width="7" height="7" rx="1" />
+                              <path d="M14 14h3v3h-3zM20 14v2M14 20h2M19 19h2v2h-2z" />
+                            </svg>
+                          )}
+                          QR Code
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowMarkAllConfirm(true)}
+                          disabled={loadingDetail || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#4C7A5E] bg-[#E7F0EA] px-2.5 py-2 text-[11px] font-bold text-[#4C7A5E] transition hover:bg-[#DCEBE0] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <CheckCircle2 size={13} />
+                          Set Hadir Otomatis
+                        </button>
                       </div>
                     </div>
+
+                    {qrError && (
+                      <div className="mb-2 rounded-lg border border-[#E4BCA9] bg-[#F6E1D9] px-3 py-2 text-[11.5px] text-[#A8503B]">
+                        {qrError}
+                      </div>
+                    )}
 
                     <div className="overflow-hidden rounded-xl border border-[#E3DACB]">
                       {scheduleDetail?.students
@@ -3204,9 +3568,7 @@ export default function JurnalKelas() {
             <div className="flex flex-col-reverse gap-2 border-t border-[#E3DACB] bg-[#FBF9F3] px-5 py-4 sm:flex-row sm:justify-end md:px-6">
               <button
                 type="button"
-                onClick={
-                  closeStartModal
-                }
+                onClick={requestCloseStartModal}
                 disabled={saving}
                 className="rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[12.5px] font-bold text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -3243,6 +3605,304 @@ export default function JurnalKelas() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          MODAL KONFIRMASI PEMBATALAN MULAI KELAS
+      ========================================================== */}
+
+      {showCancelConfirm && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-[#141C30]/70 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !discardingCancel) {
+              setShowCancelConfirm(false);
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-start-title"
+            className="w-full max-w-[430px] overflow-hidden rounded-[20px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_24px_70px_rgba(20,28,48,0.32)]"
+          >
+            <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.09em] text-[#A8503B]">
+                  Konfirmasi pembatalan
+                </div>
+                <h2
+                  id="cancel-start-title"
+                  className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]"
+                >
+                  Batalkan pengisian jurnal?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={discardingCancel}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Tutup konfirmasi pembatalan"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-5">
+              <div className="flex items-start gap-3 rounded-xl border border-[#E4BCA9] bg-[#F9E8E1] p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/80 text-[#A8503B]">
+                  <TriangleAlert size={20} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-bold text-[#963F30]">
+                    Data yang sudah diisi akan hilang
+                  </p>
+                  <p className="mt-1 text-[12px] leading-5 text-[#A8503B]">
+                    Materi, deskripsi, pilihan presensi, dan hasil scan QR sementara pada pertemuan ini akan dibatalkan. Kamu harus mengulangi pengisian dari awal.
+                  </p>
+                </div>
+              </div>
+              <p className="mt-4 text-[11.5px] leading-5 text-[#6B7080]">
+                Jurnal dan presensi yang sudah tersimpan sebelumnya tidak akan dihapus.
+              </p>
+              {modalError && (
+                <div className="mt-3 rounded-lg border border-[#E4BCA9] bg-[#F9E8E1] px-3 py-2 text-[11.5px] text-[#A8503B]">
+                  {modalError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-[#E3DACB] bg-[#FAF7F0] px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={discardingCancel}
+                className="rounded-xl border border-[#E3DACB] bg-white px-4 py-2.5 text-[12px] font-bold text-[#596174] transition hover:bg-[#F0EBDB] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Lanjut mengisi
+              </button>
+              <button
+                type="button"
+                onClick={discardPendingScansAndClose}
+                disabled={discardingCancel}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#A83D35] px-4 py-2.5 text-[12px] font-bold text-white shadow-sm transition hover:bg-[#8F332D] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {discardingCancel ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Membatalkan...
+                  </>
+                ) : (
+                  <>
+                    <X size={14} />
+                    Ya, batalkan
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          MODAL KONFIRMASI SET HADIR OTOMATIS
+      ========================================================== */}
+
+      {showMarkAllConfirm && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-[#141C30]/65 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowMarkAllConfirm(false);
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mark-all-confirm-title"
+            className="w-full max-w-[420px] overflow-hidden rounded-[20px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_24px_70px_rgba(20,28,48,0.30)]"
+          >
+            <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.09em] text-[#8A806F]">
+                  Konfirmasi presensi
+                </div>
+                <h2 id="mark-all-confirm-title" className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
+                  Set hadir otomatis?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMarkAllConfirm(false)}
+                
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A] disabled:opacity-50"
+                aria-label="Tutup konfirmasi"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-5">
+              <div className="flex items-start gap-3 rounded-xl border border-[#E6C96A] bg-[#FFF4C7] p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/75 text-[#9A7414]">
+                  <TriangleAlert size={20} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-bold text-[#765817]">
+                    Seluruh siswa akan ditandai hadir
+                  </p>
+                  <p className="mt-1 text-[12px] leading-5 text-[#8A6B20]">
+                    {`Tindakan ini akan menetapkan ${scheduleDetail?.students.length ?? 0} siswa di kelas ${selectedSchedule?.kelas ?? 'ini'} menjadi Hadir. Status presensi yang sudah ada, termasuk Izin, Sakit, Dispen, atau Alpa, akan berubah pada formulir ini. Perubahan baru tersimpan setelah kamu menekan Simpan pertemuan.`}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-4 text-[12px] leading-5 text-[#6B7080]">
+                Pastikan tindakan ini memang diperlukan sebelum melanjutkan. Pilihan Hadir hanya diterapkan pada formulir sementara dan belum disimpan ke database.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-[#E3DACB] bg-[#FAF7F0] px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowMarkAllConfirm(false)}
+                
+                className="rounded-xl border border-[#E3DACB] bg-white px-4 py-2.5 text-[12px] font-bold text-[#596174] transition hover:bg-[#F0EBDB] disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleMarkAllPresent}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4C7A5E] px-4 py-2.5 text-[12px] font-bold text-white shadow-sm transition hover:bg-[#3D654D] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CheckCircle2 size={15} />
+                Ya, Terapkan Pilihan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          MODAL QR CODE PRESENSI
+      ========================================================== */}
+
+      {showQrModal && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-[#141C30]/65 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowQrModal(false);
+            }
+          }}
+        >
+          <div className="w-full max-w-[420px] overflow-hidden rounded-[18px] border border-[#E3DACB] bg-[#FFFDF8] shadow-[0_24px_70px_rgba(20,28,48,0.28)]">
+            <div className="flex items-start justify-between border-b border-[#E3DACB] px-5 py-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A806F]">
+                  Presensi digital
+                </div>
+                <h2 className="mt-1 font-['Fraunces',serif] text-[22px] font-semibold text-[#141C30]">
+                  QR Code kelas
+                </h2>
+                <p className="mt-1 text-[12px] text-[#6B7080]">
+                  Minta siswa memindai kode ini melalui halaman presensi.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6B7080] transition hover:bg-[#F0EBDB] hover:text-[#23283A]"
+                aria-label="Tutup QR Code"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-6 text-center">
+              {qrPayload ? (
+                <>
+                  <div className="mx-auto flex w-fit items-center justify-center rounded-[16px] border border-[#E3DACB] bg-white p-4 shadow-[0_4px_18px_rgba(30,25,15,0.06)]">
+                    <QRCodeSVG
+                      value={qrPayload}
+                      size={240}
+                      level="H"
+                      includeMargin
+                      bgColor="#FFFFFF"
+                      fgColor="#141C30"
+                    />
+                  </div>
+
+                  {qrSecondsLeft > 0 ? (
+                    <div className="mt-5 rounded-xl border border-[#E6C96A] bg-[#FFF4C7] px-4 py-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#9A7414]">
+                        QR berlaku selama
+                      </div>
+                      <div className="mt-1 font-['Fraunces',serif] text-[28px] font-semibold tabular-nums text-[#7A5A20]">
+                        {formatCountdown(qrSecondsLeft)}
+                      </div>
+                      <div className="mt-1 text-[11px] text-[#8A6B20]">
+                        Kode otomatis tidak dapat digunakan setelah waktu habis.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-5 rounded-xl border border-[#E4BCA9] bg-[#F6E1D9] px-4 py-3 text-left">
+                      <div className="text-[12px] font-bold text-[#A8503B]">
+                        QR Code telah kedaluwarsa
+                      </div>
+                      <p className="mt-1 text-[11.5px] leading-5 text-[#A8503B]">
+                        Buat QR Code baru jika jam pelajaran masih berlangsung.
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-10 text-[12px] text-[#6B7080]">
+                  QR Code belum tersedia.
+                </div>
+              )}
+
+              {qrError && (
+                <div className="mt-3 rounded-lg border border-[#E4BCA9] bg-[#F6E1D9] px-3 py-2 text-left text-[11.5px] text-[#A8503B]">
+                  {qrError}
+                </div>
+              )}
+
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleGenerateQr}
+                  disabled={qrLoading || !selectedSchedule || !isWithinSchedule(selectedSchedule)}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-[#1E2A47] bg-[#1E2A47] px-4 py-2.5 text-[12px] font-bold text-white transition hover:bg-[#141C30] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {qrLoading && (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  )}
+                  {qrLoading ? 'Membuat QR...' : qrSecondsLeft > 0 ? 'Buat QR Baru' : 'Perbarui QR Code'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(false)}
+                  className="rounded-[10px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[12px] font-bold text-[#1E2A47] transition hover:border-[#B98A3E] hover:bg-[#F0EBDB]"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              {!selectedSchedule || !isWithinSchedule(selectedSchedule) ? (
+                <p className="mt-3 text-[10.5px] leading-4 text-[#A8503B]">
+                  Jadwal pelajaran sudah berakhir. QR Code baru tidak dapat dibuat.
+                </p>
+              ) : (
+                <p className="mt-3 text-[10.5px] leading-4 text-[#8A8E9A]">
+                  Masa berlaku maksimal 15 menit dan otomatis dibatasi sampai akhir jam pelajaran.
+                </p>
+              )}
             </div>
           </div>
         </div>
