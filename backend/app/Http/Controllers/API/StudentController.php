@@ -4,6 +4,8 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
+use App\Models\DailyAttendance;
+use App\Services\DailyAttendanceService;
 use App\Models\Schedule;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -87,25 +89,13 @@ class StudentController extends Controller
 
                 $studentIds = $students->pluck('id');
 
-                /*
-                 * Ambil seluruh presensi siswa pada
-                 * jadwal guru untuk kelas tersebut.
-                 */
-                $attendances = Attendance::whereIn(
-                    'schedule_id',
-                    $classSchedules->pluck('id')
-                )
+                // Statistik kelas menggunakan presensi harian, bukan jumlah pertemuan.
+                $dailyAttendances = DailyAttendance::where('classroom_id', $classroom->id)
                     ->whereIn('student_id', $studentIds)
                     ->get();
 
-                /*
-                 * Hitung rata-rata kehadiran kelas.
-                 */
-                $totalAttendance = $attendances->count();
-
-                $totalPresent = $attendances
-                    ->where('status', 'hadir')
-                    ->count();
+                $totalAttendance = $dailyAttendances->count();
+                $totalPresent = $dailyAttendances->where('status', 'hadir')->count();
 
                 $averageAttendance = $totalAttendance > 0
                     ? round(($totalPresent / $totalAttendance) * 100)
@@ -116,9 +106,9 @@ class StudentController extends Controller
                  * masing-masing siswa.
                  */
                 $studentData = $students
-                    ->map(function ($student) use ($attendances) {
+                    ->map(function ($student) use ($dailyAttendances) {
 
-                        $studentAttendances = $attendances->where(
+                        $studentAttendances = $dailyAttendances->where(
                             'student_id',
                             $student->id
                         );
@@ -345,6 +335,12 @@ class StudentController extends Controller
             ->orderByDesc('date')
             ->get();
 
+        // Ringkasan utama dihitung dari satu catatan per hari.
+        $dailyAttendances = DailyAttendance::where('classroom_id', $classroom->id)
+            ->where('student_id', $student->id)
+            ->orderByDesc('date')
+            ->get();
+
         /*
          * Status presensi yang digunakan KELASKU.
          */
@@ -360,15 +356,15 @@ class StudentController extends Controller
          * Hitung jumlah setiap status.
          */
         $counts = collect($statuses)
-            ->mapWithKeys(function ($status) use ($attendances) {
+            ->mapWithKeys(function ($status) use ($dailyAttendances) {
                 return [
-                    $status => $attendances
+                    $status => $dailyAttendances
                         ->where('status', $status)
                         ->count(),
                 ];
             });
 
-        $totalAttendance = $attendances->count();
+        $totalAttendance = $dailyAttendances->count();
 
         /*
          * Persentase kehadiran:
@@ -550,9 +546,13 @@ class StudentController extends Controller
          */
         $attendance->update([
             'status' => $validated['status'],
-
             'notes' => $validated['notes'] ?? null,
         ]);
+
+        DailyAttendanceService::syncClassDate(
+            (int) $schedule->classroom_id,
+            $attendance->date->format('Y-m-d')
+        );
 
         /*
          * Kembalikan data terbaru.

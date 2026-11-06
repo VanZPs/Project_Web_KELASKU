@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\Assignment;
 use App\Models\Attendance;
+use App\Models\DailyAttendance;
 use App\Models\Journal;
 use App\Models\Schedule;
 use Carbon\Carbon;
@@ -178,9 +179,9 @@ class StudentDashboardController extends Controller
             })
             ->values();
 
-        $attendanceQuery = Attendance::query()
+        $attendanceQuery = DailyAttendance::query()
             ->where('student_id', $student->id)
-            ->whereIn('schedule_id', $schedules->pluck('id'));
+            ->whereIn('classroom_id', $classroomIds);
 
         $attendanceTotal = (clone $attendanceQuery)->count();
         $attendancePresent = (clone $attendanceQuery)->where('status', 'hadir')->count();

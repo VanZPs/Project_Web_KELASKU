@@ -9,6 +9,7 @@ use App\Models\AttendanceSession;
 use App\Models\Journal;
 use App\Models\Schedule;
 use App\Services\HolidayService;
+use App\Services\DailyAttendanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -1032,67 +1033,13 @@ class JournalController extends Controller
                 );
             }
 
-            // Sinkronkan hanya baris presensi yang belum ada pada jurnal kosong.
-            $sameClassSchedules = Schedule::where('classroom_id', $schedule->classroom_id)
-                ->where('day', $schedule->day)
-                ->orderBy('start_time')
-                ->get();
-
-            $sourceRows = collect();
-
-            foreach ($sameClassSchedules as $candidate) {
-                $candidateJournal = Journal::where('schedule_id', $candidate->id)
-                    ->whereDate('date', $validated['date'])
-                    ->first();
-
-                if (
-                    !$candidateJournal
-                    || $candidateJournal->is_holiday
-                    || $candidateJournal->topic === 'Jurnal Kelas Kosong'
-                ) {
-                    continue;
-                }
-
-                $rows = Attendance::where('schedule_id', $candidate->id)
-                    ->whereDate('date', $validated['date'])
-                    ->orderBy('student_id')
-                    ->get();
-
-                if ($rows->isNotEmpty()) {
-                    $sourceRows = $rows;
-                    break;
-                }
-            }
-
-            if ($sourceRows->isNotEmpty()) {
-                foreach ($sameClassSchedules as $targetSchedule) {
-                    $targetJournal = Journal::where('schedule_id', $targetSchedule->id)
-                        ->whereDate('date', $validated['date'])
-                        ->first();
-
-                    if (
-                        !$targetJournal
-                        || $targetJournal->is_holiday
-                        || $targetJournal->topic !== 'Jurnal Kelas Kosong'
-                    ) {
-                        continue;
-                    }
-
-                    foreach ($sourceRows as $sourceRow) {
-                        Attendance::firstOrCreate(
-                            [
-                                'schedule_id' => $targetSchedule->id,
-                                'student_id' => $sourceRow->student_id,
-                                'date' => $validated['date'],
-                            ],
-                            [
-                                'status' => $sourceRow->status,
-                                'notes' => $sourceRow->notes,
-                            ]
-                        );
-                    }
-                }
-            }
+            // Presensi utama disimpan terpisah dari riwayat presensi per mata pelajaran.
+            // Jurnal guru paling awal berdasarkan jam jadwal menjadi sumber awal harian.
+            // Kehadiran pada pertemuan berikutnya dapat menaikkan status harian menjadi Hadir.
+            DailyAttendanceService::syncClassDate(
+                (int) $schedule->classroom_id,
+                $validated['date']
+            );
 
             // Setelah jurnal dan presensi tersimpan, hapus antrean scan sementara
             // dan tutup seluruh QR session untuk jadwal/tanggal ini.

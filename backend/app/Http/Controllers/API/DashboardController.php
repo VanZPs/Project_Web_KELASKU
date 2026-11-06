@@ -4,7 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Assignment;
-use App\Models\Attendance;
+use App\Models\DailyAttendance;
 use App\Models\Journal;
 use App\Models\Schedule;
 use App\Models\Submission;
@@ -377,52 +377,17 @@ class DashboardController extends Controller
          * KEHADIRAN HARI INI
          * ==========================================================
          */
-        $jadwalIdsHariIni = $jadwalHariIni
-            ->pluck('id');
-
         $kehadiranHariIni = '0%';
 
-        if ($jadwalIdsHariIni->isNotEmpty()) {
-            /*
-             * Total seluruh absensi hari ini.
-             */
-            $totalAbsensi = Attendance::whereIn(
-                'schedule_id',
-                $jadwalIdsHariIni
-            )
-                ->whereDate(
-                    'date',
-                    today()
-                )
-                ->count();
+        if ($classroomIds->isNotEmpty()) {
+            $dailyAttendanceQuery = DailyAttendance::whereIn('classroom_id', $classroomIds)
+                ->whereDate('date', today());
 
-            /*
-             * Total siswa yang hadir.
-             */
-            $totalHadir = Attendance::whereIn(
-                'schedule_id',
-                $jadwalIdsHariIni
-            )
-                ->whereDate(
-                    'date',
-                    today()
-                )
-                ->where(
-                    'status',
-                    'hadir'
-                )
-                ->count();
+            $totalAbsensi = (clone $dailyAttendanceQuery)->count();
+            $totalHadir = (clone $dailyAttendanceQuery)->where('status', 'hadir')->count();
 
-            /*
-             * Hitung persentase kehadiran.
-             */
             if ($totalAbsensi > 0) {
-                $persentase = round(
-                    ($totalHadir / $totalAbsensi) * 100
-                );
-
-                $kehadiranHariIni =
-                    $persentase . '%';
+                $kehadiranHariIni = round(($totalHadir / $totalAbsensi) * 100) . '%';
             }
         }
 
