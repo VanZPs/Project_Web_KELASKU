@@ -50,6 +50,7 @@ interface StudentItem {
   email: string;
   jenis_kelamin?: 'laki-laki' | 'perempuan' | string | null;
   summary: StudentSummary;
+  summary_mapel?: StudentSummary;
 }
 
 interface AttendanceItem {
@@ -59,6 +60,7 @@ interface AttendanceItem {
   keterangan?: string | null;
   schedule_id?: number;
   mata_pelajaran?: string | null;
+  can_edit?: boolean;
 }
 
 interface StudentDetail {
@@ -67,7 +69,9 @@ interface StudentDetail {
   email: string;
   jenis_kelamin?: 'laki-laki' | 'perempuan' | string | null;
   summary: StudentSummary;
+  summary_mapel?: StudentSummary;
   history: AttendanceItem[];
+  history_harian: AttendanceItem[];
 }
 
 interface ClassItem {
@@ -76,6 +80,7 @@ interface ClassItem {
   mata_pelajaran: string[];
   jumlah_siswa: number;
   rata_rata_kehadiran: number;
+  rata_rata_kehadiran_mapel: number;
   perlu_perhatian: number;
   siswa: StudentItem[];
 }
@@ -84,6 +89,8 @@ interface StudentPageSummary {
   jumlah_kelas: number;
   jumlah_siswa: number;
   rata_rata_kehadiran: number;
+  rata_rata_kehadiran_harian?: number;
+  rata_rata_kehadiran_mapel: number;
   rata_kehadiran?: number;
   perlu_perhatian: number;
 }
@@ -306,6 +313,13 @@ const normalizeStudent = (
         student?.rekap ??
         student?.attendance_summary
       ),
+
+    summary_mapel:
+      normalizeSummary(
+        student?.summary_mapel ??
+        student?.meeting_summary ??
+        student?.summary_per_mapel
+      ),
   };
 };
 
@@ -353,9 +367,16 @@ const normalizeClass = (
 
     rata_rata_kehadiran:
       normalizePercentage(
+        kelas?.rata_rata_kehadiran_harian ??
         kelas?.rata_rata_kehadiran ??
         kelas?.rata_kehadiran ??
         kelas?.persentase_kehadiran ??
+        0
+      ),
+
+    rata_rata_kehadiran_mapel:
+      normalizePercentage(
+        kelas?.rata_rata_kehadiran_mapel ??
         0
       ),
 
@@ -407,6 +428,7 @@ export default function DaftarSiswa() {
     jumlah_kelas: 0,
     jumlah_siswa: 0,
     rata_rata_kehadiran: 0,
+    rata_rata_kehadiran_mapel: 0,
     perlu_perhatian: 0,
   });
 
@@ -459,6 +481,11 @@ export default function DaftarSiswa() {
   ] = useState<StudentDetail | null>(
     null
   );
+
+  const [
+    detailAttendanceMode,
+    setDetailAttendanceMode,
+  ] = useState<'harian' | 'mapel'>('harian');
 
   const [
     loadingStudent,
@@ -548,8 +575,14 @@ export default function DaftarSiswa() {
 
         rata_rata_kehadiran:
           normalizePercentage(
-            data?.summary?.rata_rata_kehadiran ??
+            data?.summary?.rata_rata_kehadiran_harian ??
             data?.summary?.rata_kehadiran ??
+            0
+          ),
+
+        rata_rata_kehadiran_mapel:
+          normalizePercentage(
+            data?.summary?.rata_rata_kehadiran_mapel ??
             0
           ),
 
@@ -654,8 +687,10 @@ export default function DaftarSiswa() {
    */
 
   const openStudentDetail = async (
-    student: StudentItem
+    student: StudentItem,
+    mode: 'harian' | 'mapel' = 'harian'
   ) => {
+    setDetailAttendanceMode(mode);
     try {
       setLoadingStudent(true);
       setStudentError('');
@@ -671,8 +706,11 @@ export default function DaftarSiswa() {
               jenis_kelamin?: string | null;
             };
             summary?: Partial<StudentSummary>;
+            summary_mapel?: Partial<StudentSummary>;
             rekap?: Partial<StudentSummary>;
             history?: any[];
+            daily_history?: any[];
+            riwayat_harian?: any[];
             riwayat?: any[];
             riwayat_presensi?: any[];
           }>
@@ -731,6 +769,23 @@ export default function DaftarSiswa() {
           })
         );
 
+      const dailyHistorySource = Array.isArray(data?.daily_history)
+        ? data.daily_history
+        : Array.isArray(data?.riwayat_harian)
+          ? data.riwayat_harian
+          : [];
+
+      const normalizedDailyHistory: AttendanceItem[] =
+        dailyHistorySource.map((item: any) => ({
+          id: Number(item?.id),
+          tanggal: item?.tanggal ?? item?.date ?? '',
+          status: item?.status ?? 'alpa',
+          keterangan: item?.keterangan ?? item?.notes ?? null,
+          schedule_id: item?.schedule_id ?? item?.source_schedule_id ?? null,
+          mata_pelajaran: item?.mata_pelajaran ?? item?.subject ?? null,
+          can_edit: false,
+        }));
+
       setSelectedStudent({
         id: Number(
           studentData?.id ??
@@ -758,8 +813,17 @@ export default function DaftarSiswa() {
             student.summary
           ),
 
+        summary_mapel:
+          normalizeSummary(
+            data?.summary_mapel ??
+            student.summary_mapel
+          ),
+
         history:
           normalizedHistory,
+
+        history_harian:
+          normalizedDailyHistory,
       });
     } catch (err: any) {
       console.error(
@@ -989,14 +1053,18 @@ export default function DaftarSiswa() {
         return [];
       }
 
+      const sourceHistory = detailAttendanceMode === 'harian'
+        ? selectedStudent.history_harian
+        : selectedStudent.history;
+
       if (
         attendanceFilter ===
         'semua'
       ) {
-        return selectedStudent.history;
+        return sourceHistory;
       }
 
-      return selectedStudent.history.filter(
+      return sourceHistory.filter(
         (item) =>
           item.status ===
           attendanceFilter
@@ -1004,6 +1072,7 @@ export default function DaftarSiswa() {
     }, [
       selectedStudent,
       attendanceFilter,
+      detailAttendanceMode,
     ]);
 
 
@@ -1243,7 +1312,7 @@ export default function DaftarSiswa() {
             SUMMARY
             ====================================================== */}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
 
           <SummaryCard
             label="Kelas yang diajar"
@@ -1282,34 +1351,8 @@ export default function DaftarSiswa() {
                 className="w-5 h-5"
               >
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle
-                  cx="9"
-                  cy="7"
-                  r="4"
-                />
+                <circle cx="9" cy="7" r="4" />
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            }
-          />
-
-          <SummaryCard
-            label="Rata-rata kehadiran"
-            value={
-              loading
-                ? '-'
-                : `${summary.rata_rata_kehadiran}%`
-            }
-            icon={
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                className="w-5 h-5"
-              >
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                <path d="m9 12 2 2 4-4" />
               </svg>
             }
           />
@@ -1334,6 +1377,28 @@ export default function DaftarSiswa() {
               </svg>
             }
             danger
+          />
+
+          <AttendanceSummaryCard
+            label="Rata-rata kehadiran harian"
+            value={
+              loading
+                ? 0
+                : summary.rata_rata_kehadiran
+            }
+            loading={loading}
+            description="Berdasarkan satu catatan presensi setiap siswa per hari."
+          />
+
+          <AttendanceSummaryCard
+            label="Rata-rata kehadiran per mapel"
+            value={
+              loading
+                ? 0
+                : summary.rata_rata_kehadiran_mapel
+            }
+            loading={loading}
+            description="Berdasarkan seluruh catatan presensi setiap pertemuan mata pelajaran."
           />
 
         </div>
@@ -1405,6 +1470,7 @@ export default function DaftarSiswa() {
           student={
             selectedStudent
           }
+          attendanceMode={detailAttendanceMode}
           loading={
             loadingStudent
           }
@@ -1501,6 +1567,70 @@ interface SummaryCardProps {
   danger?: boolean;
 }
 
+function AttendanceSummaryCard({
+  label,
+  value,
+  loading,
+  description,
+}: {
+  label: string;
+  value: number;
+  loading: boolean;
+  description: string;
+}) {
+  const percentage = normalizePercentage(value);
+
+  return (
+    <div className="bg-[#FFFDF8] border border-[#E3DACB] rounded-[14px] p-5 shadow-[0_8px_24px_rgba(30,42,71,0.035)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11.5px] font-semibold text-[#8A8E9A] mb-1.5">
+            {label}
+          </div>
+
+          <div className="font-['Fraunces',serif] text-[29px] leading-none font-semibold text-[#1E2A47]">
+            {loading ? '—' : `${percentage}%`}
+          </div>
+        </div>
+
+        <div className="w-10 h-10 shrink-0 rounded-[10px] bg-[#F5F1E7] text-[#B98A3E] flex items-center justify-center">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            className="w-5 h-5"
+          >
+            <path d="M3 3v18h18" />
+            <path d="m7 14 4-4 3 3 6-7" />
+          </svg>
+        </div>
+      </div>
+
+      <div
+        className="mt-4 h-2 w-full rounded-full bg-[#EEE9DE] overflow-hidden"
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={loading ? 0 : percentage}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full rounded-full bg-[#5C8668] transition-[width] duration-300"
+          style={{
+            width: `${loading ? 0 : percentage}%`,
+          }}
+        />
+      </div>
+
+      <p className="mt-2 text-[10.5px] leading-4 text-[#8A8E9A]">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+
 function SummaryCard({
   label,
   value,
@@ -1553,6 +1683,47 @@ interface ClassCardProps {
   kelas: ClassItem;
   onOpen: () => void;
 }
+
+function AttendanceProgress({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  const percentage = normalizePercentage(value);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <span className="text-[10.5px] text-[#8A8E9A]">
+          {label}
+        </span>
+
+        <span className="text-[11.5px] font-bold text-[#3D7650] tabular-nums">
+          {percentage}%
+        </span>
+      </div>
+
+      <div
+        className="w-full max-w-[210px] h-1.5 bg-[#EEE9DE] rounded-full overflow-hidden"
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={percentage}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full bg-[#5C8668] rounded-full transition-[width] duration-300"
+          style={{
+            width: `${percentage}%`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 
 function ClassCard({
   kelas,
@@ -1645,27 +1816,18 @@ function ClassCard({
       </div>
 
 
-      <div className="mt-4 pt-4 border-t border-[#E9E1D5] flex items-center justify-between gap-4">
+      <div className="mt-4 pt-4 border-t border-[#E9E1D5] flex flex-col sm:flex-row sm:items-end justify-between gap-4">
 
-        <div>
-          <div className="text-[10.5px] text-[#8A8E9A] mb-1">
-            Rata-rata kehadiran
-          </div>
+        <div className="flex-1 min-w-0 space-y-3">
+          <AttendanceProgress
+            label="Rata-rata kehadiran harian"
+            value={kelas.rata_rata_kehadiran}
+          />
 
-          <div className="flex items-center gap-2">
-            <div className="w-[90px] h-1.5 bg-[#EEE9DE] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#5C8668] rounded-full"
-                style={{
-                  width: `${kelas.rata_rata_kehadiran}%`,
-                }}
-              />
-            </div>
-
-            <span className="text-[11.5px] font-bold text-[#3D7650]">
-              {kelas.rata_rata_kehadiran}%
-            </span>
-          </div>
+          <AttendanceProgress
+            label="Rata-rata kehadiran per mapel"
+            value={kelas.rata_rata_kehadiran_mapel}
+          />
         </div>
 
 
@@ -1773,7 +1935,8 @@ interface ClassStudentModalProps {
   kelas: ClassItem;
   onClose: () => void;
   onOpenStudent: (
-    student: StudentItem
+    student: StudentItem,
+    mode: 'harian' | 'mapel'
   ) => void;
 }
 
@@ -1786,6 +1949,11 @@ function ClassStudentModal({
     search,
     setSearch,
   ] = useState('');
+
+  const [
+    attendanceMode,
+    setAttendanceMode,
+  ] = useState<'harian' | 'mapel'>('harian');
 
   const [
     sort,
@@ -1829,13 +1997,20 @@ function ClassStudentModal({
             );
           }
 
+          const summaryA = attendanceMode === 'harian'
+            ? a.summary
+            : a.summary_mapel ?? a.summary;
+          const summaryB = attendanceMode === 'harian'
+            ? b.summary
+            : b.summary_mapel ?? b.summary;
+
           if (
             sort ===
             'kehadiran_desc'
           ) {
             return (
-              b.summary.persentase -
-              a.summary.persentase
+              summaryB.persentase -
+              summaryA.persentase
             );
           }
 
@@ -1844,8 +2019,8 @@ function ClassStudentModal({
             'kehadiran_asc'
           ) {
             return (
-              a.summary.persentase -
-              b.summary.persentase
+              summaryA.persentase -
+              summaryB.persentase
             );
           }
 
@@ -1860,6 +2035,7 @@ function ClassStudentModal({
       kelas.siswa,
       search,
       sort,
+      attendanceMode,
     ]);
 
 
@@ -1867,7 +2043,12 @@ function ClassStudentModal({
   const exportRows = useMemo(() => {
     return [...kelas.siswa]
       .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
-      .map((student, index) => ({
+      .map((student, index) => {
+        const attendanceSummary = attendanceMode === 'harian'
+          ? student.summary
+          : student.summary_mapel ?? student.summary;
+
+        return {
         no: index + 1,
         nama: student.nama,
         email: student.email || '-',
@@ -1877,14 +2058,15 @@ function ClassStudentModal({
             : student.jenis_kelamin?.toLowerCase() === 'perempuan'
               ? 'P'
               : '-',
-        hadir: student.summary.hadir,
-        izin: student.summary.izin,
-        sakit: student.summary.sakit,
-        dispen: student.summary.dispen,
-        alpa: student.summary.alpa,
-        kehadiran: student.summary.persentase,
-      }));
-  }, [kelas.siswa]);
+        hadir: attendanceSummary.hadir,
+        izin: attendanceSummary.izin,
+        sakit: attendanceSummary.sakit,
+        dispen: attendanceSummary.dispen,
+        alpa: attendanceSummary.alpa,
+        kehadiran: attendanceSummary.persentase,
+      };
+      });
+  }, [kelas.siswa, attendanceMode]);
 
   const exportFileBase = `Presensi-${kelas.nama.replace(/[^a-zA-Z0-9-_]+/g, '-')}`;
 
@@ -1911,12 +2093,13 @@ function ClassStudentModal({
     doc.setFontSize(10);
     doc.setTextColor(80, 85, 100);
     doc.text(`Kelas: ${kelas.nama}`, 14, 23);
-    doc.text('Semester ganjil 2026/2027', 14, 29);
-    doc.text(`Jumlah siswa: ${exportRows.length}`, 14, 35);
-    doc.text(`Tanggal ekspor: ${exportDate()}`, 14, 41);
+    doc.text(`Jenis presensi: ${attendanceMode === 'harian' ? 'Presensi Harian' : 'Presensi per Mapel'}`, 14, 29);
+    doc.text('Semester ganjil 2026/2027', 14, 35);
+    doc.text(`Jumlah siswa: ${exportRows.length}`, 14, 41);
+    doc.text(`Tanggal ekspor: ${exportDate()}`, 14, 47);
 
     autoTable(doc, {
-      startY: 47,
+      startY: 53,
       head: [[
         'No',
         'Nama lengkap',
@@ -1989,6 +2172,7 @@ function ClassStudentModal({
     const worksheet = XLSX.utils.aoa_to_sheet([
       ['REKAP PRESENSI SISWA'],
       [`Kelas: ${kelas.nama}`],
+      [`Jenis presensi: ${attendanceMode === 'harian' ? 'Presensi Harian' : 'Presensi per Mapel'}`],
       ['Semester ganjil 2026/2027'],
       [`Tanggal ekspor: ${exportDate()}`],
       [`Jumlah siswa: ${exportRows.length}`],
@@ -2171,6 +2355,48 @@ function ClassStudentModal({
         </div>
 
 
+        {/* Attendance mode toggle */}
+
+        <div className="px-5 md:px-6 py-3 border-b border-[#E3DACB] bg-[#FBF8F1] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0">
+          <div>
+            <div className="text-[11.5px] font-semibold text-[#4F5564]">
+              Tampilan rekap presensi
+            </div>
+            <p className="text-[10.5px] text-[#8A8E9A] mt-0.5">
+              {attendanceMode === 'harian'
+                ? 'Satu catatan presensi untuk setiap siswa dalam satu hari.'
+                : 'Setiap pertemuan mata pelajaran dihitung secara terpisah.'}
+            </p>
+          </div>
+
+          <div className="inline-flex w-fit rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] p-1">
+            <button
+              type="button"
+              onClick={() => setAttendanceMode('harian')}
+              aria-pressed={attendanceMode === 'harian'}
+              className={`rounded-[7px] px-3 py-2 text-[11.5px] font-semibold transition-colors ${
+                attendanceMode === 'harian'
+                  ? 'bg-[#1E2A47] text-white shadow-sm'
+                  : 'text-[#687083] hover:bg-[#F5F1E7]'
+              }`}
+            >
+              Presensi Harian
+            </button>
+            <button
+              type="button"
+              onClick={() => setAttendanceMode('mapel')}
+              aria-pressed={attendanceMode === 'mapel'}
+              className={`rounded-[7px] px-3 py-2 text-[11.5px] font-semibold transition-colors ${
+                attendanceMode === 'mapel'
+                  ? 'bg-[#1E2A47] text-white shadow-sm'
+                  : 'text-[#687083] hover:bg-[#F5F1E7]'
+              }`}
+            >
+              Presensi per Mapel
+            </button>
+          </div>
+        </div>
+
         {/* Table */}
 
         <div className="overflow-auto flex-1">
@@ -2243,17 +2469,38 @@ function ClassStudentModal({
                   (
                     student,
                     index
-                  ) => (
+                  ) => {
+                    const attendanceSummary = attendanceMode === 'harian'
+                      ? student.summary
+                      : student.summary_mapel ?? student.summary;
+                    const activeSummary = attendanceMode === 'harian'
+                      ? student.summary
+                      : student.summary_mapel ?? student.summary;
+                    const hasAttendance =
+                      activeSummary.hadir +
+                      activeSummary.izin +
+                      activeSummary.sakit +
+                      activeSummary.dispen +
+                      activeSummary.alpa > 0;
+                    const isNeedsAttention =
+                      hasAttendance && activeSummary.persentase < 75;
+
+                    return (
                     <tr
                       key={
                         student.id
                       }
                       onClick={() =>
                         onOpenStudent(
-                          student
+                          student,
+                          attendanceMode
                         )
                       }
-                      className="border-b border-[#EEE8DD] hover:bg-[#FBF8F1] cursor-pointer transition-colors"
+                      className={`border-b cursor-pointer transition-colors ${
+                        isNeedsAttention
+                          ? 'border-[#F1D2CC] bg-[#FFF1EF] hover:bg-[#FCE5E1]'
+                          : 'border-[#EEE8DD] hover:bg-[#FBF8F1]'
+                      }`}
                     >
                       <td className="px-4 py-3 text-[11.5px] text-[#8A8E9A]">
                         {index + 1}
@@ -2293,40 +2540,35 @@ function ClassStudentModal({
 
                       <td className="px-3 py-3 text-center text-[11.5px] font-semibold text-[#3D7650]">
                         {
-                          student
-                            .summary
+                          attendanceSummary
                             .hadir
                         }
                       </td>
 
                       <td className="px-3 py-3 text-center text-[11.5px] font-semibold text-[#4E6386]">
                         {
-                          student
-                            .summary
+                          attendanceSummary
                             .izin
                         }
                       </td>
 
                       <td className="px-3 py-3 text-center text-[11.5px] font-semibold text-[#9A6826]">
                         {
-                          student
-                            .summary
+                          attendanceSummary
                             .sakit
                         }
                       </td>
 
                       <td className="px-3 py-3 text-center text-[11.5px] font-semibold text-[#73548D]">
                         {
-                          student
-                            .summary
+                          attendanceSummary
                             .dispen
                         }
                       </td>
 
                       <td className="px-3 py-3 text-center text-[11.5px] font-semibold text-[#AE5A3E]">
                         {
-                          student
-                            .summary
+                          attendanceSummary
                             .alpa
                         }
                       </td>
@@ -2334,23 +2576,21 @@ function ClassStudentModal({
                       <td className="px-3 py-3 text-center">
                         <span
                           className={`inline-flex items-center justify-center min-w-[58px] px-2 py-1 rounded-full text-[10.5px] font-bold ${
-                            student.summary
-                              .persentase >=
+                            attendanceSummary.persentase >=
                             75
                               ? 'bg-[#EAF4EC] text-[#3D7650]'
                               : 'bg-[#F8EAE6] text-[#AE5A3E]'
                           }`}
                         >
                           {
-                            student
-                              .summary
-                              .persentase
+                            attendanceSummary.persentase
                           }%
                         </span>
                       </td>
 
                     </tr>
-                  )
+                    );
+                  }
                 )
               )}
             </tbody>
@@ -2396,6 +2636,7 @@ function ClassStudentModal({
 
 interface StudentDetailModalProps {
   student: StudentDetail;
+  attendanceMode: 'harian' | 'mapel';
   loading: boolean;
   error: string;
   attendanceFilter:
@@ -2416,6 +2657,7 @@ interface StudentDetailModalProps {
 
 function StudentDetailModal({
   student,
+  attendanceMode,
   loading,
   error,
   attendanceFilter,
@@ -2425,6 +2667,10 @@ function StudentDetailModal({
   onBack,
   onEditAttendance,
 }: StudentDetailModalProps) {
+  const displayedSummary = attendanceMode === 'mapel'
+    ? student.summary_mapel ?? student.summary
+    : student.summary;
+
   return (
     <ModalOverlay>
       <div className="w-full max-w-[1050px] max-h-[88vh] bg-[#FFFDF8] rounded-[16px] border border-[#E3DACB] shadow-[0_25px_80px_rgba(20,28,48,0.25)] overflow-hidden flex flex-col">
@@ -2508,7 +2754,7 @@ function StudentDetailModal({
             <AttendanceSummaryChip
               label="Hadir"
               value={
-                student.summary.hadir
+                displayedSummary.hadir
               }
               status="hadir"
             />
@@ -2516,7 +2762,7 @@ function StudentDetailModal({
             <AttendanceSummaryChip
               label="Izin"
               value={
-                student.summary.izin
+                displayedSummary.izin
               }
               status="izin"
             />
@@ -2524,7 +2770,7 @@ function StudentDetailModal({
             <AttendanceSummaryChip
               label="Sakit"
               value={
-                student.summary.sakit
+                displayedSummary.sakit
               }
               status="sakit"
             />
@@ -2532,7 +2778,7 @@ function StudentDetailModal({
             <AttendanceSummaryChip
               label="Dispen"
               value={
-                student.summary.dispen
+                displayedSummary.dispen
               }
               status="dispen"
             />
@@ -2540,7 +2786,7 @@ function StudentDetailModal({
             <AttendanceSummaryChip
               label="Alpa"
               value={
-                student.summary.alpa
+                displayedSummary.alpa
               }
               status="alpa"
             />
@@ -2552,8 +2798,7 @@ function StudentDetailModal({
 
               <div className="mt-0.5 text-[17px] font-bold text-[#3D7650]">
                 {
-                  student.summary
-                    .persentase
+                  displayedSummary.persentase
                 }%
               </div>
             </div>
@@ -2578,11 +2823,15 @@ function StudentDetailModal({
 
           <div>
             <h3 className="font-['Fraunces',serif] text-[18px] font-semibold text-[#1E2A47]">
-              Riwayat presensi
+              {attendanceMode === 'harian'
+                ? 'Riwayat presensi harian'
+                : 'Riwayat presensi per mata pelajaran'}
             </h3>
 
             <p className="text-[10.5px] text-[#8A8E9A] mt-0.5">
-              Data presensi siswa pada kelas yang Anda ajar.
+              {attendanceMode === 'harian'
+                ? 'Status mengikuti presensi dari jurnal pertama yang diisi guru pada hari tersebut.'
+                : 'Menampilkan status siswa pada setiap pertemuan mata pelajaran.'}
             </p>
           </div>
 
@@ -2714,27 +2963,27 @@ function StudentDetailModal({
                       </td>
 
                       <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onEditAttendance(
-                              attendance
-                            )
-                          }
-                          className="w-8 h-8 rounded-[8px] inline-flex items-center justify-center text-[#7B8190] hover:bg-[#F5F1E7] hover:text-[#1E2A47] transition-colors"
-                          title="Edit presensi"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
+                        {attendance.can_edit !== false ? (
+                          <button
+                            type="button"
+                            onClick={() => onEditAttendance(attendance)}
+                            className="w-8 h-8 rounded-[8px] inline-flex items-center justify-center text-[#7B8190] hover:bg-[#F5F1E7] hover:text-[#1E2A47] transition-colors"
+                            title="Edit presensi"
                           >
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-4 h-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                            >
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-[#A3A5AE]">—</span>
+                        )}
                       </td>
 
                     </tr>

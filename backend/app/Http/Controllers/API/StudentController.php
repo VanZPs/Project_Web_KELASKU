@@ -101,14 +101,37 @@ class StudentController extends Controller
                     ? round(($totalPresent / $totalAttendance) * 100)
                     : 0;
 
+                // Rata-rata per mapel dihitung dari seluruh record presensi
+                // per pertemuan pada jadwal guru untuk kelas ini.
+                $meetingAttendances = Attendance::query()
+                    ->whereIn('schedule_id', $classSchedules->pluck('id'))
+                    ->whereIn('student_id', $studentIds)
+                    ->get();
+
+                $totalMeetingAttendance = $meetingAttendances->count();
+                $totalMeetingPresent = $meetingAttendances
+                    ->where('status', 'hadir')
+                    ->count();
+
+                $averageMeetingAttendance = $totalMeetingAttendance > 0
+                    ? round(
+                        ($totalMeetingPresent / $totalMeetingAttendance) * 100
+                    )
+                    : 0;
+
                 /*
                  * Buat data siswa beserta ringkasan presensi
                  * masing-masing siswa.
                  */
                 $studentData = $students
-                    ->map(function ($student) use ($dailyAttendances) {
+                    ->map(function ($student) use ($dailyAttendances, $meetingAttendances) {
 
                         $studentAttendances = $dailyAttendances->where(
+                            'student_id',
+                            $student->id
+                        );
+
+                        $studentMeetingAttendances = $meetingAttendances->where(
                             'student_id',
                             $student->id
                         );
@@ -134,6 +157,21 @@ class StudentController extends Controller
                             });
 
                         $total = $studentAttendances->count();
+
+                        $meetingCounts = collect($statuses)
+                            ->mapWithKeys(function ($status) use ($studentMeetingAttendances) {
+                                return [
+                                    $status => $studentMeetingAttendances
+                                        ->where('status', $status)
+                                        ->count(),
+                                ];
+                            });
+
+                        $meetingTotal = $studentMeetingAttendances->count();
+
+                        $meetingPercentage = $meetingTotal > 0
+                            ? round(($meetingCounts['hadir'] / $meetingTotal) * 100)
+                            : 0;
 
                         /*
                          * Persentase kehadiran siswa.
@@ -170,6 +208,15 @@ class StudentController extends Controller
 
                                 'persentase' => $percentage,
                             ],
+
+                            'summary_mapel' => [
+                                'hadir' => $meetingCounts['hadir'],
+                                'izin' => $meetingCounts['izin'],
+                                'sakit' => $meetingCounts['sakit'],
+                                'dispen' => $meetingCounts['dispen'],
+                                'alpa' => $meetingCounts['alpa'],
+                                'persentase' => $meetingPercentage,
+                            ],
                         ];
                     })
                     ->values();
@@ -182,14 +229,17 @@ class StudentController extends Controller
                  */
                 $studentsNeedAttention = $studentData
                     ->filter(function ($student) {
-                        return $student['summary']['persentase'] < 75
-                            && (
-                                $student['summary']['hadir']
-                                + $student['summary']['izin']
-                                + $student['summary']['sakit']
-                                + $student['summary']['dispen']
-                                + $student['summary']['alpa']
-                            ) > 0;
+                        $summaryMapel = $student['summary_mapel'];
+
+                        $totalMeetingAttendance =
+                            $summaryMapel['hadir']
+                            + $summaryMapel['izin']
+                            + $summaryMapel['sakit']
+                            + $summaryMapel['dispen']
+                            + $summaryMapel['alpa'];
+
+                        return $totalMeetingAttendance > 0
+                            && $summaryMapel['persentase'] < 75;
                     })
                     ->count();
 
@@ -216,6 +266,10 @@ class StudentController extends Controller
 
                     'rata_kehadiran' => $averageAttendance,
 
+                    'rata_rata_kehadiran_harian' => $averageAttendance,
+
+                    'rata_rata_kehadiran_mapel' => $averageMeetingAttendance,
+
                     'perlu_perhatian' => $studentsNeedAttention,
 
                     'siswa' => $studentData,
@@ -237,6 +291,14 @@ class StudentController extends Controller
 
             'rata_kehadiran' => $classrooms->count() > 0
                 ? round($classrooms->avg('rata_kehadiran'))
+                : 0,
+
+            'rata_rata_kehadiran_harian' => $classrooms->count() > 0
+                ? round($classrooms->avg('rata_rata_kehadiran_harian'))
+                : 0,
+
+            'rata_rata_kehadiran_mapel' => $classrooms->count() > 0
+                ? round($classrooms->avg('rata_rata_kehadiran_mapel'))
                 : 0,
 
             'perlu_perhatian' => $classrooms->sum(
@@ -336,7 +398,8 @@ class StudentController extends Controller
             ->get();
 
         // Ringkasan utama dihitung dari satu catatan per hari.
-        $dailyAttendances = DailyAttendance::where('classroom_id', $classroom->id)
+        $dailyAttendances = DailyAttendance::with('sourceSchedule.subject')
+            ->where('classroom_id', $classroom->id)
             ->where('student_id', $student->id)
             ->orderByDesc('date')
             ->get();
@@ -379,6 +442,25 @@ class StudentController extends Controller
             )
             : 100;
 
+        // Statistik per mapel harus berasal dari catatan pertemuan yang sama
+        // dengan data riwayat presensi yang ditampilkan di bawahnya.
+        $meetingCounts = collect($statuses)
+            ->mapWithKeys(function ($status) use ($attendances) {
+                return [
+                    $status => $attendances
+                        ->where('status', $status)
+                        ->count(),
+                ];
+            });
+
+        $totalMeetings = $attendances->count();
+
+        $meetingPercentage = $totalMeetings > 0
+            ? round(
+                ($meetingCounts['hadir'] / $totalMeetings) * 100
+            )
+            : 0;
+
         /*
          * Data siswa.
          */
@@ -418,6 +500,52 @@ class StudentController extends Controller
             })
             ->values();
 
+        // Riwayat harian menggunakan satu DailyAttendance per tanggal.
+        // source_schedule_id menunjuk ke jadwal dari jurnal guru pertama
+        // yang menjadi sumber presensi harian.
+        $sourceScheduleIds = $dailyAttendances
+            ->pluck('source_schedule_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $dailySourceAttendances = Attendance::query()
+            ->whereIn('schedule_id', $sourceScheduleIds)
+            ->where('student_id', $student->id)
+            ->whereIn('date', $dailyAttendances->pluck('date')->map(
+                fn ($date) => $date?->format('Y-m-d')
+            )->filter())
+            ->get()
+            ->keyBy(function ($attendance) {
+                return $attendance->date->format('Y-m-d')
+                    . ':'
+                    . $attendance->schedule_id;
+            });
+
+        $dailyHistory = $dailyAttendances
+            ->map(function ($daily) use ($dailySourceAttendances) {
+                $date = $daily->date?->format('Y-m-d');
+                $sourceScheduleId = $daily->source_schedule_id;
+
+                $sourceAttendance = $sourceScheduleId
+                    ? $dailySourceAttendances->get(
+                        $date . ':' . $sourceScheduleId
+                    )
+                    : null;
+
+                return [
+                    'id' => $daily->id,
+                    'tanggal' => $date,
+                    'status' => $daily->status,
+                    'keterangan' => $sourceAttendance?->notes ?? '',
+                    'schedule_id' => $sourceScheduleId,
+                    'mata_pelajaran' => $daily->sourceSchedule?->subject?->name
+                        ?? ($sourceScheduleId ? '-' : 'Presensi otomatis'),
+                    'can_edit' => false,
+                ];
+            })
+            ->values();
+
         return response()->json([
             'success' => true,
 
@@ -438,7 +566,18 @@ class StudentController extends Controller
                     'persentase' => $attendancePercentage,
                 ],
 
+                'summary_mapel' => [
+                    'hadir' => $meetingCounts['hadir'],
+                    'izin' => $meetingCounts['izin'],
+                    'sakit' => $meetingCounts['sakit'],
+                    'dispen' => $meetingCounts['dispen'],
+                    'alpa' => $meetingCounts['alpa'],
+                    'persentase' => $meetingPercentage,
+                ],
+
                 'riwayat' => $history,
+
+                'daily_history' => $dailyHistory,
             ],
         ]);
     }
