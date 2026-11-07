@@ -36,6 +36,7 @@ interface KelasItem {
   jumlah_siswa: number;
   mata_pelajaran: string[];
   jumlah_jadwal: number;
+  jumlah_jadwal_kelas: number;
   siswa: SiswaItem[];
   jadwal: JadwalItem[];
 }
@@ -80,7 +81,17 @@ export default function KelasSaya() {
   const [restoreTarget, setRestoreTarget] =
     useState<KelasItem | null>(null);
 
+  const [deleteTarget, setDeleteTarget] =
+    useState<{
+      kelas: KelasItem;
+      jadwal: JadwalItem;
+      isLastSchedule: boolean;
+    } | null>(null);
+
   const [processingArchive, setProcessingArchive] =
+    useState<boolean>(false);
+
+  const [processingDelete, setProcessingDelete] =
     useState<boolean>(false);
 
   const storedUser =
@@ -497,6 +508,74 @@ export default function KelasSaya() {
         setProcessingArchive(false);
       }
     };
+
+  /*
+   * ==========================================================
+   * HAPUS JADWAL / KELAS
+   * ==========================================================
+   */
+  const handleDeleteSchedule = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      setProcessingDelete(true);
+      setError('');
+
+      await api.delete(`/guru/jadwal/${deleteTarget.jadwal.id}`, {
+        data: { delete_class: deleteTarget.isLastSchedule },
+      });
+
+      if (deleteTarget.isLastSchedule) {
+        setKelasList((current) =>
+          current.filter((kelas) => kelas.id !== deleteTarget.kelas.id)
+        );
+        setSelectedClass(null);
+      } else {
+        const updatedSchedules = deleteTarget.kelas.jadwal.filter(
+          (jadwal) => jadwal.id !== deleteTarget.jadwal.id
+        );
+        const updatedClass = {
+          ...deleteTarget.kelas,
+          jadwal: updatedSchedules,
+          jumlah_jadwal: updatedSchedules.length,
+          jumlah_jadwal_kelas: Math.max(0, deleteTarget.kelas.jumlah_jadwal_kelas - 1),
+          mata_pelajaran: Array.from(new Set(
+            updatedSchedules.map((jadwal) => jadwal.mata_pelajaran).filter(Boolean)
+          )),
+        };
+
+        setKelasList((current) =>
+          current.map((kelas) => kelas.id === updatedClass.id ? updatedClass : kelas)
+        );
+        setSelectedClass(updatedClass);
+      }
+
+      setDeleteTarget(null);
+    } catch (err: any) {
+      console.error('Gagal menghapus jadwal:', err);
+
+      if (err.response?.status === 409) {
+        if (err.response?.data?.requires_class_deletion_confirmation) {
+          setDeleteTarget((current) =>
+            current ? { ...current, isLastSchedule: true } : current
+          );
+        } else if (err.response?.data?.requires_schedule_only_confirmation) {
+          setDeleteTarget((current) =>
+            current ? { ...current, isLastSchedule: false } : current
+          );
+        } else {
+          setError(err.response?.data?.message || 'Jadwal gagal dihapus.');
+        }
+      } else {
+        setError(
+          err.response?.data?.message ||
+          'Jadwal gagal dihapus. Silakan coba lagi.'
+        );
+      }
+    } finally {
+      setProcessingDelete(false);
+    }
+  };
 
   /*
    * ==========================================================
@@ -1744,17 +1823,37 @@ export default function KelasSaya() {
 
                               </div>
 
-                              {/* SUBJECT */}
-                              <div
-                                className="flex-shrink-0 rounded-full px-[12px] py-[5px] text-[12.5px] font-medium"
-                                style={{
-                                  backgroundColor:
-                                    warnaMapel.background,
-                                  color:
-                                    warnaMapel.text,
-                                }}
-                              >
-                                {jadwal.mata_pelajaran}
+                              {/* SUBJECT + DELETE ACTION */}
+                              <div className="flex flex-shrink-0 items-center gap-2">
+                                <div
+                                  className="rounded-full px-[12px] py-[5px] text-[12.5px] font-medium"
+                                  style={{
+                                    backgroundColor: warnaMapel.background,
+                                    color: warnaMapel.text,
+                                  }}
+                                >
+                                  {jadwal.mata_pelajaran}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  title="Hapus jadwal"
+                                  aria-label={`Hapus jadwal ${jadwal.mata_pelajaran} hari ${jadwal.hari}`}
+                                  disabled={processingDelete}
+                                  onClick={() => setDeleteTarget({
+                                    kelas: selectedClass,
+                                    jadwal,
+                                    isLastSchedule: selectedClass.jumlah_jadwal_kelas <= 1,
+                                  })}
+                                  className="flex h-8 w-8 items-center justify-center rounded-full text-[#A0A5AE] opacity-100 transition-all hover:bg-[#FFF0EC] hover:text-[#B94A48] sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18" />
+                                    <path d="M8 6V4h8v2" />
+                                    <path d="M19 6l-1 14H6L5 6" />
+                                    <path d="M10 11v5M14 11v5" />
+                                  </svg>
+                                </button>
                               </div>
 
                             </div>
@@ -1862,6 +1961,79 @@ export default function KelasSaya() {
 
         </div>
 
+      )}
+
+      {/* =======================================================
+          MODAL KONFIRMASI HAPUS JADWAL / KELAS
+      ======================================================== */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-[#141C30]/45 px-4 backdrop-blur-[2px]"
+          onClick={() => !processingDelete && setDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-[440px] rounded-[16px] border border-[#E3DACB] bg-[#FFFDF8] p-6 shadow-[0_20px_60px_-20px_rgba(20,28,48,0.35)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-[11px] bg-[#FFF0EC] text-[#B94A48]">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+            </div>
+
+            <h2 className="mt-4 font-['Fraunces',serif] text-[20px] font-semibold text-[#141C30]">
+              {deleteTarget.isLastSchedule ? 'Hapus seluruh kelas?' : 'Hapus jadwal?'}
+            </h2>
+
+            {deleteTarget.isLastSchedule ? (
+              <>
+                <p className="mt-2 text-[13px] leading-6 text-[#6B7080]">
+                  Jadwal <span className="font-semibold text-[#1E2A47]">{deleteTarget.jadwal.mata_pelajaran}</span> pada kelas{' '}
+                  <span className="font-semibold text-[#1E2A47]">{deleteTarget.kelas.nama}</span> merupakan jadwal terakhir di kelas ini.
+                </p>
+                <div className="mt-3 rounded-[11px] border border-[#E8B8AA] bg-[#FFF4F0] p-3.5">
+                  <div className="text-[12px] font-bold text-[#A3443E]">
+                    Peringatan: seluruh kelas akan dihapus
+                  </div>
+                  <p className="mt-1 text-[12px] leading-5 text-[#9A5A51]">
+                    Jika dilanjutkan, kelas beserta seluruh jadwal, jurnal, presensi,
+                    tugas, nilai, dan data pengumpulan tugas yang hanya terkait
+                    dengan kelas ini akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="mt-2 text-[13px] leading-6 text-[#6B7080]">
+                Apakah Anda yakin ingin menghapus jadwal{' '}
+                <span className="font-semibold text-[#1E2A47]">{deleteTarget.jadwal.mata_pelajaran}</span>{' '}
+                pada hari {deleteTarget.jadwal.hari} pukul {deleteTarget.jadwal.waktu}?
+                Jurnal dan presensi yang terkait dengan jadwal ini juga akan dihapus.
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={processingDelete}
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-[9px] border border-[#E3DACB] bg-[#FFFDF8] px-4 py-2.5 text-[12px] font-semibold text-[#6B7080] transition hover:bg-[#F5F1E9] disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={processingDelete}
+                onClick={handleDeleteSchedule}
+                className="rounded-[9px] bg-[#B94A48] px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-[#9F3F3D] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {processingDelete ? 'Menghapus...' : deleteTarget.isLastSchedule ? 'Ya, hapus seluruh kelas' : 'Ya, hapus jadwal'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* =======================================================

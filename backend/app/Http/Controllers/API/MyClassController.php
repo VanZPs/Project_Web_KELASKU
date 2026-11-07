@@ -106,7 +106,7 @@ class MyClassController extends Controller
          * dikirim ke frontend agar dapat ditampilkan pada
          * tab "Arsip" meskipun halaman direfresh.
          */
-        $classrooms = Classroom::with([
+        $classrooms = Classroom::withCount('schedules as jumlah_jadwal_kelas')->with([
 
             /*
              * --------------------------------------------------
@@ -335,6 +335,13 @@ class MyClassController extends Controller
                      */
                     'jumlah_jadwal' =>
                         $jadwal->count(),
+
+                    /*
+                     * JUMLAH SELURUH JADWAL KELAS
+                     * Termasuk jadwal guru lain yang mengajar di kelas sama.
+                     */
+                    'jumlah_jadwal_kelas' =>
+                        (int) $classroom->jumlah_jadwal_kelas,
 
                     /*
                      * DAFTAR SISWA

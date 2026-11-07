@@ -185,6 +185,17 @@ Route::middleware('auth:sanctum')->group(
 
 
         /*
+         * Menghapus jadwal milik guru yang sedang login.
+         * Jika merupakan jadwal terakhir, hapus juga seluruh kelas
+         * setelah konfirmasi eksplisit dari frontend.
+         */
+        Route::delete(
+            '/guru/jadwal/{schedule}',
+            [ClassroomController::class, 'destroySchedule']
+        );
+
+
+        /*
          * ======================================================
          * ARCHIVE CLASSROOM
          * ======================================================
