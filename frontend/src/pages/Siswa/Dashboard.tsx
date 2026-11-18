@@ -89,6 +89,142 @@ function PanelHeader({ title, to }: { title: string; to?: string }) {
   );
 }
 
+// ---------- Kartu Nilai per Mata Pelajaran ----------
+const KKM = 75; // Batas ketuntasan minimal, sesuaikan dengan kebijakan sekolah
+
+const getNilaiTone = (nilai: number) => {
+  if (nilai >= 85) return { label: 'Sangat baik', bar: 'from-[#3F6B52] to-[#6FA085]', text: 'text-[#3F6B52]', chip: 'bg-[#E7F0EA] text-[#3F6B52]', hex: '#4C7A5E' };
+  if (nilai >= KKM) return { label: 'Baik', bar: 'from-[#B98A3E] to-[#E0B968]', text: 'text-[#7A5A20]', chip: 'bg-[#F3E6C8] text-[#7A5A20]', hex: '#B98A3E' };
+  return { label: 'Perlu ditingkatkan', bar: 'from-[#AE5A3E] to-[#D98466]', text: 'text-[#AE5A3E]', chip: 'bg-[#F5E6DF] text-[#AE5A3E]', hex: '#AE5A3E' };
+};
+
+function NilaiMapelCard({ data }: { data: Array<{ mata_pelajaran: string; rata_rata: number }> }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const items = data
+    .map((d) => ({ nama: d.mata_pelajaran, nilai: Math.max(0, Math.min(100, Number(d.rata_rata) || 0)) }))
+    .sort((a, b) => b.nilai - a.nilai);
+  const hasData = items.length > 0;
+  const avg = hasData ? items.reduce((a, b) => a + b.nilai, 0) / items.length : 0;
+  const best = hasData ? items[0] : null;
+  const lowest = hasData ? items[items.length - 1] : null;
+  const tuntas = items.filter((i) => i.nilai >= KKM).length;
+  const avgTone = getNilaiTone(avg);
+
+  // Cincin progres
+  const R = 40;
+  const C = 2 * Math.PI * R;
+  const ringOffset = C * (1 - (mounted ? avg : 0) / 100);
+
+  return (
+    <div className={`${cardClass} flex h-full flex-col`}>
+      <div className="flex items-start justify-between border-b border-[#E3DACB] p-[18px_20px_14px]">
+        <div>
+          <h3 className={panelTitle}>Nilai per mata pelajaran</h3>
+          <p className="mt-0.5 text-[11.5px] text-[#6B7080]">Rata-rata capaian tiap mapel</p>
+        </div>
+        <Link to="/siswa/nilai" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#1E2A47] hover:text-[#B98A3E] transition-colors">
+          Lihat semua <ArrowUpRight size={13} />
+        </Link>
+      </div>
+
+      {hasData ? (
+        <div className="flex flex-1 flex-col p-[18px_20px_18px]">
+          {/* Ringkasan */}
+          <div className="mb-6 flex items-center gap-5 rounded-[12px] border border-[#EADFC8] bg-gradient-to-br from-[#F8F3E6] to-[#F2ECDC] p-4">
+            <div className="relative h-[96px] w-[96px] shrink-0">
+              <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                <circle cx="50" cy="50" r={R} fill="none" stroke="#E3DACB" strokeWidth="9" />
+                <circle
+                  cx="50" cy="50" r={R} fill="none"
+                  stroke={avgTone.hex} strokeWidth="9" strokeLinecap="round"
+                  strokeDasharray={C} strokeDashoffset={ringOffset}
+                  style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(.22,1,.36,1)' }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                <span className="font-['Fraunces',serif] text-[24px] font-semibold text-[#141C30]">{formatValue(Number(avg.toFixed(1)))}</span>
+                <span className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[#6B7080]">Rata-rata</span>
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1 space-y-3">
+              <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${avgTone.chip}`}>{avgTone.label}</span>
+              <div className="grid grid-cols-2 gap-3 text-[11.5px]">
+                <div>
+                  <div className="text-[#6B7080]">Mapel tuntas</div>
+                  <div className="font-bold text-[#141C30]">{tuntas} dari {items.length}</div>
+                </div>
+                <div>
+                  <div className="text-[#6B7080]">Tertinggi</div>
+                  <div className="truncate font-bold text-[#3F6B52]">{best?.nama} · {formatValue(best?.nilai)}</div>
+                </div>
+                {items.length > 1 && (
+                  <div className="col-span-2">
+                    <div className="text-[#6B7080]">Perlu diperhatikan</div>
+                    <div className="truncate font-bold text-[#AE5A3E]">{lowest?.nama} · {formatValue(lowest?.nilai)}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Bar per mapel */}
+          <div className="space-y-[18px]">
+            {items.map((item, i) => {
+              const tone = getNilaiTone(item.nilai);
+              return (
+                <div key={item.nama}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#1E2A47] text-[10.5px] font-bold text-white">{i + 1}</span>
+                      <span className="truncate text-[13px] font-bold text-[#141C30]">{item.nama}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`hidden rounded-full px-2 py-0.5 text-[10.5px] font-semibold sm:inline-block ${tone.chip}`}>{tone.label}</span>
+                      <span className={`font-['Fraunces',serif] text-[17px] font-semibold leading-none ${tone.text}`}>{formatValue(item.nilai)}</span>
+                    </div>
+                  </div>
+                  <div className="relative h-[12px] rounded-full bg-[#EFE9DB]">
+                    <div
+                      className={`relative h-full rounded-full bg-gradient-to-r ${tone.bar} shadow-[inset_0_-1px_0_rgba(0,0,0,0.12),0_2px_6px_-2px_rgba(30,25,15,0.35)]`}
+                      style={{ width: mounted ? `${item.nilai}%` : '0%', transition: `width 1s cubic-bezier(.22,1,.36,1) ${i * 90}ms` }}
+                    >
+                      <span className="absolute right-[3px] top-1/2 h-[6px] w-[6px] -translate-y-1/2 rounded-full bg-white/90" />
+                    </div>
+                    <span className="absolute -bottom-[3px] -top-[3px] w-px bg-[#141C30]/40" style={{ left: `${KKM}%` }} title={`KKM ${KKM}`} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Skala + legenda (menempel di bawah kartu) */}
+          <div className="mt-auto pt-6">
+            <div className="relative h-3 text-[10px] text-[#9A9AA5]">
+              <span className="absolute left-0">0</span>
+              <span className="absolute -translate-x-1/2 font-semibold text-[#6B7080]" style={{ left: `${KKM}%` }}>KKM {KKM}</span>
+              <span className="absolute right-0">100</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-dashed border-[#E3DACB] pt-4 text-[11px] text-[#6B7080]">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#4C7A5E]" />≥ 85</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#B98A3E]" />{KKM}–84</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#AE5A3E]" />&lt; {KKM}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <EmptyState>Rata-rata nilai per mata pelajaran belum tersedia.</EmptyState>
+      )}
+    </div>
+  );
+}
+
 export function DashboardSiswa() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,18 +425,7 @@ export function DashboardSiswa() {
           </div>
         </div>
 
-        <div className={`${cardClass} flex h-full flex-col`}>
-          <PanelHeader title="Nilai per mata pelajaran" to="/siswa/nilai" />
-          <div className="flex-1 py-2">
-            {data?.nilai_per_mapel.length ? data.nilai_per_mapel.map((item) => (
-              <div key={item.mata_pelajaran} className="flex items-center gap-3 px-5 py-[11px]">
-                <div className="w-[86px] shrink-0 truncate text-[12px] font-semibold text-[#23283A]">{item.mata_pelajaran}</div>
-                <div className="h-[7px] flex-1 overflow-hidden rounded-full bg-[#EFE9DB]"><div className="h-full rounded-full bg-gradient-to-r from-[#1E2A47] to-[#2C3B5E]" style={{ width: `${Math.max(0, Math.min(100, item.rata_rata))}%` }} /></div>
-                <div className="w-8 text-right text-[12px] text-[#6B7080]">{formatValue(item.rata_rata)}</div>
-              </div>
-            )) : <EmptyState>Rata-rata nilai per mata pelajaran belum tersedia.</EmptyState>}
-          </div>
-        </div>
+        <NilaiMapelCard data={data?.nilai_per_mapel ?? []} />
 
       </section>
     </DashboardLayout>

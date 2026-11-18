@@ -54,6 +54,153 @@ interface DashboardData {
   rata_rata_kelas: RataKelas[];
 }
 
+// ---------- Kartu Rata-rata Nilai Kelas ----------
+const KKM = 75; // Batas ketuntasan minimal, sesuaikan dengan kebijakan sekolah
+
+const getTone = (nilai: number) => {
+  if (nilai >= 85) return { label: 'Sangat baik', bar: 'from-[#3F6B52] to-[#6FA085]', text: 'text-[#3F6B52]', chip: 'bg-[#E7F0EA] text-[#3F6B52]', hex: '#4C7A5E' };
+  if (nilai >= KKM) return { label: 'Baik', bar: 'from-[#B98A3E] to-[#E0B968]', text: 'text-[#7A5A20]', chip: 'bg-[#F3E6C8] text-[#7A5A20]', hex: '#B98A3E' };
+  return { label: 'Perlu perhatian', bar: 'from-[#AE5A3E] to-[#D98466]', text: 'text-[#AE5A3E]', chip: 'bg-[#F5E6DF] text-[#AE5A3E]', hex: '#AE5A3E' };
+};
+
+function RataNilaiCard({ data }: { data: RataKelas[] }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const items = data.map((d) => ({ ...d, nilai: Math.max(0, Math.min(100, Number(d.nilai) || 0)) }));
+  const hasData = items.length > 0;
+  const avg = hasData ? items.reduce((a, b) => a + b.nilai, 0) / items.length : 0;
+  const best = hasData ? items.reduce((a, b) => (b.nilai > a.nilai ? b : a)) : null;
+  const worst = hasData ? items.reduce((a, b) => (b.nilai < a.nilai ? b : a)) : null;
+  const avgTone = getTone(avg);
+
+  // Gauge setengah lingkaran
+  const R = 48;
+  const arcLen = Math.PI * R;
+  const arcOffset = arcLen * (1 - (mounted ? avg : 0) / 100);
+
+  return (
+    <div className="bg-[#FFFDF8] border border-[#E3DACB] rounded-[14px] shadow-[0_1px_2px_rgba(30,25,15,0.04),0_8px_24px_-12px_rgba(30,25,15,0.10)] overflow-hidden">
+      {/* Header */}
+      <div className="flex justify-between items-start p-[18px_20px_14px] border-b border-[#E3DACB]">
+        <div>
+          <h3 className="font-['Fraunces',serif] font-semibold text-[16px] text-[#141C30]">Rata-rata nilai kelas</h3>
+          <p className="text-[11.5px] text-[#6B7080] mt-0.5">Perbandingan capaian tiap kelas</p>
+        </div>
+        {hasData && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#6B7080] bg-[#F5F1E7] border border-[#E3DACB] rounded-full px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#141C30]" />
+            KKM {KKM}
+          </span>
+        )}
+      </div>
+
+      {hasData ? (
+        <div className="p-[18px_20px_20px]">
+          {/* Ringkasan: gauge + tertinggi/terendah */}
+          <div className="flex items-center gap-5 mb-6 p-4 rounded-[12px] bg-gradient-to-br from-[#F8F3E6] to-[#F2ECDC] border border-[#EADFC8]">
+            <div className="relative w-[120px] h-[68px] shrink-0">
+              <svg viewBox="0 0 120 68" className="w-full h-full overflow-visible">
+                <path d="M12 62 A48 48 0 0 1 108 62" fill="none" stroke="#E3DACB" strokeWidth="10" strokeLinecap="round" />
+                <path
+                  d="M12 62 A48 48 0 0 1 108 62"
+                  fill="none"
+                  stroke={avgTone.hex}
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={arcLen}
+                  strokeDashoffset={arcOffset}
+                  style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)' }}
+                />
+              </svg>
+              <div className="absolute inset-x-0 bottom-0 text-center leading-none">
+                <div className="font-['Fraunces',serif] font-semibold text-[24px] text-[#141C30]">{avg.toFixed(1)}</div>
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-0 space-y-2.5">
+              <div>
+                <div className="text-[10.5px] uppercase tracking-[0.08em] text-[#6B7080] font-semibold">Rata-rata keseluruhan</div>
+                <span className={`inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${avgTone.chip}`}>{avgTone.label}</span>
+              </div>
+              {items.length > 1 && best && worst && (
+                <div className="flex gap-4 text-[11.5px]">
+                  <div>
+                    <div className="text-[#6B7080]">Tertinggi</div>
+                    <div className="font-bold text-[#3F6B52]">{best.kelas} · {best.nilai}</div>
+                  </div>
+                  <div>
+                    <div className="text-[#6B7080]">Terendah</div>
+                    <div className="font-bold text-[#AE5A3E]">{worst.kelas} · {worst.nilai}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bar per kelas */}
+          <div className="space-y-[18px]">
+            {items.map((item, i) => {
+              const tone = getTone(item.nilai);
+              return (
+                <div key={i} className="group">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-6 h-6 rounded-[7px] bg-[#1E2A47] text-white text-[10.5px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                      <span className="text-[13px] font-bold text-[#141C30] truncate">{item.kelas}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`hidden sm:inline-block text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${tone.chip}`}>{tone.label}</span>
+                      <span className={`font-['Fraunces',serif] font-semibold text-[17px] leading-none ${tone.text}`}>{item.nilai}</span>
+                    </div>
+                  </div>
+
+                  <div className="relative h-[12px] bg-[#EFE9DB] rounded-full">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${tone.bar} shadow-[inset_0_-1px_0_rgba(0,0,0,0.12),0_2px_6px_-2px_rgba(30,25,15,0.35)] relative`}
+                      style={{
+                        width: mounted ? `${item.nilai}%` : '0%',
+                        transition: `width 1s cubic-bezier(.22,1,.36,1) ${i * 90}ms`,
+                      }}
+                    >
+                      <span className="absolute right-[3px] top-1/2 -translate-y-1/2 w-[6px] h-[6px] rounded-full bg-white/90" />
+                    </div>
+                    {/* Penanda KKM */}
+                    <span
+                      className="absolute -top-[3px] -bottom-[3px] w-px bg-[#141C30]/40"
+                      style={{ left: `${KKM}%` }}
+                      title={`KKM ${KKM}`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Skala & legenda */}
+          <div className="relative mt-3 h-3 text-[10px] text-[#9A9AA5]">
+            <span className="absolute left-0">0</span>
+            <span className="absolute -translate-x-1/2 font-semibold text-[#6B7080]" style={{ left: `${KKM}%` }}>KKM</span>
+            <span className="absolute right-0">100</span>
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-4 pt-4 border-t border-dashed border-[#E3DACB] text-[11px] text-[#6B7080]">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#4C7A5E]" />≥ 85</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#B98A3E]" />{KKM}–84</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#AE5A3E]" />&lt; {KKM}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="text-[13px] text-[#6B7080] italic p-6 text-center">Belum ada data nilai rata-rata.</div>
+      )}
+    </div>
+  );
+}
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -263,26 +410,7 @@ export function Dashboard() {
            </div>
 
            {/* Rata-rata nilai kelas */}
-           <div className="bg-[#FFFDF8] border border-[#E3DACB] rounded-[14px] shadow-[0_1px_2px_rgba(30,25,15,0.04),0_8px_24px_-12px_rgba(30,25,15,0.10)] overflow-hidden">
-              <div className="flex justify-between items-center p-[18px_20px_14px] border-b border-[#E3DACB]">
-               <h3 className="font-['Fraunces',serif] font-semibold text-[16px] text-[#141C30]">Rata-rata nilai kelas</h3>
-              </div>
-              <div className="p-[8px_0_14px]">
-                {rataKelas.length > 0 ? (
-                  rataKelas.map((item, i) => (
-                    <div key={i} className="flex items-center gap-3 p-[11px_20px]">
-                      <div className="w-[76px] text-[12.5px] font-semibold shrink-0">{item.kelas}</div>
-                      <div className="flex-1 h-[7px] bg-[#EFE9DB] rounded-full overflow-hidden">
-                         <div className="h-full rounded-full bg-gradient-to-r from-[#1E2A47] to-[#2C3B5E]" style={{width: `${item.nilai}%`}}></div>
-                      </div>
-                      <div className="w-[36px] text-right text-[12px] text-[#6B7080] shrink-0">{item.nilai}</div>
-                    </div>
-                  ))
-                ) : (
-                 <div className="text-[13px] text-[#6B7080] italic p-4 text-center">Belum ada data nilai rata-rata.</div>
-                )}
-              </div>
-           </div>
+           <RataNilaiCard data={rataKelas} />
         </div>
       </section>
     </DashboardLayout>
