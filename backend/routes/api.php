@@ -18,6 +18,7 @@ use App\Http\Controllers\API\FileController;
 use App\Http\Controllers\API\TaskCommentController;
 use App\Http\Controllers\API\GradeController;
 use App\Http\Controllers\API\StudentDashboardController;
+use App\Http\Controllers\API\StudentAttendanceController;
 use App\Http\Controllers\API\AttendanceQrController;
 
 
@@ -417,6 +418,11 @@ Route::middleware('auth:sanctum')->group(
         Route::get(
             '/siswa/jadwal',
             [StudentDashboardController::class, 'schedule']
+        );
+
+        Route::get(
+            '/siswa/kehadiran',
+            [StudentAttendanceController::class, 'index']
         );
 
         /*Submission Tugas untuk Siswa*/    

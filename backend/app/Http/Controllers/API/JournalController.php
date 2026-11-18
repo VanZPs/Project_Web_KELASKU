@@ -872,6 +872,7 @@ class JournalController extends Controller
         $pendingScans = AttendanceQrScan::where('schedule_id', $schedule->id)
             ->whereDate('date', $validated['date'])
             ->get();
+        $pendingScanStudentIds = $pendingScans->pluck('student_id')->map(fn ($id) => (int) $id)->all();
 
         $submittedAttendances = collect($validated['attendances'] ?? [])
             ->keyBy('student_id');
@@ -991,7 +992,8 @@ class JournalController extends Controller
         $journal = DB::transaction(function () use (
             $validated,
             $schedule,
-            $existingJournal
+            $existingJournal,
+            $pendingScanStudentIds
         ) {
             $journalData = [
                 'topic' => $validated['topic'],
@@ -1029,6 +1031,10 @@ class JournalController extends Controller
                     [
                         'status' => $attendance['status'],
                         'notes' => $attendance['notes'] ?? null,
+                        'method' => (
+                            $attendance['status'] === 'hadir'
+                            && in_array((int) $attendance['student_id'], $pendingScanStudentIds, true)
+                        ) ? 'qr' : 'guru',
                     ]
                 );
             }

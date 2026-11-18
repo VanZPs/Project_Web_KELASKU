@@ -16,6 +16,7 @@ class Attendance extends Model
         'date',
         'status',
         'notes',
+        'method',
     ];
 
     protected function casts(): array
