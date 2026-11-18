@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useEffect, useState, type ReactNode } from 'react';
 import { SidebarSiswa } from '../../components/Siswa/Sidebar';
 import LoadingScreen from '../../components/common/LoadingScreen';
 
@@ -19,11 +19,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   loading = false,
   showHeader = true,
 }) => {
-  const initials = namaSiswa.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SW';
+  const [displayName, setDisplayName] = useState(namaSiswa);
+  useEffect(() => setDisplayName(namaSiswa), [namaSiswa]);
+  const initials = displayName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SW';
 
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#F5F1E7] font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased md:grid-cols-[264px_minmax(0,1fr)]">
-      <SidebarSiswa namaSiswa={namaSiswa} kelasSiswa={kelasSiswa} />
+      <SidebarSiswa namaSiswa={displayName} kelasSiswa={kelasSiswa} onProfileUpdated={setDisplayName} />
       <main className="relative min-h-screen min-w-0 p-5 md:p-[26px_34px_60px]">
         {showHeader && <header className="mb-[22px] flex flex-col justify-between gap-5 md:flex-row md:items-start">
           <div className="flex flex-col gap-1.5">
@@ -42,7 +44,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <span>{todayStr}</span>
             </div>
             <h1 className="font-['Fraunces',serif] text-[26px] font-semibold tracking-[-0.01em] text-[#141C30] md:text-[28px]">
-              Selamat datang, {namaSiswa.split(' ')[0] || 'Siswa'} ✨
+              Selamat datang, {displayName.split(' ')[0] || 'Siswa'} ✨
             </h1>
           </div>
           <div className="flex w-full items-center gap-3 md:w-auto">

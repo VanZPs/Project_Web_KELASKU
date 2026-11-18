@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import logoKesatrian from '../../assets/Logo-Kesatrian.jpeg';
+import EditProfileModal from './modal/EditProfileModal';
+import { UserRound } from 'lucide-react';
 
 interface SidebarProps {
   namaSiswa: string;
   kelasSiswa: string;
+  onProfileUpdated?: (name: string) => void;
 }
 
 const navigation = [
@@ -17,7 +20,10 @@ const navigation = [
   { label: 'Kehadiran', to: '/siswa/kehadiran', icon: '✓' },
 ];
 
-export const SidebarSiswa: React.FC<SidebarProps> = ({ namaSiswa, kelasSiswa }) => {
+export const SidebarSiswa: React.FC<SidebarProps> = ({ namaSiswa, kelasSiswa, onProfileUpdated }) => {
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const photoUrlRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -35,7 +41,41 @@ export const SidebarSiswa: React.FC<SidebarProps> = ({ namaSiswa, kelasSiswa }) 
 
   const initials = namaSiswa.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SW';
 
+  const loadProfilePhoto = useCallback(async () => {
+    try {
+      const response = await api.get('/me/profile-photo', { responseType: 'blob', headers: { 'Cache-Control': 'no-cache' } });
+      if (!response.data || response.data.size === 0) {
+        if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+        photoUrlRef.current = null;
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const nextUrl = URL.createObjectURL(response.data);
+      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+      photoUrlRef.current = nextUrl;
+      setProfilePhotoUrl(nextUrl);
+    } catch {
+      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+      photoUrlRef.current = null;
+      setProfilePhotoUrl(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProfilePhoto();
+    window.addEventListener('profile-photo-updated', loadProfilePhoto);
+    return () => {
+      window.removeEventListener('profile-photo-updated', loadProfilePhoto);
+      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+    };
+  }, [loadProfilePhoto]);
+
+  const handleProfileUpdated = (user: { name?: string }) => {
+    if (user.name) onProfileUpdated?.(user.name);
+  };
+
   return (
+    <>
     <aside
       className="relative flex h-auto shrink-0 flex-row items-center gap-5 overflow-x-auto p-4 text-[#EDEFF5] md:sticky md:top-0 md:h-screen md:flex-col md:items-stretch md:gap-7 md:p-[28px_20px_20px] md:overflow-visible"
       style={{
@@ -44,21 +84,24 @@ export const SidebarSiswa: React.FC<SidebarProps> = ({ namaSiswa, kelasSiswa }) 
     >
       <div className="flex shrink-0 items-center gap-2.5 px-1">
         <img src={logoKesatrian} alt="Logo SMA Kesatrian 1 Semarang" className="h-[40px] w-[40px] rounded-full border border-white/10 object-cover" />
-        <div>
+        <div className="min-w-0">
           <div className="font-['Fraunces',serif] text-[19px] font-semibold leading-tight text-white">KELASKU</div>
           <div className="mt-0.5 text-[11px] text-[#9BA6C4]">SMA Kesatrian 1 Semarang</div>
         </div>
+        <button type="button" onClick={() => setIsEditProfileOpen(true)} aria-label="Edit profil" className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-[#EDEFF5] hover:bg-white/10 md:hidden">
+          <UserRound size={17} />
+        </button>
       </div>
 
-      <div className="hidden items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.06] p-3 md:flex">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] text-sm font-bold text-[#141C30]">
-          {initials}
+      <button type="button" onClick={() => setIsEditProfileOpen(true)} aria-label={`Edit profil ${namaSiswa}`} className="group hidden w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.06] p-3 text-left transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A55E] md:flex">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-br from-[#C9A55E] to-[#8F6423] text-sm font-bold text-[#141C30]">
+          {profilePhotoUrl ? <img src={profilePhotoUrl} alt="" className="h-full w-full object-cover" /> : initials}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold text-white">{namaSiswa}</div>
-          <div className="truncate text-[11.5px] text-[#9BA6C4]">Siswa{kelasSiswa ? ` · ${kelasSiswa}` : ''}</div>
+          <div className="truncate text-[11.5px] text-[#9BA6C4]">{kelasSiswa || ''}</div>
         </div>
-      </div>
+      </button>
 
       <nav className="flex flex-1 flex-row gap-1 md:flex-col">
         {navigation.map((item) => {
@@ -83,5 +126,11 @@ export const SidebarSiswa: React.FC<SidebarProps> = ({ namaSiswa, kelasSiswa }) 
         </button>
       </div>
     </aside>
+    <EditProfileModal
+      isOpen={isEditProfileOpen}
+      onClose={() => setIsEditProfileOpen(false)}
+      onProfileUpdated={handleProfileUpdated}
+    />
+    </>
   );
 };

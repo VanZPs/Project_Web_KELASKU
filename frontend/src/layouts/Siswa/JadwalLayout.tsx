@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useEffect, useState, type ReactNode } from 'react';
 import { SidebarSiswa } from '../../components/Siswa/Sidebar';
 import LoadingScreen from '../../components/common/LoadingScreen';
 
@@ -19,9 +19,12 @@ export const JadwalLayout: React.FC<JadwalLayoutProps> = ({
   loading = false,
   loadingText = 'Memuat jadwal',
   loadingSubtitle = 'Menyiapkan jadwal pelajaran dan kalender tugas Anda.',
-}) => (
+}) => {
+  const [displayName, setDisplayName] = useState(namaSiswa);
+  useEffect(() => setDisplayName(namaSiswa), [namaSiswa]);
+  return (
   <div className="grid min-h-screen grid-cols-1 bg-[#F5F1E7] font-['Plus_Jakarta_Sans',sans-serif] text-[#23283A] antialiased md:grid-cols-[264px_minmax(0,1fr)]">
-    <SidebarSiswa namaSiswa={namaSiswa} kelasSiswa={kelasSiswa} />
+    <SidebarSiswa namaSiswa={displayName} kelasSiswa={kelasSiswa} onProfileUpdated={setDisplayName} />
     <main className="relative min-h-screen min-w-0 px-5 pb-10 pt-7 md:px-[34px] md:pb-[60px] md:pt-8">
       {children}
       {loading && (
@@ -35,4 +38,5 @@ export const JadwalLayout: React.FC<JadwalLayoutProps> = ({
       )}
     </main>
   </div>
-);
+  );
+};
